@@ -59,12 +59,13 @@ export default function MoreScreen() {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [rosterTeam, setRosterTeam] = useState<RosterTeam>('14u');
-  const filtered = useMemo(() => contacts.filter((contact) => `${contact.name} ${contact.role}`.toLowerCase().includes(query.toLowerCase())), [query]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = useMemo(() => contacts.filter((contact) => `${contact.name} ${contact.role}`.toLowerCase().includes(normalizedQuery)), [normalizedQuery]);
   const rosterQuery = useQuery<RosterMember[]>({
     queryKey: ['/api/users', 'roster'],
     queryFn: () => customFetch<RosterMember[]>('/api/users', { responseType: 'json' }),
   });
-  const filteredRoster = useMemo(() => (rosterQuery.data ?? []).filter((member) => member.teams.some((team) => rosterTeamAliases[rosterTeam].includes(team))), [rosterQuery.data, rosterTeam]);
+  const filteredRoster = useMemo(() => (rosterQuery.data ?? []).filter((member) => member.teams.some((team) => rosterTeamAliases[rosterTeam].includes(team)) && `${member.fullName} ${member.role} ${member.status}`.toLowerCase().includes(normalizedQuery)), [rosterQuery.data, rosterTeam, normalizedQuery]);
   const initials = user?.fullName.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'LPA';
   const logOut = () => Alert.alert('Log out?', 'You will need to sign in again to access LPA Hub.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: () => { signOut(); router.replace('/launch'); } }]);
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -72,13 +73,13 @@ export default function MoreScreen() {
       <View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.primary }]}>YOUR LPA HUB</Text><Text style={[styles.title, { color: colors.foreground }]}>More</Text></View><Pressable testID="more-profile-button" accessibilityLabel="Open profile" onPress={() => router.push('/account')} style={[styles.avatar, { backgroundColor: colors.primary }]}><Text style={styles.avatarText}>{initials}</Text></Pressable></View>
       {role === 'Admin' || role === 'Staff-Coach' ? <Pressable testID="manage-users" onPress={() => router.push('/admin-dashboard')} style={[styles.manageUsers, { backgroundColor: colors.secondary, borderColor: colors.border }]}><View style={[styles.manageIcon, { backgroundColor: `${colors.primary}22` }]}><Feather name="layout" size={18} color={colors.primary} /></View><View style={{ flex: 1 }}><Text style={[styles.manageTitle, { color: colors.foreground }]}>Admin dashboard</Text><Text style={[styles.manageCopy, { color: colors.mutedForeground }]}>Invites, roster, roles, and calendar events</Text></View><Feather name="chevron-right" size={18} color={colors.mutedForeground} /></Pressable> : null}
         <>
+          <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput value={query} onChangeText={setQuery} placeholder="Search staff, partners, and rosters" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Rosters</Text>
           <View style={[styles.teamFilter, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Feather name="users" size={15} color={colors.primary} />
             {rosterTeams.map((team) => <Pressable key={team} testID={`roster-filter-${team}`} accessibilityRole="button" accessibilityState={{ selected: rosterTeam === team }} onPress={() => setRosterTeam(team)} style={[styles.teamFilterButton, rosterTeam === team && { backgroundColor: colors.primary }]}><Text style={[styles.teamFilterText, { color: rosterTeam === team ? '#fff' : colors.mutedForeground }]}>{team}</Text></Pressable>)}
           </View>
           {rosterQuery.isLoading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 18 }} /> : rosterQuery.isError ? <Text style={[styles.rosterEmpty, { color: colors.mutedForeground }]}>Rosters could not load. Please try again.</Text> : filteredRoster.length ? <View style={styles.contactList}>{filteredRoster.map((member) => <RosterCard key={member.id} member={member} colors={colors} />)}</View> : <Text style={[styles.rosterEmpty, { color: colors.mutedForeground }]}>No active or new members are assigned to {rosterTeam}.</Text>}
-          <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput value={query} onChangeText={setQuery} placeholder="Search staff and partners" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Staff directory</Text>
           <View style={styles.contactList}>{filtered.filter((contact) => !contact.partner).map((contact) => <ContactCard key={contact.name} contact={contact} colors={colors} />)}</View>
           <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 25 }]}>Partners</Text>
