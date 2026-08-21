@@ -1,0 +1,3 @@
+- [LPA branding](lpa-branding.md) — LPA Hub uses Legendary Prep Academy’s public black, copper, and seafoam visual identity.
+- [Metro image-size remediation](metro-image-size-remediation.md) — Metro needs image-size’s legacy path-string API, even when addressing its security advisories.
+- [OpenAPI Zod email format](openapi-zod-email-format.md) — Current contract generation cannot emit `format: email` against the installed Zod version.
