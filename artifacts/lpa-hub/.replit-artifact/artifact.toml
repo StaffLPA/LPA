@@ -1,0 +1,25 @@
+kind = "mobile"
+previewPath = "/"
+title = "LPA Hub"
+description = "A cross-platform team communication and management hub for sports staff, coaches, parents, and athletes, with messaging, schedules, calendar, resources, and contacts."
+version = "1.0.0"
+id = "artifacts/lpa-hub"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 19914
+
+[services.development]
+run = "pnpm --filter @workspace/lpa-hub run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/lpa-hub", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/lpa-hub", "run", "serve" ]
+
+[services.env]
+PORT = "19914"
+BASE_PATH = "/"
+EXPO_PUBLIC_API_BASE_URL = "https://adequate-acceptable-debugger.replit.app"
