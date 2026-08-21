@@ -1,0 +1,46 @@
+Here's the standalone prompt — just the admin invite/onboarding piece, written to be sent as a follow-up message to Replit Agent on the app you already started building.
+
+Add an Admin-invited signup flow to the app. Only Admins can add people to the system — there is no public/open sign-up.
+
+## 1. Admin Invite Creation
+- Build an "Invite User" screen where Admins enter: full name, email and/or phone, role (Admin / Staff-Coach / Parent-Athlete), and optional team/group assignment(s)
+- Enforce a UNIQUE constraint on email and on phone in the users table — an email or phone can only ever belong to one user record, to prevent duplicate/ambiguous records
+
+**Duplicate handling logic:**
+- If the email/phone belongs to an ACTIVE user → block creation, show error: "This person is already an active user."
+- If the email/phone belongs to a PENDING (status = invited) user → do NOT create a new record. Instead, refresh the existing invite: generate a new token, reset the expiration, and resend. This guarantees at most one pending invite per email/phone ever exists.
+- If the email/phone belongs to an EXPIRED or REVOKED prior invite → reactivate that same user record with a new token and expiration, rather than creating a duplicate row.
+- If no match exists → create a new pending user record with a unique, single-use, expiring invite token (valid 7 days).
+
+## 2. Sending the Invite via GoHighLevel (Direct API Call)
+- Backend calls GoHighLevel's API directly to send the invite — no separate GHL workflow/automation needed, just a direct send-email and/or send-SMS API call
+- Message content: app name, inviter's org name, and a link to the app store listing (device-detected: iOS → App Store, Android → Play Store) — NOT a deep link with an embedded token
+- Build this as an isolated "notificationService" module so credentials/endpoints are easy to update later
+- Ask me for the GHL API key and location ID before wiring this up
+- Support resending an invite and revoking/expiring an invite from the Admin panel
+
+## 3. Signup Flow (No Deferred Deep Linking / No Third-Party Service)
+Flow: Tap link → App Store/Play Store → Install → Open app → Enter email or phone → Match to invite
+
+1. User installs and opens the app
+2. First-launch screen (before login) asks: "Were you invited? Enter the email or phone number your invite was sent to"
+3. User enters email or phone → backend looks up the matching record where status = invited and invite not expired (this lookup is unambiguous due to the unique constraint + refresh-on-reinvite logic above)
+4. If match found: show "Complete Your Account" screen — set password, confirm name, optional profile photo
+5. If no match / expired: show a clear message ("We couldn't find an invite for this email/phone — contact your administrator") with a way to re-enter
+6. On successful signup: status changes from "invited" to "active," user is auto-logged in, routed to Home per their role
+
+Do not implement Branch.io, Firebase Dynamic Links, or any deferred deep linking service — the email/phone lookup on first launch replaces that entirely.
+
+## 4. Post-Signup: Availability for Messaging
+- Once a user is "active," they become selectable in the member picker when Admins/Coaches create a new group chat, channel, or DM
+- Users can only see/join chats and channels they've been explicitly added to
+
+## 5. Admin "Manage Users" Dashboard
+- Show all users with status: Invited / Active / Inactive
+- Filter/search by name, role, team
+- Actions: resend invite, revoke invite, deactivate active user, edit role/team assignment
+- Bulk invite (CSV upload) — optional/stretch, flag as such
+
+## DATA MODEL ADDITIONS
+- users: add status (invited/active/inactive), invite_token, invite_token_expires_at, invited_by, invited_at, and UNIQUE constraints on email and phone
+- invites (optional audit table): id, user_id, token, method (email/sms), sent_at, expires_at, used_at, status
