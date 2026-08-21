@@ -1,0 +1,106 @@
+Build a cross-platform mobile app using React Native + Expo, deployable to both the Apple App Store and Google Play Store. This is a role-based communication and management hub for a sports team/school athletic organization, connecting staff/coaches with parents and athletes.
+
+## TECH STACK
+- Frontend: React Native (Expo) for iOS + Android
+- Backend: Node.js + Express (or Expo API routes)
+- Database: PostgreSQL (provision via Replit)
+- Auth: Email/password + role-based sessions (JWT)
+- Real-time: WebSockets (or Socket.io) for messaging and live calendar updates
+- Push notifications: Expo push notification service
+- File/image storage: Replit Object Storage (or S3-compatible bucket) for chat attachments and contact photos
+
+## APP OVERVIEW
+Name: [YOUR APP NAME]
+Purpose: Centralize team communication, scheduling, and administrative resources in one mobile app for staff, coaches, parents, and athletes.
+
+## USER ROLES
+1. Admin — full access, manages users, groups, content, and permissions
+2. Staff/Coach — manages their team's chats, calendar, and roster
+3. Parent/Athlete — participates in assigned chats, views calendars, accesses ParentHub
+
+Enforce role-based permissions on both the backend (API-level checks) and frontend (navigation/UI visibility).
+
+## CORE FEATURES
+
+### 1. Messaging Platform
+- Multiple group chats, organized by team/segment (e.g., by sport, grade level, team)
+- Channels (broadcast-style; admin/coach posts, optionally read-only for parents)
+- Direct/small group chats
+- Admins/coaches can create a chat and select specific members via a searchable member picker
+- Chat list filterable/segmented by category (Team, Grade, Sport, Announcements, etc.)
+- Unread indicators, push notifications for new messages
+- Message features: text, image attachments, timestamps, read receipts (optional)
+
+### 2. Calendar
+- Central calendar management (create/edit/delete events)
+- Multiple calendars (per team, per sport, org-wide)
+- Filter view by one or multiple calendars
+- Combined view overlaying all selected calendars
+- Month/Week/Day/Agenda list views
+- Event details: title, location, time, description, associated team/group
+
+### 3. ParentHub
+A resource center screen with organized cards, split into two types:
+
+**In-app forms (build as real forms with submission + admin-side tracking/dashboard):**
+- Absence / Tardy Notification Form
+- External Training & Competition Form
+- Voluntary Withdrawal Form
+
+**Reference / external links (open via in-app browser or system browser):**
+- Policy Handbook (PDF viewer or document screen)
+- TeamSnap (external link launcher)
+- LPA Calendar (external link or embedded view)
+- EdOptions LMS: CIM (external link launcher)
+- "Protect the Culture" (content/policy page — text + optional media)
+
+Organize ParentHub into categorized sections: "Forms," "Resources," "External Tools."
+
+### 4. Contacts
+- Staff Contact Directory: name, role/title, photo, email, phone, team assignment — searchable/filterable
+- Partner Contact Directory: same structure, for external partner organizations
+- Tap-to-call and tap-to-email
+
+### 5. Weekly Schedule
+- Dedicated view showing the current week's schedule at a glance (pulled from Calendar data)
+- Viewable per team/group and as a combined weekly overview
+
+## NAVIGATION STRUCTURE
+Bottom tab bar:
+- Home (dashboard/overview)
+- Messages
+- Calendar
+- ParentHub
+- More (Contacts, Weekly Schedule, Settings, Profile)
+
+## DATA MODEL (starting point)
+- users (id, name, email, password_hash, role, team_id, photo_url)
+- teams (id, name, category)
+- chats (id, type: group/channel/dm, team_id, name)
+- chat_members (chat_id, user_id)
+- messages (id, chat_id, sender_id, content, created_at, attachment_url)
+- calendars (id, name, team_id)
+- events (id, calendar_id, title, description, start_time, end_time, location)
+- form_submissions (id, form_type, user_id, data JSONB, submitted_at, status)
+- staff_contacts (id, name, role, email, phone, photo_url, team_id)
+- partner_contacts (id, name, org, email, phone, photo_url)
+
+## DESIGN REQUIREMENTS
+- Clean, modern mobile-first UI using native components (not a web layout ported over)
+- Consistent brand color scheme (placeholder: [YOUR COLORS])
+- Native patterns: bottom tabs, swipe gestures, pull-to-refresh
+- Light/dark mode support
+- Readable, accessible typography for a mixed adult/teen audience
+
+## BUILD PRIORITY
+1. Backend scaffold: database schema, auth, role-based API routes
+2. Auth + role-based navigation shell (Expo)
+3. Calendar (single + combined view)
+4. Messaging (groups + channels, real-time via WebSockets)
+5. ParentHub (forms with backend submission + external link launchers)
+6. Contacts directory
+7. Weekly schedule view
+8. Push notifications (Expo push service)
+9. Polish, test on iOS/Android simulators, prep EAS build config for App Store/Play Store submission
+
+Ask me clarifying questions about branding, team/group structure, and specific form fields before starting, if anything is ambiguous.
