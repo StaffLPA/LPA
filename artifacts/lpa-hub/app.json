@@ -32,7 +32,13 @@
         }
       ],
       "expo-font",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "messages",
+          "color": "#C47A44"
+        }
+      ],
       "expo-web-browser"
     ],
     "experiments": {
