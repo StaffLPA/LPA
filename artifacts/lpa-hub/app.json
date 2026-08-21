@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "LPA",
+    "slug": "lpa",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/lpa-brand-icon.png",
+    "scheme": "lpa",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/lpa-brand-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050505"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.legendaryprepacademy.lpa"
+    },
+    "android": {
+      "package": "com.legendaryprepacademy.lpa",
+      "versionCode": 1
+    },
+    "web": {
+      "favicon": "./assets/images/lpa-brand-icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-notifications",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
