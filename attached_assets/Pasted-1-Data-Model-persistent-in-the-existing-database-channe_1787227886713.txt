@@ -1,0 +1,55 @@
+1. Data Model (persistent, in the existing database)
+
+channels (or conversations): id, type (channel | group_chat | dm), name, created_by, created_at, workspace/org id if applicable.
+channel_members: channel_id, user_id, role (member/admin), joined_at, optionally last_read_at for unread tracking.
+messages: id, channel_id, sender_id, body, created_at, edited_at (nullable), deleted_at (nullable for soft delete).
+Add proper foreign keys, indexes on channel_id + created_at for fast history queries, and cascade rules for deletions.
+Write and run migrations — do not hand-roll schema changes outside the migration system.
+
+2. Membership Management
+
+Server-side enforcement of who belongs to a channel/group chat — membership must never be inferred from the client.
+Endpoints: add member, remove member, leave channel, list members.
+Only existing members (or admins with the right permission) can add/remove others, per whatever role system already exists.
+
+3. Message History
+
+GET /channels/:id/messages with pagination (cursor or offset+limit, prefer cursor based on created_at/id) so history loads reliably on reopen, including after app restart.
+Return messages in a stable order and support "load older messages" on scroll.
+
+4. Posting Messages
+
+POST /channels/:id/messages — persists to the database, validates the sender is a member of the channel, returns the created message with server-assigned id/timestamp.
+Reject posts from non-members with 403.
+
+5. Authorization
+
+Every messaging action (read history, post, add/remove member, create channel/group chat) must check membership and permissions server-side — not just hide buttons in the UI.
+Reuse or extend the existing auth middleware; return 401/403 with clear error bodies on failure.
+
+6. Real-Time / Shared Delivery
+
+Implement real-time delivery so other members receive new messages without a manual refresh — use WebSockets (or the project's existing real-time mechanism if one exists; check before introducing a new one).
+On connect, clients should subscribe only to channels they're a member of.
+If WebSockets aren't feasible right now, implement short-interval polling as a fallback, but structure the code so it can be swapped for real-time later.
+Handle reconnect gracefully: on reconnect, fetch any messages missed while disconnected (via last-seen timestamp/cursor) rather than assuming the socket caught everything.
+
+7. Mobile UI Integration
+
+Replace the seeded/local conversation data with real API calls: fetch channel list, fetch message history on open, post new messages via the API, and reflect incoming real-time messages in the UI.
+Show optimistic UI on send (pending state) but reconcile with the server-confirmed message (handle failure/retry).
+Ensure reopening the app or a conversation always reloads from the server rather than trusting cached local state as the source of truth.
+
+8. Testing / Verification
+
+Verify with at least two distinct user sessions: user A posts a message, user B (already a member) receives it without refreshing; a non-member cannot fetch history or post.
+Verify history persists correctly after closing and reopening the app.
+Verify unauthorized actions return proper error responses.
+
+Constraints:
+
+Work within the existing chat API route rather than replacing it wholesale — extend/complete it.
+Match the existing database and auth patterns already used elsewhere in the project.
+Flag clearly if you need to introduce a new dependency (e.g., a WebSocket library) before adding it.
+
+Please implement in this order: schema/migrations → membership endpoints → message persistence/history endpoints → authorization checks → real-time delivery → mobile UI wiring → end-to-end test pass.
