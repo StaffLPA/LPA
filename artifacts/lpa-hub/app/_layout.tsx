@@ -20,9 +20,10 @@ import { MessageNotificationCenter } from '@/components/MessageNotificationCente
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
+const productionApiBaseUrl = 'https://adequate-acceptable-debugger.replit.app';
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
 const publicDomain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
-setBaseUrl(apiBaseUrl || `https://${publicDomain || 'localhost'}`);
+setBaseUrl(apiBaseUrl || (publicDomain ? `https://${publicDomain}` : productionApiBaseUrl));
 
 const queryClient = new QueryClient({
   defaultOptions: {
