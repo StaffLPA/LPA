@@ -23,6 +23,18 @@ export async function requestMessagePushToken(): Promise<RegisteredPushToken | n
   const permission = existing.granted ? existing : await Notifications.requestPermissionsAsync();
   if (!permission.granted) return null;
 
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('messages', {
+      name: 'Messages',
+      description: 'Alerts for new LPA direct and group messages.',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      sound: 'default',
+      enableVibrate: true,
+      showBadge: true,
+    });
+  }
+
   const projectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
   const token = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
   return { expoPushToken: token.data, platform: Platform.OS };
