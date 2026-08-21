@@ -27,8 +27,12 @@ type ExpoPushReceipt = {
   details?: { error?: unknown };
 };
 
+function isDeviceNotRegistered(response: ExpoPushReceipt | ExpoPushTicket) {
+  return response.status === "error" && response.details?.error === "DeviceNotRegistered";
+}
+
 function isDeviceNotRegisteredReceipt(receipt: ExpoPushReceipt | ExpoPushTicket) {
-  return receipt.status === "error" && receipt.details?.error === "DeviceNotRegistered";
+  return isDeviceNotRegistered(receipt);
 }
 
 async function removeInvalidPushDevices(tokens: string[]) {
@@ -67,6 +71,7 @@ async function sendExpoPushNotification(notification: MessagePushNotification) {
     .map((to) => ({
       to,
       sound: "default",
+      channelId: "messages",
       title: notification.title,
       body: notification.body,
       data: { conversationId: notification.conversationId, messageId: notification.messageId },
@@ -81,6 +86,10 @@ async function sendExpoPushNotification(notification: MessagePushNotification) {
     });
     if (!response.ok) throw new Error(`Expo push request failed (${response.status}).`);
     const payload = await response.json() as { data?: ExpoPushTicket[] };
+    const invalidTicketTokens = (payload.data ?? [])
+      .map((ticket, index) => isDeviceNotRegistered(ticket) ? batch[index]?.to : undefined)
+      .filter((token): token is string => typeof token === "string");
+    await removeInvalidPushDevices([...new Set(invalidTicketTokens)]);
     const receiptTokens = new Map(
       (payload.data ?? [])
         .map((ticket, index) => [ticket.id, batch[index]?.to] as const)
