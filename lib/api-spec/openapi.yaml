@@ -1,0 +1,940 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: invites
+    description: Admin invite and onboarding operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /admin/invites:
+    post:
+      operationId: createInvite
+      tags: [invites]
+      summary: Create or refresh an admin invite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInviteRequest"
+      responses:
+        "201":
+          description: Invite created or refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteUser"
+        "409":
+          description: Active user already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/users:
+    get:
+      operationId: listUsers
+      tags: [invites]
+      summary: List users for the admin dashboard
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: role
+          schema:
+            $ref: "#/components/schemas/UserRole"
+        - in: query
+          name: team
+          schema: { type: string }
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InviteUser"
+  /admin/invites/{id}/resend:
+    post:
+      operationId: resendInvite
+      tags: [invites]
+      summary: Refresh and resend an invite
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Invite resent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteUser"
+  /admin/invites/{id}/revoke:
+    post:
+      operationId: revokeInvite
+      tags: [invites]
+      summary: Revoke a pending invite
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Invite revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteUser"
+  /onboarding/lookup:
+    post:
+      operationId: lookupInvite
+      tags: [invites]
+      summary: Find an active invite by email or phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteLookupRequest"
+      responses:
+        "200":
+          description: Invite lookup result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteLookupResponse"
+  /onboarding/complete:
+    post:
+      operationId: completeInvite
+      tags: [invites]
+      summary: Complete an invited user's account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteInviteRequest"
+      responses:
+        "200":
+          description: Account activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+  /auth/sign-in:
+    post:
+      operationId: signIn
+      tags: [invites]
+      summary: Sign in to an active account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignInRequest"
+      responses:
+        "200":
+          description: Signed-in session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          description: Incorrect sign-in details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/users/{id}/role:
+    patch:
+      operationId: updateUserRole
+      tags: [invites]
+      summary: Update a user's role
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRoleRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteUser"
+  /admin/calendar-events:
+    get:
+      operationId: listCalendarEvents
+      tags: [calendar]
+      summary: List persisted calendar events
+      parameters:
+        - in: query
+          name: team
+          schema: { type: string }
+      responses:
+        "200":
+          description: Calendar events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CalendarEvent"
+    post:
+      operationId: createCalendarEvent
+      tags: [calendar]
+      summary: Create a calendar event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalendarEventInput"
+      responses:
+        "201":
+          description: Created event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarEvent"
+  /calendar-events:
+    get:
+      operationId: listSharedCalendarEvents
+      tags: [calendar]
+      summary: List calendar events for the signed-in user
+      parameters:
+        - in: query
+          name: team
+          schema: { type: string }
+      responses:
+        "200":
+          description: Calendar events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CalendarEvent"
+  /calendar.ics:
+    get:
+      operationId: getCalendarFeed
+      tags: [calendar]
+      summary: Subscribe to a public team calendar feed
+      parameters:
+        - in: query
+          name: team
+          required: true
+          schema:
+            type: string
+            enum: [15u, 14u, lpa-jv, varsity, lpa-events]
+      responses:
+        "200":
+          description: iCalendar subscription feed
+          content:
+            text/calendar:
+              schema:
+                type: string
+        "404":
+          description: Unknown calendar feed
+          content:
+            text/plain:
+              schema:
+                type: string
+  /admin/calendar-events/{id}:
+    patch:
+      operationId: updateCalendarEvent
+      tags: [calendar]
+      summary: Update a calendar event
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalendarEventInput"
+      responses:
+        "200":
+          description: Updated event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarEvent"
+    delete:
+      operationId: deleteCalendarEvent
+      tags: [calendar]
+      summary: Delete a calendar event
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Calendar event deleted
+  /chats:
+    get:
+      operationId: listChats
+      tags: [messaging]
+      summary: List conversations for the signed-in user
+      responses:
+        "200":
+          description: Conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+    post:
+      operationId: createChat
+      tags: [messaging]
+      summary: Create a direct message, channel, or group chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConversationInput"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+        "403":
+          description: Admin access required for channels and groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /push-tokens:
+    post:
+      operationId: registerPushToken
+      tags: [messaging]
+      summary: Register the signed-in user's Expo push token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenRegistration"
+      responses:
+        "201":
+          description: Registered device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushToken"
+        "400":
+          description: Invalid push token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: removePushToken
+      tags: [messaging]
+      summary: Remove the signed-in user's Expo push token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenRemoval"
+      responses:
+        "204":
+          description: Removed device
+  /chats/{conversationId}/read:
+    post:
+      operationId: markChatRead
+      tags: [messaging]
+      summary: Mark a conversation as read for the signed-in user
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Conversation marked read
+        "403":
+          description: Conversation membership required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}/messages:
+    get:
+      operationId: listChatMessages
+      tags: [messaging]
+      summary: List messages in a conversation
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Message history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ChatMessage"
+        "403":
+          description: Conversation membership required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: sendChatMessage
+      tags: [messaging]
+      summary: Send a message
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatMessageInput"
+      responses:
+        "201":
+          description: Sent message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessage"
+        "403":
+          description: Conversation membership required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "400":
+          description: Message or attachment is invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}/attachments/upload-url:
+    post:
+      operationId: createChatAttachmentUploadUrl
+      tags: [messaging]
+      summary: Create a signed upload URL for a chat attachment
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatAttachmentUploadInput"
+      responses:
+        "201":
+          description: Signed upload URL and object path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatAttachmentUpload"
+        "400":
+          description: Unsupported attachment or attachment exceeds the 10 MB limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Conversation membership required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}/attachments/{attachmentId}:
+    get:
+      operationId: getChatAttachment
+      tags: [messaging]
+      summary: Stream a protected chat attachment
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: attachmentId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Attachment contents
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            image/*:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: Conversation membership required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Attachment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}/attachments/{attachmentId}/access-url:
+    get:
+      operationId: getChatAttachmentAccessUrl
+      tags: [messaging]
+      summary: Create a signed access URL for a chat attachment
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: attachmentId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Signed attachment access URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatAttachmentAccessUrl"
+        "403":
+          description: Conversation membership required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Attachment not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}:
+    delete:
+      operationId: deleteChat
+      tags: [messaging]
+      summary: Delete a channel or group chat
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Conversation deleted
+        "400":
+          description: Direct messages cannot be deleted as conversations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}/members:
+    post:
+      operationId: addChatMember
+      tags: [messaging]
+      summary: Add an active participant to a channel or group chat
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationMemberInput"
+      responses:
+        "201":
+          description: Added participant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationMember"
+        "400":
+          description: Invalid participant or direct-message membership change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Conversation manager required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}/members/{userId}:
+    delete:
+      operationId: removeChatMember
+      tags: [messaging]
+      summary: Remove a participant from a channel or group chat
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Participant removed
+        "400":
+          description: Invalid participant removal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Conversation manager required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}/messages/{messageId}:
+    delete:
+      operationId: deleteChatMessage
+      tags: [messaging]
+      summary: Delete a message
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: messageId
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Message deleted
+        "403":
+          description: Message sender or conversation manager required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    CreateConversationInput:
+      type: object
+      required: [type, userIds]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120, description: Required for channel and group conversations; omit for direct messages. }
+        type: { type: string, enum: [direct, channel, group] }
+        userIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+    ConversationMember:
+      type: object
+      required: [id, fullName, role]
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        role: { $ref: "#/components/schemas/UserRole" }
+    ConversationMemberInput:
+      type: object
+      required: [userId]
+      properties:
+        userId: { type: string }
+    ChatMessage:
+      type: object
+      required: [id, conversationId, senderId, senderName, text, attachments, createdAt]
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        senderId: { type: string }
+        senderName: { type: string }
+        text: { type: string }
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatAttachment"
+        createdAt: { type: string, format: date-time }
+    ChatMessagePreview:
+      type: object
+      required: [id, conversationId, senderId, text, createdAt]
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        senderId: { type: string }
+        text: { type: string }
+        createdAt: { type: string, format: date-time }
+    ChatMessageInput:
+      type: object
+      properties:
+        text: { type: string, maxLength: 2000 }
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/ChatAttachmentInput"
+    ChatAttachment:
+      type: object
+      required: [id, fileName, contentType, size]
+      properties:
+        id: { type: string }
+        fileName: { type: string, maxLength: 160 }
+        contentType: { type: string }
+        size: { type: number, minimum: 1, maximum: 10485760 }
+    ChatAttachmentInput:
+      type: object
+      required: [objectPath, fileName, contentType, size]
+      properties:
+        objectPath:
+          type: string
+          pattern: '^/objects/uploads/[a-f0-9-]{36}$'
+        fileName: { type: string, minLength: 1, maxLength: 160 }
+        contentType: { type: string, minLength: 1 }
+        size: { type: number, minimum: 1, maximum: 10485760 }
+    ChatAttachmentUploadInput:
+      type: object
+      required: [fileName, contentType, size]
+      properties:
+        fileName: { type: string, minLength: 1, maxLength: 160 }
+        contentType: { type: string, minLength: 1 }
+        size: { type: number, minimum: 1, maximum: 10485760 }
+    ChatAttachmentUpload:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL: { type: string }
+        objectPath:
+          type: string
+          pattern: '^/objects/uploads/[a-f0-9-]{36}$'
+    ChatAttachmentAccessUrl:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string }
+    Conversation:
+      type: object
+      required: [id, name, type, isPinned, createdBy, createdAt, unreadCount, members, lastMessage]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [direct, channel, group] }
+        isPinned: { type: boolean }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        unreadCount: { type: number, minimum: 0, description: A whole-number count of unread messages. }
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationMember"
+        lastMessage:
+          anyOf:
+            - $ref: "#/components/schemas/ChatMessagePreview"
+            - type: "null"
+    PushTokenRegistration:
+      type: object
+      required: [expoPushToken, platform]
+      properties:
+        expoPushToken: { type: string, minLength: 1 }
+        platform: { type: string, enum: [ios, android] }
+    PushTokenRemoval:
+      type: object
+      required: [expoPushToken]
+      properties:
+        expoPushToken: { type: string, minLength: 1 }
+    PushToken:
+      type: object
+      required: [id, platform]
+      properties:
+        id: { type: string }
+        platform: { type: string, enum: [ios, android] }
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    UserRole:
+      type: string
+      enum: [Admin, Staff-Coach, Parent-Athlete, Athlete]
+    UserStatus:
+      type: string
+      enum: [invited, active, inactive, revoked]
+    CreateInviteRequest:
+      type: object
+      required: [fullName, role]
+      properties:
+        fullName: { type: string, minLength: 2 }
+        email: { type: string }
+        phone: { type: string }
+        role:
+          $ref: "#/components/schemas/UserRole"
+        teams:
+          type: array
+          items: { type: string }
+    InviteUser:
+      type: object
+      required: [id, fullName, role, status, teams, invitedAt]
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        role:
+          $ref: "#/components/schemas/UserRole"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        teams:
+          type: array
+          items: { type: string }
+        invitedAt: { type: string, format: date-time }
+        inviteExpiresAt: { type: string, format: date-time, nullable: true }
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+    InviteLookupRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier: { type: string, minLength: 3 }
+    InviteLookupResponse:
+      type: object
+      required: [found, state]
+      properties:
+        found: { type: boolean }
+        state:
+          type: string
+          enum: [ready, completed, revoked, expired, not_found]
+        user:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/InviteUser"
+    CompleteInviteRequest:
+      type: object
+      required: [userId, fullName, password]
+      properties:
+        userId: { type: string }
+        fullName: { type: string, minLength: 2 }
+        password: { type: string, minLength: 8 }
+    SignInRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier: { type: string, minLength: 3 }
+        password: { type: string, minLength: 8 }
+    SessionResponse:
+      type: object
+      required: [user, sessionToken]
+      properties:
+        user:
+          $ref: "#/components/schemas/InviteUser"
+        sessionToken: { type: string }
+    UpdateUserRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          $ref: "#/components/schemas/UserRole"
+    CalendarEventInput:
+      type: object
+      required: [title, date, time]
+      properties:
+        title: { type: string, minLength: 1 }
+        date:
+          type: string
+          description: A valid calendar date in ISO YYYY-MM-DD format.
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        time:
+          type: string
+          pattern: '^(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d)$'
+        location: { type: string }
+        team: { type: string }
+    CalendarEvent:
+      type: object
+      required: [id, title, date, time, location, team, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        date: { type: string, format: date }
+        time: { type: string }
+        location: { type: string }
+        team: { type: string }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
