@@ -14,7 +14,7 @@ export interface CalendarEventInput {
      * @pattern ^\d{4}-\d{2}-\d{2}$
      */
   date: string;
-  /** @pattern ^(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d)$ */
+  /** @pattern ^(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d)(?:\s-\s(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d))?$ */
   time: string;
   location?: string;
   team?: string;
