@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "8f-sdT_OONSlqGK61CPlg"
+uri = "file://artifacts/lpa-hub/assets/images/lpa-outlaws-mark.png"
+type = "image"
+title = "LPA Outlaws logo mark"
+description = "Clean square LPA logo extracted from the provided Outlaws artwork with the Legendary Prep Academy wordmark removed."
+logical_id = "84365bf2-6ca3-4e93-9df1-25e576d73456"
+content_hash = "sha256:6e5181d2eca978a39009455d83bd9fb7a1f1eca54fcb6b1c0256991bdba34000"
+size = 119475
+mtime_ms = 1787785453219
+storage_uri = "gcs://replit-rams-assets-kirk/rams/assets/repl:d9c17df8-ad53-4503-bfc0-1dec2f28a128/84365bf2-6ca3-4e93-9df1-25e576d73456/37fdd401-97ba-45a8-a39d-0003d46f7a2f"
+storage_version_token = "1787785554505190"
+content_type = "image/png"
