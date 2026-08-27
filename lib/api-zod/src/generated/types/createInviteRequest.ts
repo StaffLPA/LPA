@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateInviteRequestGradYear } from './createInviteRequestGradYear';
 import type { UserRole } from './userRole';
 
 export interface CreateInviteRequest {
@@ -14,4 +15,5 @@ export interface CreateInviteRequest {
   phone?: string;
   role: UserRole;
   teams?: string[];
+  gradYear?: CreateInviteRequestGradYear;
 }
