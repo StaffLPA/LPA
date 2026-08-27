@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const usersTable = pgTable(
@@ -14,6 +14,7 @@ export const usersTable = pgTable(
     address: text("address"),
     birthday: text("birthday"),
     gender: text("gender"),
+    gradYear: text("grad_year"),
     profilePhotoUri: text("profile_photo_uri"),
     role: text("role").notNull(),
     status: text("status").notNull().default("invited"),
@@ -28,6 +29,8 @@ export const usersTable = pgTable(
   (table) => ({
     emailUnique: uniqueIndex("users_email_unique").on(table.email),
     phoneUnique: uniqueIndex("users_phone_unique").on(table.phone),
+    statusIndex: index("users_status_idx").on(table.status),
+    roleStatusIndex: index("users_role_status_idx").on(table.role, table.status),
   }),
 );
 
