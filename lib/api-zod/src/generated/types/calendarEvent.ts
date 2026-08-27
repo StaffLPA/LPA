@@ -13,6 +13,8 @@ export interface CalendarEvent {
   time: string;
   location: string;
   team: string;
+  repeatSeriesId?: string | null;
+  repeatUntil?: Date | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
