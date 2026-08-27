@@ -63,7 +63,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: tabIcons.home }} />
       <Tabs.Screen name="messages" options={messageOptions} />
       <Tabs.Screen name="calendar" options={{ title: 'Calendar', tabBarIcon: tabIcons.calendar }} />
-      <Tabs.Screen name="parenthub" options={{ title: 'ParentHub', tabBarIcon: tabIcons.parentHub }} />
+      <Tabs.Screen name="parenthub" options={{ title: 'Parent Hub', tabBarIcon: tabIcons.parentHub }} />
       <Tabs.Screen name="schedule" options={{ title: 'Schedule', tabBarIcon: tabIcons.schedule }} />
       <Tabs.Screen name="more" options={{ title: 'More', tabBarIcon: tabIcons.more }} />
     </Tabs>
