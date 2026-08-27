@@ -68,6 +68,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="admin-users" options={{ headerShown: false }} />
       <Stack.Screen name="admin-dashboard" options={{ headerShown: false }} />
+      <Stack.Screen name="family" options={{ headerShown: false }} />
       <Stack.Screen name="new-chat" options={{ headerShown: false }} />
       <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="account" options={{ headerShown: false }} />
