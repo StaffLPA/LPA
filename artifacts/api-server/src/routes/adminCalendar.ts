@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte, ne } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { calendarEventsTable, db } from "@workspace/db";
 import { requireAdmin, requireSession } from "../lib/auth";
 
 const router: IRouter = Router();
 const value = (input: unknown) => typeof input === "string" && input.trim() ? input.trim() : null;
+type CalendarEventInput = { title: string; date: string; time: string; location: string; team: string };
 const mapEvent = (event: typeof calendarEventsTable.$inferSelect) => ({ ...event, createdAt: event.createdAt.toISOString(), updatedAt: event.updatedAt.toISOString() });
 const validDate = (date: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
@@ -50,10 +51,10 @@ function calendarFeed(events: Array<typeof calendarEventsTable.$inferSelect>, la
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Legendary Prep Academy//LPA Hub//EN",
+    "PRODID:-//Legendary Prep Academy//LPA//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    `X-WR-CALNAME:${icsEscape(`LPA Hub · ${label}`)}`,
+    `X-WR-CALNAME:${icsEscape(`LPA · ${label}`)}`,
     "X-WR-TIMEZONE:America/Phoenix",
   ];
   for (const event of events) {
@@ -77,12 +78,32 @@ function calendarFeed(events: Array<typeof calendarEventsTable.$inferSelect>, la
   lines.push("END:VCALENDAR");
   return `${lines.join("\r\n")}\r\n`;
 }
-function eventInput(body: Record<string, unknown>) {
+function eventInput(body: Record<string, unknown>): { data: CalendarEventInput } | { error: string } {
   const title = value(body.title), date = value(body.date), time = value(body.time), location = value(body.location) ?? "LPA Campus", team = value(body.team) ?? "LPA Events";
   if (!title || !date || !time) return { error: "Title, date, and start time are required." };
   if (!validDate(date)) return { error: "Use a valid date in YYYY-MM-DD format." };
   if (!validTime(time)) return { error: "Use a time such as 4:00 PM or a range such as 4:00 PM - 12:00 PM." };
   return { data: { title, date, time, location, team } };
+}
+function repeatInput(body: Record<string, unknown>): { data: CalendarEventInput & { repeatUntil: string } } | { error: string } {
+  const event = eventInput(body);
+  if ("error" in event) return event;
+  const repeatUntil = value(body.repeatUntil);
+  if (!repeatUntil || !validDate(repeatUntil) || repeatUntil < event.data.date) return { error: "Choose a valid repeat end date on or after the event date." };
+  const days = (Date.parse(`${repeatUntil}T00:00:00.000Z`) - Date.parse(`${event.data.date}T00:00:00.000Z`)) / 86_400_000;
+  if (days > 366) return { error: "Daily repeating events can span up to one year." };
+  return { data: { ...event.data, repeatUntil } };
+}
+function repeatedDates(startDate: string, endDate: string) {
+  const dates = [startDate];
+  let cursor = startDate;
+  while (cursor < endDate) {
+    const next = new Date(`${cursor}T12:00:00.000Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    cursor = next.toISOString().slice(0, 10);
+    dates.push(cursor);
+  }
+  return dates;
 }
 
 router.get("/calendar-events", async (req, res) => {
@@ -129,16 +150,63 @@ router.post("/admin/calendar-events", async (req, res) => {
   res.status(201).json(mapEvent(event));
 });
 
+router.post("/admin/calendar-events/repeat", async (req, res) => {
+  const user = await requireSession(req, res); if (!user || !requireAdmin(user, res)) return;
+  const input = repeatInput(req.body);
+  if ("error" in input) { res.status(400).json({ message: input.error }); return; }
+  const repeatSeriesId = randomBytes(16).toString("hex");
+  const createdAt = new Date();
+  const dates = repeatedDates(input.data.date, input.data.repeatUntil);
+  const events = await db.transaction((tx) => tx.insert(calendarEventsTable).values(dates.map((date) => ({
+    id: randomBytes(16).toString("hex"),
+    title: input.data.title,
+    date,
+    time: input.data.time,
+    location: input.data.location,
+    team: input.data.team,
+    repeatSeriesId,
+    repeatUntil: input.data.repeatUntil,
+    createdBy: user.id,
+    createdAt,
+    updatedAt: createdAt,
+  }))).returning());
+  res.status(201).json(events.map(mapEvent));
+});
+
 router.patch("/admin/calendar-events/:id", async (req, res) => {
   const user = await requireSession(req, res); if (!user || !requireAdmin(user, res)) return;
   const [existing] = await db.select().from(calendarEventsTable).where(eq(calendarEventsTable.id, req.params.id));
   if (!existing) { res.status(404).json({ message: "Calendar event not found." }); return; }
   const input = eventInput(req.body);
   if ("error" in input) { res.status(400).json({ message: input.error }); return; }
-  const [event] = await db.update(calendarEventsTable).set({
-    ...input.data,
-    updatedAt: new Date(),
-  }).where(eq(calendarEventsTable.id, existing.id)).returning();
+  const applyToRemainingRepeatEvents = req.body.applyToRemainingRepeatEvents;
+  if (applyToRemainingRepeatEvents !== undefined && typeof applyToRemainingRepeatEvents !== "boolean") {
+    res.status(400).json({ message: "applyToRemainingRepeatEvents must be true or false." });
+    return;
+  }
+  const updatedAt = new Date();
+  const [event] = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(calendarEventsTable).set({
+      ...input.data,
+      updatedAt,
+    }).where(eq(calendarEventsTable.id, existing.id)).returning();
+    if (applyToRemainingRepeatEvents && existing.repeatSeriesId) {
+      const seriesConditions = [
+        eq(calendarEventsTable.repeatSeriesId, existing.repeatSeriesId),
+        gte(calendarEventsTable.date, existing.date),
+        ne(calendarEventsTable.id, existing.id),
+      ];
+      if (existing.repeatUntil) seriesConditions.push(lte(calendarEventsTable.date, existing.repeatUntil));
+      await tx.update(calendarEventsTable).set({
+        title: input.data.title,
+        time: input.data.time,
+        location: input.data.location,
+        team: input.data.team,
+        updatedAt,
+      }).where(and(...seriesConditions));
+    }
+    return [updated];
+  });
   res.json(mapEvent(event));
 });
 
