@@ -9,7 +9,7 @@ if (!previewOrigin || !/^https?:\/\//i.test(previewOrigin)) {
 }
 
 if (!sessionToken) {
-  console.error('Authenticated preview check: set LPA_SESSION_TOKEN to the bearer token from an authenticated LPA Hub session.');
+  console.error('Authenticated preview check: set LPA_SESSION_TOKEN to the bearer token from an authenticated LPA session.');
   process.exit(1);
 }
 
