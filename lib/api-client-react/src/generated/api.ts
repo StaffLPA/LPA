@@ -33,20 +33,28 @@ import type {
   ConversationMemberInput,
   CreateConversationInput,
   CreateInviteRequest,
+  CreateRepeatedCalendarEventsRequest,
   ErrorResponse,
   GetCalendarFeedParams,
+  GuardianLink,
+  GuardianLinkInput,
   HealthStatus,
   InviteLookupRequest,
   InviteLookupResponse,
   InviteUser,
+  LinkedAthlete,
   ListCalendarEventsParams,
   ListSharedCalendarEventsParams,
   ListUsersParams,
+  ProfilePhotoUpload,
+  ProfilePhotoUploadInput,
   PushToken,
   PushTokenRegistration,
   PushTokenRemoval,
   SessionResponse,
   SignInRequest,
+  UpdateCalendarEventRequest,
+  UpdateUserGradYearRequest,
   UpdateUserRoleRequest
 } from './api.schemas';
 
@@ -309,6 +317,77 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
 
 
 
+
+export const getDeleteUserProfileUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/users/${id}`
+}
+
+/**
+ * @summary Permanently delete an LPA user profile
+ */
+export const deleteUserProfile = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteUserProfileUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteUserProfileMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUserProfile>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteUserProfile>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteUserProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteUserProfile>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteUserProfile(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteUserProfileMutationResult = NonNullable<Awaited<ReturnType<typeof deleteUserProfile>>>
+
+    export type DeleteUserProfileMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Permanently delete an LPA user profile
+ */
+export const useDeleteUserProfile = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUserProfile>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteUserProfile>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteUserProfileMutationOptions(options));
+    }
 
 export const getResendInviteUrl = (id: string,) => {
 
@@ -665,6 +744,77 @@ export const useSignIn = <TError = ErrorType<ErrorResponse>,
       return useMutation(getSignInMutationOptions(options));
     }
 
+export const getCreateProfilePhotoUploadUrlUrl = () => {
+
+
+
+
+  return `/api/auth/profile-photo/upload-url`
+}
+
+/**
+ * @summary Create a signed upload URL for a profile photo
+ */
+export const createProfilePhotoUploadUrl = async (profilePhotoUploadInput: ProfilePhotoUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<ProfilePhotoUpload> => {
+
+  return customFetch<ProfilePhotoUpload>(getCreateProfilePhotoUploadUrlUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(profilePhotoUploadInput)
+  }
+);}
+
+
+
+
+
+export const getCreateProfilePhotoUploadUrlMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProfilePhotoUploadUrl>>, TError,{data: BodyType<ProfilePhotoUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createProfilePhotoUploadUrl>>, TError,{data: BodyType<ProfilePhotoUploadInput>}, TContext> => {
+
+const mutationKey = ['createProfilePhotoUploadUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProfilePhotoUploadUrl>>, {data: BodyType<ProfilePhotoUploadInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createProfilePhotoUploadUrl(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateProfilePhotoUploadUrlMutationResult = NonNullable<Awaited<ReturnType<typeof createProfilePhotoUploadUrl>>>
+    export type CreateProfilePhotoUploadUrlMutationBody = BodyType<ProfilePhotoUploadInput>
+    export type CreateProfilePhotoUploadUrlMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a signed upload URL for a profile photo
+ */
+export const useCreateProfilePhotoUploadUrl = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProfilePhotoUploadUrl>>, TError,{data: BodyType<ProfilePhotoUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createProfilePhotoUploadUrl>>,
+        TError,
+        {data: BodyType<ProfilePhotoUploadInput>},
+        TContext
+      > => {
+      return useMutation(getCreateProfilePhotoUploadUrlMutationOptions(options));
+    }
+
 export const getUpdateUserRoleUrl = (id: string,) => {
 
 
@@ -736,6 +886,451 @@ export const useUpdateUserRole = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getUpdateUserRoleMutationOptions(options));
     }
+
+export const getUpdateUserGradYearUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/users/${id}/grad-year`
+}
+
+/**
+ * @summary Update a user's graduation year
+ */
+export const updateUserGradYear = async (id: string,
+    updateUserGradYearRequest: UpdateUserGradYearRequest, options?: Parameters<typeof customFetch>[1]): Promise<InviteUser> => {
+
+  return customFetch<InviteUser>(getUpdateUserGradYearUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateUserGradYearRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateUserGradYearMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUserGradYear>>, TError,{id: string;data: BodyType<UpdateUserGradYearRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateUserGradYear>>, TError,{id: string;data: BodyType<UpdateUserGradYearRequest>}, TContext> => {
+
+const mutationKey = ['updateUserGradYear'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateUserGradYear>>, {id: string;data: BodyType<UpdateUserGradYearRequest>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateUserGradYear(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateUserGradYearMutationResult = NonNullable<Awaited<ReturnType<typeof updateUserGradYear>>>
+    export type UpdateUserGradYearMutationBody = BodyType<UpdateUserGradYearRequest>
+    export type UpdateUserGradYearMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a user's graduation year
+ */
+export const useUpdateUserGradYear = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUserGradYear>>, TError,{id: string;data: BodyType<UpdateUserGradYearRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateUserGradYear>>,
+        TError,
+        {id: string;data: BodyType<UpdateUserGradYearRequest>},
+        TContext
+      > => {
+      return useMutation(getUpdateUserGradYearMutationOptions(options));
+    }
+
+export const getListGuardianLinksUrl = () => {
+
+
+
+
+  return `/api/admin/guardian-links`
+}
+
+/**
+ * @summary List athlete and guardian relationships
+ */
+export const listGuardianLinks = async ( options?: Parameters<typeof customFetch>[1]): Promise<GuardianLink[]> => {
+
+  return customFetch<GuardianLink[]>(getListGuardianLinksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListGuardianLinksQueryKey = () => {
+    return [
+    `/api/admin/guardian-links`
+    ] as const;
+    }
+
+
+export const getListGuardianLinksQueryOptions = <TData = Awaited<ReturnType<typeof listGuardianLinks>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGuardianLinks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListGuardianLinksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listGuardianLinks>>> = ({ signal }) => listGuardianLinks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGuardianLinks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListGuardianLinksQueryResult = NonNullable<Awaited<ReturnType<typeof listGuardianLinks>>>
+export type ListGuardianLinksQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List athlete and guardian relationships
+ */
+
+export function useListGuardianLinks<TData = Awaited<ReturnType<typeof listGuardianLinks>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGuardianLinks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListGuardianLinksQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateGuardianLinkUrl = () => {
+
+
+
+
+  return `/api/admin/guardian-links`
+}
+
+/**
+ * @summary Link an active athlete and parent or guardian
+ */
+export const createGuardianLink = async (guardianLinkInput: GuardianLinkInput, options?: Parameters<typeof customFetch>[1]): Promise<GuardianLink> => {
+
+  return customFetch<GuardianLink>(getCreateGuardianLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(guardianLinkInput)
+  }
+);}
+
+
+
+
+
+export const getCreateGuardianLinkMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGuardianLink>>, TError,{data: BodyType<GuardianLinkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createGuardianLink>>, TError,{data: BodyType<GuardianLinkInput>}, TContext> => {
+
+const mutationKey = ['createGuardianLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGuardianLink>>, {data: BodyType<GuardianLinkInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createGuardianLink(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateGuardianLinkMutationResult = NonNullable<Awaited<ReturnType<typeof createGuardianLink>>>
+    export type CreateGuardianLinkMutationBody = BodyType<GuardianLinkInput>
+    export type CreateGuardianLinkMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Link an active athlete and parent or guardian
+ */
+export const useCreateGuardianLink = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGuardianLink>>, TError,{data: BodyType<GuardianLinkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createGuardianLink>>,
+        TError,
+        {data: BodyType<GuardianLinkInput>},
+        TContext
+      > => {
+      return useMutation(getCreateGuardianLinkMutationOptions(options));
+    }
+
+export const getDeleteGuardianLinkUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/guardian-links/${id}`
+}
+
+/**
+ * @summary Remove an athlete and guardian relationship
+ */
+export const deleteGuardianLink = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteGuardianLinkUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteGuardianLinkMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGuardianLink>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteGuardianLink>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteGuardianLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteGuardianLink>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteGuardianLink(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteGuardianLinkMutationResult = NonNullable<Awaited<ReturnType<typeof deleteGuardianLink>>>
+
+    export type DeleteGuardianLinkMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Remove an athlete and guardian relationship
+ */
+export const useDeleteGuardianLink = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGuardianLink>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteGuardianLink>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteGuardianLinkMutationOptions(options));
+    }
+
+export const getListLinkedAthletesUrl = () => {
+
+
+
+
+  return `/api/guardian/athletes`
+}
+
+/**
+ * @summary List athletes linked to the signed-in parent or guardian
+ */
+export const listLinkedAthletes = async ( options?: Parameters<typeof customFetch>[1]): Promise<LinkedAthlete[]> => {
+
+  return customFetch<LinkedAthlete[]>(getListLinkedAthletesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLinkedAthletesQueryKey = () => {
+    return [
+    `/api/guardian/athletes`
+    ] as const;
+    }
+
+
+export const getListLinkedAthletesQueryOptions = <TData = Awaited<ReturnType<typeof listLinkedAthletes>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLinkedAthletes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLinkedAthletesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLinkedAthletes>>> = ({ signal }) => listLinkedAthletes({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLinkedAthletes>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLinkedAthletesQueryResult = NonNullable<Awaited<ReturnType<typeof listLinkedAthletes>>>
+export type ListLinkedAthletesQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List athletes linked to the signed-in parent or guardian
+ */
+
+export function useListLinkedAthletes<TData = Awaited<ReturnType<typeof listLinkedAthletes>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLinkedAthletes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLinkedAthletesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListLinkedAthleteCalendarEventsUrl = (athleteId: string,) => {
+
+
+
+
+  return `/api/guardian/athletes/${athleteId}/calendar-events`
+}
+
+/**
+ * @summary List calendar events for a linked athlete's teams and global LPA events
+ */
+export const listLinkedAthleteCalendarEvents = async (athleteId: string, options?: Parameters<typeof customFetch>[1]): Promise<CalendarEvent[]> => {
+
+  return customFetch<CalendarEvent[]>(getListLinkedAthleteCalendarEventsUrl(athleteId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLinkedAthleteCalendarEventsQueryKey = (athleteId: string,) => {
+    return [
+    `/api/guardian/athletes/${athleteId}/calendar-events`
+    ] as const;
+    }
+
+
+export const getListLinkedAthleteCalendarEventsQueryOptions = <TData = Awaited<ReturnType<typeof listLinkedAthleteCalendarEvents>>, TError = ErrorType<ErrorResponse>>(athleteId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLinkedAthleteCalendarEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLinkedAthleteCalendarEventsQueryKey(athleteId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLinkedAthleteCalendarEvents>>> = ({ signal }) => listLinkedAthleteCalendarEvents(athleteId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: athleteId !== null && athleteId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLinkedAthleteCalendarEvents>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLinkedAthleteCalendarEventsQueryResult = NonNullable<Awaited<ReturnType<typeof listLinkedAthleteCalendarEvents>>>
+export type ListLinkedAthleteCalendarEventsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List calendar events for a linked athlete's teams and global LPA events
+ */
+
+export function useListLinkedAthleteCalendarEvents<TData = Awaited<ReturnType<typeof listLinkedAthleteCalendarEvents>>, TError = ErrorType<ErrorResponse>>(
+ athleteId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLinkedAthleteCalendarEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLinkedAthleteCalendarEventsQueryOptions(athleteId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListCalendarEventsUrl = (params?: ListCalendarEventsParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -890,6 +1485,77 @@ export const useCreateCalendarEvent = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateCalendarEventMutationOptions(options));
+    }
+
+export const getCreateRepeatedCalendarEventsUrl = () => {
+
+
+
+
+  return `/api/admin/calendar-events/repeat`
+}
+
+/**
+ * @summary Create daily repeated calendar events
+ */
+export const createRepeatedCalendarEvents = async (createRepeatedCalendarEventsRequest: CreateRepeatedCalendarEventsRequest, options?: Parameters<typeof customFetch>[1]): Promise<CalendarEvent[]> => {
+
+  return customFetch<CalendarEvent[]>(getCreateRepeatedCalendarEventsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createRepeatedCalendarEventsRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateRepeatedCalendarEventsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRepeatedCalendarEvents>>, TError,{data: BodyType<CreateRepeatedCalendarEventsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createRepeatedCalendarEvents>>, TError,{data: BodyType<CreateRepeatedCalendarEventsRequest>}, TContext> => {
+
+const mutationKey = ['createRepeatedCalendarEvents'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRepeatedCalendarEvents>>, {data: BodyType<CreateRepeatedCalendarEventsRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createRepeatedCalendarEvents(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateRepeatedCalendarEventsMutationResult = NonNullable<Awaited<ReturnType<typeof createRepeatedCalendarEvents>>>
+    export type CreateRepeatedCalendarEventsMutationBody = BodyType<CreateRepeatedCalendarEventsRequest>
+    export type CreateRepeatedCalendarEventsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create daily repeated calendar events
+ */
+export const useCreateRepeatedCalendarEvents = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRepeatedCalendarEvents>>, TError,{data: BodyType<CreateRepeatedCalendarEventsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createRepeatedCalendarEvents>>,
+        TError,
+        {data: BodyType<CreateRepeatedCalendarEventsRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateRepeatedCalendarEventsMutationOptions(options));
     }
 
 export const getListSharedCalendarEventsUrl = (params?: ListSharedCalendarEventsParams,) => {
@@ -1072,14 +1738,14 @@ export const getUpdateCalendarEventUrl = (id: string,) => {
  * @summary Update a calendar event
  */
 export const updateCalendarEvent = async (id: string,
-    calendarEventInput: CalendarEventInput, options?: Parameters<typeof customFetch>[1]): Promise<CalendarEvent> => {
+    updateCalendarEventRequest: UpdateCalendarEventRequest, options?: Parameters<typeof customFetch>[1]): Promise<CalendarEvent> => {
 
   return customFetch<CalendarEvent>(getUpdateCalendarEventUrl(id),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(calendarEventInput)
+    body: JSON.stringify(updateCalendarEventRequest)
   }
 );}
 
@@ -1088,8 +1754,8 @@ export const updateCalendarEvent = async (id: string,
 
 
 export const getUpdateCalendarEventMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCalendarEvent>>, TError,{id: string;data: BodyType<CalendarEventInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof updateCalendarEvent>>, TError,{id: string;data: BodyType<CalendarEventInput>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCalendarEvent>>, TError,{id: string;data: BodyType<UpdateCalendarEventRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCalendarEvent>>, TError,{id: string;data: BodyType<UpdateCalendarEventRequest>}, TContext> => {
 
 const mutationKey = ['updateCalendarEvent'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -1101,7 +1767,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCalendarEvent>>, {id: string;data: BodyType<CalendarEventInput>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCalendarEvent>>, {id: string;data: BodyType<UpdateCalendarEventRequest>}> = (props) => {
           const {id,data} = props ?? {};
 
           return  updateCalendarEvent(id,data,requestOptions)
@@ -1115,18 +1781,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type UpdateCalendarEventMutationResult = NonNullable<Awaited<ReturnType<typeof updateCalendarEvent>>>
-    export type UpdateCalendarEventMutationBody = BodyType<CalendarEventInput>
+    export type UpdateCalendarEventMutationBody = BodyType<UpdateCalendarEventRequest>
     export type UpdateCalendarEventMutationError = ErrorType<unknown>
 
     /**
  * @summary Update a calendar event
  */
 export const useUpdateCalendarEvent = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCalendarEvent>>, TError,{id: string;data: BodyType<CalendarEventInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCalendarEvent>>, TError,{id: string;data: BodyType<UpdateCalendarEventRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateCalendarEvent>>,
         TError,
-        {id: string;data: BodyType<CalendarEventInput>},
+        {id: string;data: BodyType<UpdateCalendarEventRequest>},
         TContext
       > => {
       return useMutation(getUpdateCalendarEventMutationOptions(options));
