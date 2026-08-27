@@ -13,6 +13,7 @@ type Chat = {
   id: string;
   name: string;
   members: { id: string; fullName: string }[];
+  unreadCount: number;
   lastMessage: { id: string; senderId: string; text: string } | null;
 };
 type AlertMessage = { conversationId: string; messageId: string; title: string; body: string };
@@ -85,7 +86,7 @@ export function MessageNotificationCenter() {
     }
     for (const chat of currentChats) {
       const last = chat.lastMessage;
-      if (!last) continue;
+      if (!last || chat.unreadCount <= 0) continue;
       if (last.senderId === user.id) {
         remember(last.id);
         continue;
@@ -106,12 +107,6 @@ export function MessageNotificationCenter() {
     });
     const received = addPushReceivedListener((notification) => {
       invalidate(notification.conversationId);
-      show({
-        conversationId: notification.conversationId,
-        messageId: notification.messageId ?? `push-${notification.conversationId}-${notification.body}`,
-        title: notification.title,
-        body: notification.body,
-      });
     });
     return () => { response.remove(); received.remove(); };
   }, [pathname, queryClient, router, show]);
