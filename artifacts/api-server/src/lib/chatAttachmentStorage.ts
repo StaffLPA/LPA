@@ -34,6 +34,17 @@ export async function createChatAttachmentUpload() {
   return { uploadURL, objectPath: `/objects/uploads/${object.split("/").pop()}` };
 }
 
+export async function storeChatAttachment(bytes: Uint8Array, contentType: string) {
+  const { uploadURL, objectPath } = await createChatAttachmentUpload();
+  const response = await fetch(uploadURL, {
+    method: "PUT",
+    headers: { "content-type": contentType },
+    body: bytes,
+  });
+  if (!response.ok) throw new Error("Could not store the attachment.");
+  return { objectPath };
+}
+
 async function signedObjectURL(bucket: string, object: string, method: "PUT" | "GET") {
   const response = await fetch(`${sidecar}/object-storage/signed-object-url`, {
     method: "POST",
