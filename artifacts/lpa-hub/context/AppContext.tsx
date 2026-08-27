@@ -7,10 +7,12 @@ import { createSharedSyncCoordinator, startSharedSyncTriggers } from './live-syn
 import { requestMessagePushToken, type RegisteredPushToken } from '@/lib/messagePushNotifications';
 
 export type Role = 'Admin' | 'Staff-Coach' | 'Parent-Athlete' | 'Athlete';
-export type StoredUser = { id: string; fullName: string; firstName?: string | null; lastName?: string | null; email?: string | null; phone?: string | null; address?: string | null; birthday?: string | null; gender?: string | null; role: Role; status: string; teams: string[]; photoUri?: string | null; profilePhotoUri?: string | null };
+export type StoredUser = { id: string; fullName: string; firstName?: string | null; lastName?: string | null; email?: string | null; phone?: string | null; address?: string | null; birthday?: string | null; gender?: string | null; role: Role; status: string; teams: string[]; photoUri?: string | null; profilePhotoUri?: string | null; profilePhotoPath?: string | null };
 export type Message = { id: string; sender: string; initials: string; text: string; time: string; unread?: number; color: string };
 export type Submission = { id: string; type: string; date: string; status: 'Submitted' | 'Reviewing' };
-export const LIVE_DATA_REFRESH_MS = Platform.OS === 'android' ? 15_000 : 5_000;
+// Focus and foreground events still refresh immediately; the timer is a
+// fallback for active sessions and must remain gentle with many clients.
+export const LIVE_DATA_REFRESH_MS = 30_000;
 let sessionToken: string | null = null;
 
 type AppContextValue = {
