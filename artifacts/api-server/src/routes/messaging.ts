@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray } from "drizzle-orm";
-import { createChatAttachmentDownloadURL, createChatAttachmentUpload, getChatAttachmentFile } from "../lib/chatAttachmentStorage";
+import express, { Router, type IRouter } from "express";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { createChatAttachmentDownloadURL, createChatAttachmentUpload, getChatAttachmentFile, storeChatAttachment } from "../lib/chatAttachmentStorage";
 import {
   conversationMembersTable,
   conversationReadStatesTable,
@@ -127,24 +127,55 @@ router.get("/chats", async (req, res) => {
   const conversationIds = memberships.map((membership) => membership.conversationId);
   const conversations = await db.select().from(conversationsTable).where(inArray(conversationsTable.id, conversationIds)).orderBy(desc(conversationsTable.createdAt));
   const allMembers = await db.select({ conversationId: conversationMembersTable.conversationId, user: usersTable }).from(conversationMembersTable).innerJoin(usersTable, eq(conversationMembersTable.userId, usersTable.id)).where(inArray(conversationMembersTable.conversationId, conversationIds));
-  const readStates = await db.select().from(conversationReadStatesTable).where(eq(conversationReadStatesTable.userId, user.id));
-  const messages = await db.select().from(messagesTable).where(inArray(messagesTable.conversationId, conversationIds));
+  const [latestMessages, unreadRows] = await Promise.all([
+    db.execute(sql`
+      SELECT DISTINCT ON (conversation_id)
+        id, conversation_id, sender_id, text, created_at
+      FROM messages
+      WHERE conversation_id IN (${sql.join(conversationIds.map((conversationId) => sql`${conversationId}`), sql`, `)})
+      ORDER BY conversation_id, created_at DESC
+    `),
+    db.execute(sql`
+      SELECT m.conversation_id, COUNT(*)::int AS unread_count
+      FROM messages m
+      INNER JOIN conversation_members cm
+        ON cm.conversation_id = m.conversation_id AND cm.user_id = ${user.id}
+      INNER JOIN conversations c ON c.id = m.conversation_id
+      LEFT JOIN conversation_read_states crs
+        ON crs.conversation_id = m.conversation_id AND crs.user_id = ${user.id}
+      WHERE m.sender_id <> ${user.id}
+        AND m.created_at > COALESCE(crs.last_read_at, cm.joined_at, c.created_at)
+      GROUP BY m.conversation_id
+    `),
+  ]);
   const lastByConversation = new Map<string, typeof messagesTable.$inferSelect>();
-  const unreadByConversation = new Map<string, number>();
-  for (const conversation of conversations) {
-    const membership = memberships.find((item) => item.conversationId === conversation.id);
-    const readState = readStates.find((item) => item.conversationId === conversation.id);
-    const baseline = readState?.lastReadAt ?? membership?.joinedAt ?? conversation.createdAt;
-    unreadByConversation.set(conversation.id, 0);
-    for (const message of messages.filter((item) => item.conversationId === conversation.id)) {
-      const latest = lastByConversation.get(conversation.id);
-      if (!latest || message.createdAt > latest.createdAt) lastByConversation.set(conversation.id, message);
-      if (message.senderId !== user.id && message.createdAt > baseline) {
-        unreadByConversation.set(conversation.id, (unreadByConversation.get(conversation.id) ?? 0) + 1);
-      }
-    }
+  for (const row of latestMessages.rows) {
+    const message = row as Record<string, unknown>;
+    lastByConversation.set(String(message.conversation_id), {
+      id: String(message.id),
+      conversationId: String(message.conversation_id),
+      senderId: String(message.sender_id),
+      text: String(message.text ?? ""),
+      createdAt: new Date(String(message.created_at)),
+    });
   }
-  res.json(conversations.map((conversation) => mapConversation(conversation, lastByConversation.get(conversation.id), allMembers.filter((member) => member.conversationId === conversation.id).map((member) => member.user), user.id, unreadByConversation.get(conversation.id) ?? 0)));
+  const unreadByConversation = new Map(unreadRows.rows.map((row) => {
+    const item = row as Record<string, unknown>;
+    return [String(item.conversation_id), Number(item.unread_count)] as const;
+  }));
+  const membersByConversation = new Map<string, User[]>();
+  for (const member of allMembers) {
+    const current = membersByConversation.get(member.conversationId) ?? [];
+    current.push(member.user);
+    membersByConversation.set(member.conversationId, current);
+  }
+  res.json(conversations.map((conversation) => mapConversation(
+    conversation,
+    lastByConversation.get(conversation.id),
+    membersByConversation.get(conversation.id) ?? [],
+    user.id,
+    unreadByConversation.get(conversation.id) ?? 0,
+  )));
 });
 
 router.post("/push-tokens", async (req, res) => {
@@ -188,7 +219,7 @@ router.post("/chats", async (req, res) => {
     if (!requireAdmin(user, res)) return;
     if (!name || !userIds.length) { res.status(400).json({ message: "A group name and at least one participant are required." }); return; }
   } else if (type !== "direct" || userIds.length !== 1 || userIds[0] === user.id) {
-    res.status(400).json({ message: "New conversations must be direct messages with one other active LPA Hub user." }); return;
+    res.status(400).json({ message: "New conversations must be direct messages with one other active LPA user." }); return;
   }
   const activeMembers = await db.select().from(usersTable).where(and(inArray(usersTable.id, userIds), eq(usersTable.status, "active")));
   if (activeMembers.length !== userIds.length) { res.status(400).json({ message: "Every selected member must be active." }); return; }
@@ -241,7 +272,7 @@ router.post("/chats/:conversationId/members", async (req, res) => {
   const userId = value(req.body.userId);
   if (!userId) { res.status(400).json({ message: "A participant is required." }); return; }
   const [candidate] = await db.select().from(usersTable).where(and(eq(usersTable.id, userId), eq(usersTable.status, "active"))).limit(1);
-  if (!candidate) { res.status(400).json({ message: "The participant must be an active LPA Hub user." }); return; }
+  if (!candidate) { res.status(400).json({ message: "The participant must be an active LPA user." }); return; }
   if (await isMember(conversation.id, userId)) { res.status(409).json({ message: "That person is already a participant." }); return; }
   await db.insert(conversationMembersTable).values({ id: id(), conversationId: conversation.id, userId });
   res.status(201).json({ id: candidate.id, fullName: candidate.fullName, role: candidate.role });
@@ -276,6 +307,25 @@ router.post("/chats/:conversationId/attachments/upload-url", async (req, res) =>
   if (!attachment) { res.status(400).json({ message: "Choose an image, PDF, text document, Word document, or file up to 10 MB." }); return; }
   const upload = await createChatAttachmentUpload();
   res.status(201).json(upload);
+});
+
+router.post("/chats/:conversationId/attachments/upload", express.raw({ type: "*/*", limit: maximumAttachmentBytes }), async (req, res) => {
+  const user = await requireSession(req, res); if (!user) return;
+  if (!await isMember(req.params.conversationId, user.id)) { res.status(403).json({ message: "You are not a member of this conversation." }); return; }
+  const fileName = value(req.query.fileName);
+  const contentType = req.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  const bytes = Buffer.isBuffer(req.body) ? req.body : null;
+  if (!fileName || !isAllowedAttachment(contentType) || !bytes?.length || bytes.length > maximumAttachmentBytes) {
+    res.status(400).json({ message: "Choose an image, PDF, text document, Word document, or file up to 10 MB." });
+    return;
+  }
+  try {
+    const upload = await storeChatAttachment(bytes, contentType);
+    res.status(201).json(upload);
+  } catch (error) {
+    req.log.warn({ err: error, conversationId: req.params.conversationId }, "Chat attachment upload failed");
+    res.status(502).json({ message: "Could not upload the attachment. Please try again." });
+  }
 });
 
 router.post("/chats/:conversationId/messages", async (req, res) => {
