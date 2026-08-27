@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
 
@@ -18,6 +18,7 @@ export const conversationMembersTable = pgTable("conversation_members", {
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   conversationUserUnique: uniqueIndex("conversation_members_conversation_user_unique").on(table.conversationId, table.userId),
+  userConversationIndex: index("conversation_members_user_conversation_idx").on(table.userId, table.conversationId),
 }));
 
 export const conversationReadStatesTable = pgTable("conversation_read_states", {
@@ -28,6 +29,7 @@ export const conversationReadStatesTable = pgTable("conversation_read_states", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   conversationUserUnique: uniqueIndex("conversation_read_states_conversation_user_unique").on(table.conversationId, table.userId),
+  userConversationIndex: index("conversation_read_states_user_conversation_idx").on(table.userId, table.conversationId),
 }));
 
 export const pushDevicesTable = pgTable("push_devices", {
@@ -39,6 +41,7 @@ export const pushDevicesTable = pgTable("push_devices", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   expoPushTokenUnique: uniqueIndex("push_devices_expo_push_token_unique").on(table.expoPushToken),
+  userIndex: index("push_devices_user_idx").on(table.userId),
 }));
 
 export const messagesTable = pgTable("messages", {
@@ -47,7 +50,9 @@ export const messagesTable = pgTable("messages", {
   senderId: text("sender_id").notNull(),
   text: text("text").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  conversationCreatedIndex: index("messages_conversation_created_idx").on(table.conversationId, table.createdAt),
+}));
 
 export const messageAttachmentsTable = pgTable("message_attachments", {
   id: text("id").primaryKey(),
@@ -57,7 +62,9 @@ export const messageAttachmentsTable = pgTable("message_attachments", {
   contentType: text("content_type").notNull(),
   size: integer("size").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  messageIndex: index("message_attachments_message_idx").on(table.messageId),
+}));
 
 export const insertConversationSchema = createInsertSchema(conversationsTable).omit({ createdAt: true });
 export const insertConversationMemberSchema = createInsertSchema(conversationMembersTable).omit({ joinedAt: true });
