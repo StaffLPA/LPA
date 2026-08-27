@@ -67,7 +67,14 @@ export default function MessagesScreen() {
       return next;
     });
   }, [hiddenConversationsKey]);
-  const confirmHideConversation = useCallback((conversationId: string) => Alert.alert('Delete for me?', 'This conversation will be removed only from your view. Other participants will still see the conversation and its messages.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', style: 'destructive', onPress: () => hideConversationForMe(conversationId) }]), [hideConversationForMe]);
+  const confirmHideConversation = useCallback((conversationId: string) => {
+    const complete = () => hideConversationForMe(conversationId);
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Delete for me?\n\nThis conversation will be removed only from your view.')) complete();
+      return;
+    }
+    Alert.alert('Delete for me?', 'This conversation will be removed only from your view. Other participants will still see the conversation and its messages.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', style: 'destructive', onPress: complete }]);
+  }, [hideConversationForMe]);
   const openConversation = useCallback((conversationId: string) => router.push(('/chat/' + conversationId) as never), [router]);
   const renderConversation = useCallback(({ item }: { item: Chat }) => <ConversationRow item={item} colors={colors} onOpen={openConversation} onDelete={confirmHideConversation} />, [colors, confirmHideConversation, openConversation]);
   const conversationKey = useCallback((item: Chat) => item.id, []);
@@ -77,7 +84,7 @@ export default function MessagesScreen() {
       <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="search" size={17} color={colors.mutedForeground} /><TextInput testID="message-search" value={query} onChangeText={setQuery} placeholder="Search conversations" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>
        <View style={styles.filters}>{['All', 'Direct'].map((item) => <Pressable key={item} onPress={() => setFilter(item)} style={[styles.filter, { backgroundColor: filter === item ? colors.foreground : colors.card, borderColor: colors.border }]}><Text style={[styles.filterText, { color: filter === item ? colors.background : colors.mutedForeground }]}>{item}</Text></Pressable>)}</View>
     </View>
-      {chats.isLoading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : chats.isError ? <State title="Unable to load conversations" copy="Check your connection and try again." colors={colors} onRetry={() => void chats.refetch()} /> : <FlatList data={filtered} keyExtractor={conversationKey} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 30, paddingTop: 10 }} renderItem={renderConversation} removeClippedSubviews={Platform.OS === 'android'} initialNumToRender={10} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50} getItemLayout={(_, index) => ({ length: 76, offset: 76 * index, index })} ListEmptyComponent={<State title="No conversations yet" copy="Start a private direct message with an active LPA Hub member." colors={colors} />} />}
+      {chats.isLoading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : chats.isError ? <State title="Unable to load conversations" copy="Check your connection and try again." colors={colors} onRetry={() => void chats.refetch()} /> : <FlatList data={filtered} keyExtractor={conversationKey} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 30, paddingTop: 10 }} renderItem={renderConversation} removeClippedSubviews={Platform.OS === 'android'} initialNumToRender={10} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50} getItemLayout={(_, index) => ({ length: 76, offset: 76 * index, index })} ListEmptyComponent={<State title="No conversations yet" copy="Start a private direct message with an active LPA member." colors={colors} />} />}
   </View>;
 }
 
