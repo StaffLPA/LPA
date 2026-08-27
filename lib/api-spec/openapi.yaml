@@ -75,6 +75,43 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/InviteUser"
+  /admin/users/{id}:
+    delete:
+      operationId: deleteUserProfile
+      tags: [invites]
+      summary: Permanently delete an LPA user profile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Profile deleted
+        "400":
+          description: An Admin cannot delete their own profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Cannot delete the last active Admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /admin/invites/{id}/resend:
     post:
       operationId: resendInvite
@@ -169,6 +206,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/profile-photo/upload-url:
+    post:
+      operationId: createProfilePhotoUploadUrl
+      tags: [invites]
+      summary: Create a signed upload URL for a profile photo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfilePhotoUploadInput"
+      responses:
+        "201":
+          description: Signed upload URL and storage path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfilePhotoUpload"
+        "400":
+          description: Unsupported image or image exceeds the maximum size
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /admin/users/{id}/role:
     patch:
       operationId: updateUserRole
@@ -192,6 +253,166 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InviteUser"
+  /admin/users/{id}/grad-year:
+    patch:
+      operationId: updateUserGradYear
+      tags: [invites]
+      summary: Update a user's graduation year
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserGradYearRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteUser"
+  /admin/guardian-links:
+    get:
+      operationId: listGuardianLinks
+      tags: [guardian-links]
+      summary: List athlete and guardian relationships
+      responses:
+        "200":
+          description: Athlete and guardian relationships
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GuardianLink"
+        "403":
+          description: Full Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createGuardianLink
+      tags: [guardian-links]
+      summary: Link an active athlete and parent or guardian
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuardianLinkInput"
+      responses:
+        "201":
+          description: Relationship created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardianLink"
+        "400":
+          description: Invalid relationship
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Full Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Relationship already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /admin/guardian-links/{id}:
+    delete:
+      operationId: deleteGuardianLink
+      tags: [guardian-links]
+      summary: Remove an athlete and guardian relationship
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Relationship removed
+        "403":
+          description: Full Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Relationship not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /guardian/athletes:
+    get:
+      operationId: listLinkedAthletes
+      tags: [guardian-links]
+      summary: List athletes linked to the signed-in parent or guardian
+      responses:
+        "200":
+          description: Linked athletes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LinkedAthlete"
+        "403":
+          description: Parent or guardian access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /guardian/athletes/{athleteId}/calendar-events:
+    get:
+      operationId: listLinkedAthleteCalendarEvents
+      tags: [guardian-links]
+      summary: List calendar events for a linked athlete's teams and global LPA events
+      parameters:
+        - in: path
+          name: athleteId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Linked athlete calendar events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CalendarEvent"
+        "403":
+          description: Parent or guardian access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Linked athlete not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /admin/calendar-events:
     get:
       operationId: listCalendarEvents
@@ -227,6 +448,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CalendarEvent"
+  /admin/calendar-events/repeat:
+    post:
+      operationId: createRepeatedCalendarEvents
+      tags: [calendar]
+      summary: Create daily repeated calendar events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRepeatedCalendarEventsRequest"
+      responses:
+        "201":
+          description: Created repeated events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CalendarEvent"
   /calendar-events:
     get:
       operationId: listSharedCalendarEvents
@@ -285,7 +526,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CalendarEventInput"
+                $ref: "#/components/schemas/UpdateCalendarEventRequest"
       responses:
         "200":
           description: Updated event
@@ -845,6 +1086,16 @@ components:
         teams:
           type: array
           items: { type: string }
+        gradYear:
+          type: string
+          enum: ["2027", "2028", "2029", "2030", "2031", "2032", "2033", "Post Grad"]
+    UpdateUserGradYearRequest:
+      type: object
+      required: [gradYear]
+      properties:
+        gradYear:
+          type: string
+          enum: ["2027", "2028", "2029", "2030", "2031", "2032", "2033", "Post Grad"]
     InviteUser:
       type: object
       required: [id, fullName, role, status, teams, invitedAt]
@@ -860,6 +1111,10 @@ components:
         teams:
           type: array
           items: { type: string }
+        gradYear:
+          type: string
+          nullable: true
+          enum: ["2027", "2028", "2029", "2030", "2031", "2032", "2033", "Post Grad"]
         invitedAt: { type: string, format: date-time }
         inviteExpiresAt: { type: string, format: date-time, nullable: true }
     ErrorResponse:
@@ -867,6 +1122,44 @@ components:
       required: [message]
       properties:
         message: { type: string }
+    LinkedAthlete:
+      type: object
+      required: [id, fullName, role, teams]
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        firstName: { type: string, nullable: true }
+        lastName: { type: string, nullable: true }
+        gradYear: { type: string, nullable: true }
+        role: { type: string, enum: [Athlete] }
+        teams:
+          type: array
+          items: { type: string }
+        profilePhotoUri: { type: string, nullable: true }
+    LinkedGuardian:
+      type: object
+      required: [id, fullName, role]
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+        role: { type: string, enum: [Parent-Athlete] }
+        profilePhotoUri: { type: string, nullable: true }
+    GuardianLink:
+      type: object
+      required: [id, athlete, guardian, createdAt]
+      properties:
+        id: { type: string }
+        athlete:
+          $ref: "#/components/schemas/LinkedAthlete"
+        guardian:
+          $ref: "#/components/schemas/LinkedGuardian"
+        createdAt: { type: string, format: date-time }
+    GuardianLinkInput:
+      type: object
+      required: [athleteId, guardianId]
+      properties:
+        athleteId: { type: string, minLength: 1 }
+        guardianId: { type: string, minLength: 1 }
     InviteLookupRequest:
       type: object
       required: [identifier]
@@ -897,6 +1190,20 @@ components:
       properties:
         identifier: { type: string, minLength: 3 }
         password: { type: string, minLength: 8 }
+    ProfilePhotoUploadInput:
+      type: object
+      required: [contentType, size]
+      properties:
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        size: { type: number, minimum: 1, maximum: 5242880 }
+    ProfilePhotoUpload:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL: { type: string }
+        objectPath:
+          type: string
+          pattern: '^/objects/profile-photos/[a-f0-9-]{36}$'
     SessionResponse:
       type: object
       required: [user, sessionToken]
@@ -921,9 +1228,27 @@ components:
           pattern: '^\d{4}-\d{2}-\d{2}$'
         time:
           type: string
-          pattern: '^(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d)$'
+          pattern: '^(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d)(?:\s-\s(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d))?$'
         location: { type: string }
         team: { type: string }
+    CreateRepeatedCalendarEventsRequest:
+      allOf:
+        - $ref: "#/components/schemas/CalendarEventInput"
+        - type: object
+          required: [repeatUntil]
+          properties:
+            repeatUntil:
+              type: string
+              description: The inclusive end date for daily repeats in ISO YYYY-MM-DD format.
+              pattern: '^\d{4}-\d{2}-\d{2}$'
+    UpdateCalendarEventRequest:
+      allOf:
+        - $ref: "#/components/schemas/CalendarEventInput"
+        - type: object
+          properties:
+            applyToRemainingRepeatEvents:
+              type: boolean
+              description: When true, applies title, time, location, and team changes to later events in the same repeat series through its inclusive Until date.
     CalendarEvent:
       type: object
       required: [id, title, date, time, location, team, createdBy, createdAt, updatedAt]
@@ -934,6 +1259,8 @@ components:
         time: { type: string }
         location: { type: string }
         team: { type: string }
+        repeatSeriesId: { type: string, nullable: true }
+        repeatUntil: { type: string, format: date, nullable: true }
         createdBy: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
