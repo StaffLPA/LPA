@@ -196,6 +196,20 @@ export const UserStatus = {
   revoked: 'revoked',
 } as const;
 
+export type CreateInviteRequestGradYear = typeof CreateInviteRequestGradYear[keyof typeof CreateInviteRequestGradYear];
+
+
+export const CreateInviteRequestGradYear = {
+  NUMBER_2027: '2027',
+  NUMBER_2028: '2028',
+  NUMBER_2029: '2029',
+  NUMBER_2030: '2030',
+  NUMBER_2031: '2031',
+  NUMBER_2032: '2032',
+  NUMBER_2033: '2033',
+  Post_Grad: 'Post Grad',
+} as const;
+
 export interface CreateInviteRequest {
   /** @minLength 2 */
   fullName: string;
@@ -203,7 +217,40 @@ export interface CreateInviteRequest {
   phone?: string;
   role: UserRole;
   teams?: string[];
+  gradYear?: CreateInviteRequestGradYear;
 }
+
+export type UpdateUserGradYearRequestGradYear = typeof UpdateUserGradYearRequestGradYear[keyof typeof UpdateUserGradYearRequestGradYear];
+
+
+export const UpdateUserGradYearRequestGradYear = {
+  NUMBER_2027: '2027',
+  NUMBER_2028: '2028',
+  NUMBER_2029: '2029',
+  NUMBER_2030: '2030',
+  NUMBER_2031: '2031',
+  NUMBER_2032: '2032',
+  NUMBER_2033: '2033',
+  Post_Grad: 'Post Grad',
+} as const;
+
+export interface UpdateUserGradYearRequest {
+  gradYear: UpdateUserGradYearRequestGradYear;
+}
+
+export type InviteUserGradYear = typeof InviteUserGradYear[keyof typeof InviteUserGradYear] | null;
+
+
+export const InviteUserGradYear = {
+  NUMBER_2027: '2027',
+  NUMBER_2028: '2028',
+  NUMBER_2029: '2029',
+  NUMBER_2030: '2030',
+  NUMBER_2031: '2031',
+  NUMBER_2032: '2032',
+  NUMBER_2033: '2033',
+  Post_Grad: 'Post Grad',
+} as const;
 
 export interface InviteUser {
   id: string;
@@ -213,12 +260,59 @@ export interface InviteUser {
   role: UserRole;
   status: UserStatus;
   teams: string[];
+  gradYear?: InviteUserGradYear;
   invitedAt: string;
   inviteExpiresAt?: string | null;
 }
 
 export interface ErrorResponse {
   message: string;
+}
+
+export type LinkedAthleteRole = typeof LinkedAthleteRole[keyof typeof LinkedAthleteRole];
+
+
+export const LinkedAthleteRole = {
+  Athlete: 'Athlete',
+} as const;
+
+export interface LinkedAthlete {
+  id: string;
+  fullName: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  gradYear?: string | null;
+  role: LinkedAthleteRole;
+  teams: string[];
+  profilePhotoUri?: string | null;
+}
+
+export type LinkedGuardianRole = typeof LinkedGuardianRole[keyof typeof LinkedGuardianRole];
+
+
+export const LinkedGuardianRole = {
+  'Parent-Athlete': 'Parent-Athlete',
+} as const;
+
+export interface LinkedGuardian {
+  id: string;
+  fullName: string;
+  role: LinkedGuardianRole;
+  profilePhotoUri?: string | null;
+}
+
+export interface GuardianLink {
+  id: string;
+  athlete: LinkedAthlete;
+  guardian: LinkedGuardian;
+  createdAt: string;
+}
+
+export interface GuardianLinkInput {
+  /** @minLength 1 */
+  athleteId: string;
+  /** @minLength 1 */
+  guardianId: string;
 }
 
 export interface InviteLookupRequest {
@@ -258,6 +352,30 @@ export interface SignInRequest {
   password: string;
 }
 
+export type ProfilePhotoUploadInputContentType = typeof ProfilePhotoUploadInputContentType[keyof typeof ProfilePhotoUploadInputContentType];
+
+
+export const ProfilePhotoUploadInputContentType = {
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/webp': 'image/webp',
+} as const;
+
+export interface ProfilePhotoUploadInput {
+  contentType: ProfilePhotoUploadInputContentType;
+  /**
+     * @minimum 1
+     * @maximum 5242880
+     */
+  size: number;
+}
+
+export interface ProfilePhotoUpload {
+  uploadURL: string;
+  /** @pattern ^/objects/profile-photos/[a-f0-9-]{36}$ */
+  objectPath: string;
+}
+
 export interface SessionResponse {
   user: InviteUser;
   sessionToken: string;
@@ -275,11 +393,24 @@ export interface CalendarEventInput {
      * @pattern ^\d{4}-\d{2}-\d{2}$
      */
   date: string;
-  /** @pattern ^(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d)$ */
+  /** @pattern ^(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d)(?:\s-\s(?:(?:[1-9]|1[0-2]):[0-5]\d\s(?:AM|PM)|(?:[01]\d|2[0-3]):[0-5]\d))?$ */
   time: string;
   location?: string;
   team?: string;
 }
+
+export type CreateRepeatedCalendarEventsRequest = CalendarEventInput & {
+  /**
+     * The inclusive end date for daily repeats in ISO YYYY-MM-DD format.
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  repeatUntil: string;
+};
+
+export type UpdateCalendarEventRequest = CalendarEventInput & {
+  /** When true, applies title, time, location, and team changes to later events in the same repeat series through its inclusive Until date. */
+  applyToRemainingRepeatEvents?: boolean;
+};
 
 export interface CalendarEvent {
   id: string;
@@ -288,6 +419,8 @@ export interface CalendarEvent {
   time: string;
   location: string;
   team: string;
+  repeatSeriesId?: string | null;
+  repeatUntil?: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
