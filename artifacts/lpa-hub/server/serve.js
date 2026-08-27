@@ -3,7 +3,8 @@
  *
  * Serves the output of build.js (static-build/) with two special routes:
  * - GET / or /manifest with expo-platform header → platform manifest JSON
- * - GET / without expo-platform → landing page HTML
+ * - GET / without expo-platform → the Expo web application
+ * - GET /download → the mobile download/deep-link landing page
  * Everything else falls through to static file serving from ./static-build/.
  *
  * Zero external dependencies — uses only Node.js built-ins (http, fs, path).
@@ -157,11 +158,10 @@ const server = http.createServer((req, res) => {
       return serveManifest(platform, res);
     }
 
-    if (pathname === '/') {
-      return serveLandingPage(req, res, landingPageTemplate, appName);
-    }
+    if (pathname === '/') return serveWebEntry(res);
   }
 
+  if (pathname === '/download') return serveLandingPage(req, res, landingPageTemplate, appName);
   if (serveStaticFile(pathname, res)) return;
   if (!path.extname(pathname)) return serveWebEntry(res);
   res.writeHead(404);
