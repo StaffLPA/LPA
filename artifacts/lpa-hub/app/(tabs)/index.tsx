@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -55,12 +55,12 @@ export default function HomeScreen() {
             <Text style={[styles.title, { color: colors.foreground }]}>Good morning, {firstName}</Text>
           </View>
            <Pressable testID="profile-button" onPress={() => router.push('/account')} style={[styles.avatar, { backgroundColor: colors.primary }]}>
-            <Text style={styles.avatarText}>{initialsFor(user?.fullName ?? '')}</Text>
+             {user?.profilePhotoUri ? <Image source={{ uri: user.profilePhotoUri }} accessibilityLabel="Your profile picture" resizeMode="cover" style={styles.avatarImage} /> : <Text style={styles.avatarText}>{initialsFor(user?.fullName ?? '')}</Text>}
           </Pressable>
         </View>
 
         <LinearGradient colors={['#050505', '#21150F']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
-          <View style={styles.heroTop}><View style={styles.liveDot} /><Text style={styles.heroLabel}>LPA HUB · {role.toUpperCase()}</Text></View>
+          <View style={styles.heroTop}><View style={styles.liveDot} /><Text style={styles.heroLabel}>LPA · {role.toUpperCase()}</Text></View>
           <Text style={styles.heroTitle}>Your team,{'\n'}in sync.</Text>
           <Text style={styles.heroCopy}>Everything your family needs for a smoother season.</Text>
            <Pressable testID="messages-shortcut" onPress={() => router.push('/(tabs)/messages')} style={styles.heroButton}><Text style={styles.heroButtonText}>Open messages</Text><LpaIcon name="arrow-up-right" size={16} color="#050505" /></Pressable>
@@ -71,7 +71,7 @@ export default function HomeScreen() {
         <View style={styles.quickGrid}>
            <QuickAction icon="message-circle" label="Messages" tint="#AB562B" onPress={() => router.push('/(tabs)/messages')} colors={colors} />
           <QuickAction icon="calendar" label="Calendar" tint="#9BC7BD" onPress={() => router.push('/(tabs)/calendar')} colors={colors} />
-          <QuickAction icon="file-text" label="ParentHub" tint="#D7B56D" onPress={() => router.push('/(tabs)/parenthub')} colors={colors} />
+           <QuickAction icon="file-text" label="Parent Hub" tint="#D7B56D" onPress={() => router.push('/(tabs)/parenthub')} colors={colors} />
           <QuickAction icon="users" label="Contacts" tint="#C88A62" onPress={() => router.push('/(tabs)/more')} colors={colors} />
         </View>
 
@@ -82,7 +82,7 @@ export default function HomeScreen() {
             const eventColor = teamColors[event.team] ?? colors.primary;
             return <View key={event.id} style={[styles.event, index < upcomingEvents.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
               <View style={[styles.dateBlock, { backgroundColor: `${eventColor}18` }]}><Text style={[styles.dateDay, { color: eventColor }]}>{eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</Text><Text style={[styles.dateNumber, { color: colors.foreground }]}>{eventDate.getDate()}</Text></View>
-              <View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{event.title}</Text><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{event.time}  ·  {event.location}</Text></View>
+               <View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{event.title}</Text><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{eventDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}  ·  {event.time}  ·  {event.location}</Text></View>
             </View>;
            }) : <View style={styles.emptyEvents}><LpaIcon name="calendar" size={20} color={colors.mutedForeground} /><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{calendar.isError ? 'Calendar could not sync.' : 'No upcoming events.'}</Text></View>}
         </View>
@@ -100,7 +100,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, marginBottom: 22 },
   eyebrow: { fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 1.4, marginBottom: 7 },
   title: { fontFamily: 'Inter_700Bold', fontSize: 25, letterSpacing: -0.7 },
-  avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
   avatarText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 12 },
   hero: { marginHorizontal: 18, borderRadius: 24, padding: 22, minHeight: 190, overflow: 'hidden', marginBottom: 26 },
   heroTop: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 14 },
