@@ -1,14 +1,18 @@
-import React from 'react';
-import { Image, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { customFetch } from '@workspace/api-client-react';
 import { useColors } from '@/hooks/useColors';
 
 export default function ScheduleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
-  const imageHeight = Math.min(Math.min(width - 36, 680) * (2024 / 1600), Math.max(440, height - insets.top - 220));
-  const lunchImageHeight = Math.min(width - 36, 680) * (768 / 1024);
+  const [images, setImages] = useState<Record<string, { uri: string; width?: number; height?: number }>>({});
+  useEffect(() => { void customFetch<Record<string, { uri: string; width?: number; height?: number }>>('/api/schedule-images', { responseType: 'json' }).then(setImages).catch(() => undefined); }, []);
+  const schedule = images['weekly-schedule'];
+  const lunch = images['lunch-program'];
+  const scheduleRatio = schedule?.width && schedule?.height ? schedule.width / schedule.height : 1600 / 2024;
+  const lunchRatio = lunch?.width && lunch?.height ? lunch.width / lunch.height : 1024 / 768;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -27,10 +31,10 @@ export default function ScheduleScreen() {
         </Text>
         <View style={[styles.scheduleCard, { borderColor: colors.border, backgroundColor: '#000' }]}>
           <Image
-            source={require('../../assets/lpa-schedule-week-of-0817.png')}
+            source={schedule ? { uri: schedule.uri } : require('../../assets/lpa-schedule-week-of-0817.png')}
             accessibilityLabel="LPA Schedule for August 17 through August 23"
             resizeMode="contain"
-            style={[styles.scheduleImage, { height: imageHeight }]}
+            style={[styles.scheduleImage, { aspectRatio: scheduleRatio }]}
           />
         </View>
         <View style={styles.lunchHeader}>
@@ -42,10 +46,10 @@ export default function ScheduleScreen() {
         </View>
         <View style={[styles.scheduleCard, styles.lunchCard, { borderColor: colors.border, backgroundColor: '#000' }]}>
           <Image
-            source={require('../../assets/lpa-student-athlete-lunch-program.png')}
+            source={lunch ? { uri: lunch.uri } : require('../../assets/lpa-student-athlete-lunch-program.png')}
             accessibilityLabel="LPA Daily Student Athlete Lunch Program for August 10 through September 4, 2026"
             resizeMode="contain"
-            style={[styles.scheduleImage, { height: lunchImageHeight }]}
+            style={[styles.scheduleImage, { aspectRatio: lunchRatio }]}
           />
         </View>
       </ScrollView>
