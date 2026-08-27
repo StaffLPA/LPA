@@ -1,6 +1,8 @@
 {
   "build": {
     "production": {
+      "corepack": true,
+      "pnpm": "10.26.1",
       "android": {
         "buildType": "app-bundle"
       }
