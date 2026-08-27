@@ -29,7 +29,8 @@ export const CreateInviteBody = zod.object({
   "email": zod.string().optional(),
   "phone": zod.string().optional(),
   "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
-  "teams": zod.array(zod.string()).optional()
+  "teams": zod.array(zod.string()).optional(),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).optional()
 })
 
 export const CreateInviteResponse = zod.object({
@@ -40,6 +41,7 @@ export const CreateInviteResponse = zod.object({
   "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
   "status": zod.enum(['invited', 'active', 'inactive', 'revoked']),
   "teams": zod.array(zod.string()),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).nullish(),
   "invitedAt": zod.coerce.date(),
   "inviteExpiresAt": zod.coerce.date().nullish()
 })
@@ -62,10 +64,21 @@ export const ListUsersResponseItem = zod.object({
   "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
   "status": zod.enum(['invited', 'active', 'inactive', 'revoked']),
   "teams": zod.array(zod.string()),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).nullish(),
   "invitedAt": zod.coerce.date(),
   "inviteExpiresAt": zod.coerce.date().nullish()
 })
 export const ListUsersResponse = zod.array(ListUsersResponseItem)
+
+
+/**
+ * @summary Permanently delete an LPA user profile
+ */
+export const DeleteUserProfileParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteUserProfileResponse = zod.void()
 
 
 /**
@@ -83,6 +96,7 @@ export const ResendInviteResponse = zod.object({
   "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
   "status": zod.enum(['invited', 'active', 'inactive', 'revoked']),
   "teams": zod.array(zod.string()),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).nullish(),
   "invitedAt": zod.coerce.date(),
   "inviteExpiresAt": zod.coerce.date().nullish()
 })
@@ -103,6 +117,7 @@ export const RevokeInviteResponse = zod.object({
   "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
   "status": zod.enum(['invited', 'active', 'inactive', 'revoked']),
   "teams": zod.array(zod.string()),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).nullish(),
   "invitedAt": zod.coerce.date(),
   "inviteExpiresAt": zod.coerce.date().nullish()
 })
@@ -130,6 +145,7 @@ export const LookupInviteResponse = zod.object({
   "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
   "status": zod.enum(['invited', 'active', 'inactive', 'revoked']),
   "teams": zod.array(zod.string()),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).nullish(),
   "invitedAt": zod.coerce.date(),
   "inviteExpiresAt": zod.coerce.date().nullish()
 }).nullish()
@@ -160,6 +176,7 @@ export const CompleteInviteResponse = zod.object({
   "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
   "status": zod.enum(['invited', 'active', 'inactive', 'revoked']),
   "teams": zod.array(zod.string()),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).nullish(),
   "invitedAt": zod.coerce.date(),
   "inviteExpiresAt": zod.coerce.date().nullish()
 }),
@@ -190,10 +207,32 @@ export const SignInResponse = zod.object({
   "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
   "status": zod.enum(['invited', 'active', 'inactive', 'revoked']),
   "teams": zod.array(zod.string()),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).nullish(),
   "invitedAt": zod.coerce.date(),
   "inviteExpiresAt": zod.coerce.date().nullish()
 }),
   "sessionToken": zod.string()
+})
+
+
+/**
+ * @summary Create a signed upload URL for a profile photo
+ */
+export const createProfilePhotoUploadUrlBodySizeMax = 5242880;
+
+
+
+export const CreateProfilePhotoUploadUrlBody = zod.object({
+  "contentType": zod.enum(['image/jpeg', 'image/png', 'image/webp']),
+  "size": zod.number().min(1).max(createProfilePhotoUploadUrlBodySizeMax)
+})
+
+export const createProfilePhotoUploadUrlResponseObjectPathRegExp = new RegExp('^/objects/profile-photos/[a-f0-9-]{36}$');
+
+
+export const CreateProfilePhotoUploadUrlResponse = zod.object({
+  "uploadURL": zod.string(),
+  "objectPath": zod.string().regex(createProfilePhotoUploadUrlResponseObjectPathRegExp)
 })
 
 
@@ -216,9 +255,144 @@ export const UpdateUserRoleResponse = zod.object({
   "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
   "status": zod.enum(['invited', 'active', 'inactive', 'revoked']),
   "teams": zod.array(zod.string()),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).nullish(),
   "invitedAt": zod.coerce.date(),
   "inviteExpiresAt": zod.coerce.date().nullish()
 })
+
+
+/**
+ * @summary Update a user's graduation year
+ */
+export const UpdateUserGradYearParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const UpdateUserGradYearBody = zod.object({
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad'])
+})
+
+export const UpdateUserGradYearResponse = zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "email": zod.string().nullish(),
+  "phone": zod.string().nullish(),
+  "role": zod.enum(['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete']),
+  "status": zod.enum(['invited', 'active', 'inactive', 'revoked']),
+  "teams": zod.array(zod.string()),
+  "gradYear": zod.enum(['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad']).nullish(),
+  "invitedAt": zod.coerce.date(),
+  "inviteExpiresAt": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary List athlete and guardian relationships
+ */
+export const ListGuardianLinksResponseItem = zod.object({
+  "id": zod.string(),
+  "athlete": zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "gradYear": zod.string().nullish(),
+  "role": zod.enum(['Athlete']),
+  "teams": zod.array(zod.string()),
+  "profilePhotoUri": zod.string().nullish()
+}),
+  "guardian": zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "role": zod.enum(['Parent-Athlete']),
+  "profilePhotoUri": zod.string().nullish()
+}),
+  "createdAt": zod.coerce.date()
+})
+export const ListGuardianLinksResponse = zod.array(ListGuardianLinksResponseItem)
+
+
+/**
+ * @summary Link an active athlete and parent or guardian
+ */
+
+
+
+
+export const CreateGuardianLinkBody = zod.object({
+  "athleteId": zod.string().min(1),
+  "guardianId": zod.string().min(1)
+})
+
+export const CreateGuardianLinkResponse = zod.object({
+  "id": zod.string(),
+  "athlete": zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "gradYear": zod.string().nullish(),
+  "role": zod.enum(['Athlete']),
+  "teams": zod.array(zod.string()),
+  "profilePhotoUri": zod.string().nullish()
+}),
+  "guardian": zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "role": zod.enum(['Parent-Athlete']),
+  "profilePhotoUri": zod.string().nullish()
+}),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Remove an athlete and guardian relationship
+ */
+export const DeleteGuardianLinkParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DeleteGuardianLinkResponse = zod.void()
+
+
+/**
+ * @summary List athletes linked to the signed-in parent or guardian
+ */
+export const ListLinkedAthletesResponseItem = zod.object({
+  "id": zod.string(),
+  "fullName": zod.string(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "gradYear": zod.string().nullish(),
+  "role": zod.enum(['Athlete']),
+  "teams": zod.array(zod.string()),
+  "profilePhotoUri": zod.string().nullish()
+})
+export const ListLinkedAthletesResponse = zod.array(ListLinkedAthletesResponseItem)
+
+
+/**
+ * @summary List calendar events for a linked athlete's teams and global LPA events
+ */
+export const ListLinkedAthleteCalendarEventsParams = zod.object({
+  "athleteId": zod.coerce.string()
+})
+
+export const ListLinkedAthleteCalendarEventsResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "date": zod.coerce.date(),
+  "time": zod.string(),
+  "location": zod.string(),
+  "team": zod.string(),
+  "repeatSeriesId": zod.string().nullish(),
+  "repeatUntil": zod.coerce.date().nullish(),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListLinkedAthleteCalendarEventsResponse = zod.array(ListLinkedAthleteCalendarEventsResponseItem)
 
 
 /**
@@ -235,6 +409,8 @@ export const ListCalendarEventsResponseItem = zod.object({
   "time": zod.string(),
   "location": zod.string(),
   "team": zod.string(),
+  "repeatSeriesId": zod.string().nullish(),
+  "repeatUntil": zod.coerce.date().nullish(),
   "createdBy": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -247,7 +423,7 @@ export const ListCalendarEventsResponse = zod.array(ListCalendarEventsResponseIt
  */
 
 export const createCalendarEventBodyDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
-export const createCalendarEventBodyTimeRegExp = new RegExp('^(?:(?:[1-9]|1[0-2]):[0-5]\\d\\s(?:AM|PM)|(?:[01]\\d|2[0-3]):[0-5]\\d)$');
+export const createCalendarEventBodyTimeRegExp = new RegExp('^(?:(?:[1-9]|1[0-2]):[0-5]\\d\\s(?:AM|PM)|(?:[01]\\d|2[0-3]):[0-5]\\d)(?:\\s-\\s(?:(?:[1-9]|1[0-2]):[0-5]\\d\\s(?:AM|PM)|(?:[01]\\d|2[0-3]):[0-5]\\d))?$');
 
 
 export const CreateCalendarEventBody = zod.object({
@@ -265,10 +441,47 @@ export const CreateCalendarEventResponse = zod.object({
   "time": zod.string(),
   "location": zod.string(),
   "team": zod.string(),
+  "repeatSeriesId": zod.string().nullish(),
+  "repeatUntil": zod.coerce.date().nullish(),
   "createdBy": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
+
+
+/**
+ * @summary Create daily repeated calendar events
+ */
+
+export const createRepeatedCalendarEventsBodyOneDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const createRepeatedCalendarEventsBodyOneTimeRegExp = new RegExp('^(?:(?:[1-9]|1[0-2]):[0-5]\\d\\s(?:AM|PM)|(?:[01]\\d|2[0-3]):[0-5]\\d)(?:\\s-\\s(?:(?:[1-9]|1[0-2]):[0-5]\\d\\s(?:AM|PM)|(?:[01]\\d|2[0-3]):[0-5]\\d))?$');
+export const createRepeatedCalendarEventsBodyTwoRepeatUntilRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const CreateRepeatedCalendarEventsBody = zod.object({
+  "title": zod.string().min(1),
+  "date": zod.string().regex(createRepeatedCalendarEventsBodyOneDateRegExp).describe('A valid calendar date in ISO YYYY-MM-DD format.'),
+  "time": zod.string().regex(createRepeatedCalendarEventsBodyOneTimeRegExp),
+  "location": zod.string().optional(),
+  "team": zod.string().optional()
+}).and(zod.object({
+  "repeatUntil": zod.string().regex(createRepeatedCalendarEventsBodyTwoRepeatUntilRegExp).describe('The inclusive end date for daily repeats in ISO YYYY-MM-DD format.')
+}))
+
+export const CreateRepeatedCalendarEventsResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "date": zod.coerce.date(),
+  "time": zod.string(),
+  "location": zod.string(),
+  "team": zod.string(),
+  "repeatSeriesId": zod.string().nullish(),
+  "repeatUntil": zod.coerce.date().nullish(),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const CreateRepeatedCalendarEventsResponse = zod.array(CreateRepeatedCalendarEventsResponseItem)
 
 
 /**
@@ -285,6 +498,8 @@ export const ListSharedCalendarEventsResponseItem = zod.object({
   "time": zod.string(),
   "location": zod.string(),
   "team": zod.string(),
+  "repeatSeriesId": zod.string().nullish(),
+  "repeatUntil": zod.coerce.date().nullish(),
   "createdBy": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -310,17 +525,19 @@ export const UpdateCalendarEventParams = zod.object({
 })
 
 
-export const updateCalendarEventBodyDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
-export const updateCalendarEventBodyTimeRegExp = new RegExp('^(?:(?:[1-9]|1[0-2]):[0-5]\\d\\s(?:AM|PM)|(?:[01]\\d|2[0-3]):[0-5]\\d)$');
+export const updateCalendarEventBodyOneDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const updateCalendarEventBodyOneTimeRegExp = new RegExp('^(?:(?:[1-9]|1[0-2]):[0-5]\\d\\s(?:AM|PM)|(?:[01]\\d|2[0-3]):[0-5]\\d)(?:\\s-\\s(?:(?:[1-9]|1[0-2]):[0-5]\\d\\s(?:AM|PM)|(?:[01]\\d|2[0-3]):[0-5]\\d))?$');
 
 
 export const UpdateCalendarEventBody = zod.object({
   "title": zod.string().min(1),
-  "date": zod.string().regex(updateCalendarEventBodyDateRegExp).describe('A valid calendar date in ISO YYYY-MM-DD format.'),
-  "time": zod.string().regex(updateCalendarEventBodyTimeRegExp),
+  "date": zod.string().regex(updateCalendarEventBodyOneDateRegExp).describe('A valid calendar date in ISO YYYY-MM-DD format.'),
+  "time": zod.string().regex(updateCalendarEventBodyOneTimeRegExp),
   "location": zod.string().optional(),
   "team": zod.string().optional()
-})
+}).and(zod.object({
+  "applyToRemainingRepeatEvents": zod.boolean().optional().describe('When true, applies title, time, location, and team changes to later events in the same repeat series through its inclusive Until date.')
+}))
 
 export const UpdateCalendarEventResponse = zod.object({
   "id": zod.string(),
@@ -329,6 +546,8 @@ export const UpdateCalendarEventResponse = zod.object({
   "time": zod.string(),
   "location": zod.string(),
   "team": zod.string(),
+  "repeatSeriesId": zod.string().nullish(),
+  "repeatUntil": zod.coerce.date().nullish(),
   "createdBy": zod.string(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
