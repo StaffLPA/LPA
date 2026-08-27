@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -22,7 +22,7 @@ function loadErrorMessage(error: unknown) {
 
 type MessageAttachment = { id: string; fileName: string; contentType: string; size: number };
 type ChatMessage = { id: string; senderId: string; senderName: string; text: string; attachments?: MessageAttachment[] };
-type SelectedAttachment = { uri: string; fileName: string; contentType: string; size: number; base64?: string | null };
+type SelectedAttachment = { uri: string; fileName: string; contentType: string; size: number; base64?: string | null; file?: Blob };
 
 export default function ChatScreen() {
   const colors = useColors();
@@ -89,13 +89,19 @@ export default function ChatScreen() {
       if (result.canceled) return;
       const asset = kind === 'image' ? result.assets[0] : result.assets[0];
       if (!asset) return;
-      const metadata = asset as { fileSize?: number; size?: number; fileName?: string; name?: string; mimeType?: string; base64?: string | null };
-      const size = metadata.fileSize ?? metadata.size ?? 0;
+      const metadata = asset as { fileSize?: number; size?: number; fileName?: string; name?: string; mimeType?: string; base64?: string | null; file?: Blob };
+      const size = metadata.fileSize ?? metadata.size ?? metadata.file?.size ?? 0;
       if (!size || size > 10 * 1024 * 1024) { setSendError('Attachments must be 10 MB or smaller.'); return; }
-      setSelectedAttachments((current) => current.length >= 5 ? current : [...current, { uri: asset.uri, fileName: metadata.fileName ?? metadata.name ?? `attachment-${Date.now()}`, contentType: metadata.mimeType ?? (kind === 'image' ? 'image/jpeg' : 'application/octet-stream'), size, base64: metadata.base64 }]);
+      setSelectedAttachments((current) => current.length >= 5 ? current : [...current, { uri: asset.uri, fileName: metadata.fileName ?? metadata.name ?? `attachment-${Date.now()}`, contentType: metadata.mimeType ?? (kind === 'image' ? 'image/jpeg' : 'application/octet-stream'), size, base64: metadata.base64, file: metadata.file }]);
     } catch { setSendError('Could not select that attachment. Please try again.'); }
   };
-  const chooseAttachment = () => Alert.alert('Add attachment', 'Choose what you want to send.', [{ text: 'Photo', onPress: () => void addAttachment('image') }, { text: 'File', onPress: () => void addAttachment('file') }, { text: 'Cancel', style: 'cancel' }]);
+  const chooseAttachment = () => {
+    if (Platform.OS === 'web') {
+      void addAttachment('file');
+      return;
+    }
+    Alert.alert('Add attachment', 'Choose what you want to send.', [{ text: 'Photo', onPress: () => void addAttachment('image') }, { text: 'File', onPress: () => void addAttachment('file') }, { text: 'Cancel', style: 'cancel' }]);
+  };
   const send = async () => {
     const text = draft.trim();
     if ((!text && !selectedAttachments.length) || !id || sendMessage.isPending || uploading) return;
@@ -104,10 +110,19 @@ export default function ChatScreen() {
       setUploading(true);
       try {
         const attachments = await Promise.all(selectedAttachments.map(async (attachment) => {
-          const upload = await customFetch<{ uploadURL: string; objectPath: string }>(`/api/chats/${id}/attachments/upload-url`, { method: 'POST', responseType: 'json', suppressUnauthorizedHandler: true, body: JSON.stringify({ fileName: attachment.fileName, contentType: attachment.contentType, size: attachment.size }) });
           const sourceUri = attachment.base64 ? `data:${attachment.contentType};base64,${attachment.base64}` : attachment.uri;
-          const source = await fetch(sourceUri);
-          const body = await source.blob();
+          const body = attachment.file ?? await (await fetch(sourceUri)).blob();
+          if (Platform.OS === 'web') {
+            const upload = await customFetch<{ objectPath: string }>(`/api/chats/${id}/attachments/upload?fileName=${encodeURIComponent(attachment.fileName)}`, {
+              method: 'POST',
+              responseType: 'json',
+              suppressUnauthorizedHandler: true,
+              headers: { 'content-type': attachment.contentType },
+              body,
+            });
+            return { ...upload, fileName: attachment.fileName, contentType: attachment.contentType, size: attachment.size };
+          }
+          const upload = await customFetch<{ uploadURL: string; objectPath: string }>(`/api/chats/${id}/attachments/upload-url`, { method: 'POST', responseType: 'json', suppressUnauthorizedHandler: true, body: JSON.stringify({ fileName: attachment.fileName, contentType: attachment.contentType, size: attachment.size }) });
           const put = await fetch(upload.uploadURL, { method: 'PUT', headers: { 'content-type': attachment.contentType }, body });
           if (!put.ok) throw new Error(`Upload failed (${put.status}). Please try again.`);
           return { ...upload, fileName: attachment.fileName, contentType: attachment.contentType, size: attachment.size };
@@ -136,20 +151,44 @@ export default function ChatScreen() {
       return next;
     });
   };
-  const confirmDeleteChat = () => Alert.alert('Delete conversation?', 'This will remove the channel or group chat and its history for everyone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => {
+  const deleteConversation = () => {
     if (!id) return;
     deleteChat.mutate({ conversationId: id }, {
       onSuccess: () => {
-        void queryClient.invalidateQueries({ queryKey: chats.queryKey });
+        queryClient.setQueryData(chats.queryKey, (current: unknown) => ((current ?? []) as Array<{ id: string }>).filter((item) => item.id !== id));
         router.back();
       },
       onError: (error) => setActionError(loadErrorMessage(error)),
     });
-  }}]);
-  const confirmRemoveMember = (member: { id: string; fullName: string }) => Alert.alert('Remove participant?', `${member.fullName} will no longer be able to read or send messages in this conversation.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => {
+  };
+  const confirmDeleteChat = () => {
+    const title = 'Delete conversation?';
+    const message = 'This will remove the channel or group chat and its history for everyone.';
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) deleteConversation();
+      return;
+    }
+    Alert.alert(title, message, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: deleteConversation }]);
+  };
+  const removeParticipant = (member: { id: string; fullName: string }) => {
     if (!id) return;
-    removeMember.mutate({ conversationId: id, userId: member.id }, { onSuccess: refreshConversation, onError: (error) => setActionError(loadErrorMessage(error)) });
-  }}]);
+    removeMember.mutate({ conversationId: id, userId: member.id }, {
+      onSuccess: () => {
+        queryClient.setQueryData(chats.queryKey, (current: unknown) => ((current ?? []) as Array<{ id: string; members: Array<{ id: string }> }>).map((item) => item.id === id ? { ...item, members: item.members.filter((person) => person.id !== member.id) } : item));
+        void queryClient.invalidateQueries({ queryKey: messages.queryKey });
+      },
+      onError: (error) => setActionError(loadErrorMessage(error)),
+    });
+  };
+  const confirmRemoveMember = (member: { id: string; fullName: string }) => {
+    const title = 'Remove participant?';
+    const message = `${member.fullName} will no longer be able to read or send messages in this conversation.`;
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) removeParticipant(member);
+      return;
+    }
+    Alert.alert(title, message, [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => removeParticipant(member) }]);
+  };
   const addParticipant = (userId: string) => {
     if (!id) return;
     addMember.mutate({ conversationId: id, data: { userId } }, { onSuccess: refreshConversation, onError: (error) => setActionError(loadErrorMessage(error)) });
@@ -157,7 +196,7 @@ export default function ChatScreen() {
   return <KeyboardAvoidingView style={[styles.container, { backgroundColor: colors.background }]} behavior="padding" keyboardVerticalOffset={0}>
     <View style={{ paddingTop: insets.top + 10 }}><View style={styles.header}><Pressable onPress={() => router.back()}><Feather name="arrow-left" size={22} color={colors.foreground} /></Pressable><Text numberOfLines={1} style={[styles.title, { color: colors.foreground }]}>{chat?.name ?? 'Conversation'}</Text><View style={styles.headerActions}>{canManage ? <Pressable testID="manage-participants" onPress={() => setShowParticipants((visible) => !visible)}><Feather name="users" size={21} color={colors.primary} /></Pressable> : null}{canDeleteChat ? <Pressable testID="delete-chat" disabled={deleteChat.isPending} onPress={confirmDeleteChat}><Feather name="trash-2" size={20} color={colors.destructive} /></Pressable> : null}{!canManage && !canDeleteChat ? <View style={{ width: 22 }} /> : null}</View></View></View>
     {showParticipants && chat ? <View style={[styles.participantPanel, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={styles.participantHeading}><Text style={[styles.participantTitle, { color: colors.foreground }]}>Participants · {chat.members.length}</Text><Pressable onPress={() => setShowParticipants(false)}><Feather name="x" size={17} color={colors.mutedForeground} /></Pressable></View>{chat.members.map((member) => <View key={member.id} style={styles.participantRow}><Text style={[styles.participantName, { color: colors.foreground }]}>{member.fullName}</Text>{canManage && member.id !== chat.createdBy ? <Pressable testID={`remove-member-${member.id}`} onPress={() => confirmRemoveMember(member)}><Text style={[styles.removeText, { color: colors.destructive }]}>Remove</Text></Pressable> : null}</View>)}<Text style={[styles.addLabel, { color: colors.mutedForeground }]}>ADD PARTICIPANT</Text>{availablePeople.map((person) => <View key={person.id} style={styles.participantRow}><Text style={[styles.participantName, { color: colors.foreground }]}>{person.fullName}</Text><Pressable testID={`add-member-${person.id}`} disabled={addMember.isPending} onPress={() => addParticipant(person.id)}><Text style={[styles.addText, { color: colors.primary }]}>{addMember.isPending ? 'Adding…' : 'Add'}</Text></Pressable></View>)}</View> : null}
-    {messages.isLoading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : messages.isError ? <View style={styles.center}><Text style={[styles.error, { color: colors.foreground }]}>Unable to load messages.</Text><Text style={{ color: colors.mutedForeground }}>{loadErrorMessage(messages.error)}</Text><Pressable onPress={() => void messages.refetch()} style={[styles.retry, { borderColor: colors.border }]}><Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text></Pressable></View> : <FlatList data={[...visibleMessages].reverse()} inverted keyExtractor={(item) => item.id} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 9 }} renderItem={({ item }) => <SwipeableMessage item={item} mine={item.senderId === user?.id} colors={colors} conversationId={id} onHide={() => hideMessageForMe(item.id)} />} ListEmptyComponent={<View style={styles.center}><Text style={[styles.error, { color: colors.foreground }]}>No messages yet</Text><Text style={{ color: colors.mutedForeground }}>Start the conversation.</Text></View>} />}
+    {messages.isLoading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : messages.isError ? <View style={styles.center}><Text style={[styles.error, { color: colors.foreground }]}>Unable to load messages.</Text><Text style={{ color: colors.mutedForeground }}>{loadErrorMessage(messages.error)}</Text><Pressable onPress={() => void messages.refetch()} style={[styles.retry, { borderColor: colors.border }]}><Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text></Pressable></View> : <FlatList data={[...visibleMessages].reverse()} inverted keyExtractor={(item) => item.id} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 9 }} removeClippedSubviews initialNumToRender={16} maxToRenderPerBatch={10} windowSize={7} updateCellsBatchingPeriod={50} renderItem={({ item }) => <SwipeableMessage item={item} mine={item.senderId === user?.id} colors={colors} conversationId={id} onHide={() => hideMessageForMe(item.id)} />} ListEmptyComponent={<View style={styles.center}><Text style={[styles.error, { color: colors.foreground }]}>No messages yet</Text><Text style={{ color: colors.mutedForeground }}>Start the conversation.</Text></View>} />}
       <View style={[styles.composer, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 10) }]}>{selectedAttachments.length ? <View style={styles.attachmentQueue}>{selectedAttachments.map((attachment, index) => <Pressable key={`${attachment.uri}-${index}`} onPress={() => setSelectedAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} style={[styles.queuedAttachment, { backgroundColor: `${colors.primary}18` }]}><Feather name={attachment.contentType.startsWith('image/') ? 'image' : 'paperclip'} size={13} color={colors.primary} /><Text numberOfLines={1} style={[styles.queuedAttachmentText, { color: colors.primary }]}>{attachment.fileName}</Text><Feather name="x" size={13} color={colors.primary} /></Pressable>)}</View> : null}<View style={styles.composerRow}><Pressable testID="add-attachment" onPress={chooseAttachment} disabled={uploading} style={[styles.attach, { borderColor: colors.border }]}><Feather name="paperclip" size={18} color={colors.primary} /></Pressable><TextInput testID="message-composer" value={draft} onChangeText={setDraft} placeholder="Write a message..." placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} onSubmitEditing={() => void send()} returnKeyType="send" /><Pressable testID="send-message" onPress={() => void send()} disabled={sendMessage.isPending || uploading || (!draft.trim() && !selectedAttachments.length)} style={[styles.send, { backgroundColor: (draft.trim() || selectedAttachments.length) && !sendMessage.isPending && !uploading ? colors.primary : colors.muted }]}><Feather name={sendMessage.isPending || uploading ? 'clock' : 'arrow-up'} size={18} color="#fff" /></Pressable></View></View>
      {visibleMessages.length ? <Text style={[styles.swipeHint, { color: colors.mutedForeground }]}>Swipe a message left to delete it for you</Text> : null}
     {sendError ? <Pressable testID="retry-message" onPress={send} style={styles.failure}><Text style={[styles.failureText, { color: colors.primary }]}>{sendError} Tap to retry.</Text></Pressable> : null}
@@ -172,7 +211,17 @@ function SwipeableMessage({ item, mine, colors, onHide, conversationId }: {
   onHide: () => void;
   conversationId: string;
 }) {
-  const confirmHide = () => Alert.alert('Delete for me?', 'This message will be removed only from your view. Other participants will still see it.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', style: 'destructive', onPress: onHide }]);
+  const confirmHide = () => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Delete for me?\n\nThis message will be removed only from your view.')) onHide();
+      return;
+    }
+    Alert.alert('Delete for me?', 'This message will be removed only from your view. Other participants will still see it.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', style: 'destructive', onPress: onHide }]);
+  };
+  const bubble = <View style={[styles.bubble, { backgroundColor: mine ? colors.primary : colors.card }]}><Text style={[styles.sender, { color: mine ? '#fff' : colors.mutedForeground }]}>{mine ? 'You' : item.senderName}</Text>{item.text ? <Text style={[styles.message, { color: mine ? '#fff' : colors.foreground }]}>{item.text}</Text> : null}{item.attachments?.map((attachment) => <AttachmentCard key={attachment.id} attachment={attachment} conversationId={conversationId} mine={mine} colors={colors} />)}</View>;
+  if (Platform.OS === 'web') {
+    return <View style={[styles.webMessageRow, { alignSelf: mine ? 'flex-end' : 'flex-start' }]}>{bubble}<Pressable testID={`delete-for-me-message-${item.id}`} accessibilityRole="button" onPress={confirmHide} style={[styles.webDeleteAction, { borderColor: colors.border }]}><Feather name="trash-2" size={13} color={colors.destructive} /><Text style={[styles.webDeleteText, { color: colors.destructive }]}>Delete for me</Text></Pressable></View>;
+  }
   return <Swipeable
     testID={`swipe-delete-message-${item.id}`}
     renderRightActions={() => <Pressable testID={`delete-for-me-message-${item.id}`} accessibilityRole="button" onPress={confirmHide} style={[styles.swipeAction, { backgroundColor: colors.destructive }]}><Feather name="trash-2" size={15} color="#fff" /><Text style={styles.swipeActionText}>Delete for me</Text></Pressable>}
@@ -180,9 +229,7 @@ function SwipeableMessage({ item, mine, colors, onHide, conversationId }: {
     rightThreshold={80}
     friction={2}
     containerStyle={[styles.swipeContainer, { alignSelf: mine ? 'flex-end' : 'flex-start' }]}
-  >
-    <View style={[styles.bubble, { backgroundColor: mine ? colors.primary : colors.card }]}><Text style={[styles.sender, { color: mine ? '#fff' : colors.mutedForeground }]}>{mine ? 'You' : item.senderName}</Text>{item.text ? <Text style={[styles.message, { color: mine ? '#fff' : colors.foreground }]}>{item.text}</Text> : null}{item.attachments?.map((attachment) => <AttachmentCard key={attachment.id} attachment={attachment} conversationId={conversationId} mine={mine} colors={colors} />)}</View>
-  </Swipeable>;
+  >{bubble}</Swipeable>;
 }
 
 function AttachmentCard({ attachment, conversationId, mine, colors }: { attachment: MessageAttachment; conversationId: string; mine: boolean; colors: ReturnType<typeof useColors> }) {
@@ -200,5 +247,5 @@ function AttachmentCard({ attachment, conversationId, mine, colors }: { attachme
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 }, header: { height: 48, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 }, headerActions: { minWidth: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 13 }, title: { flex: 1, textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 17 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 7 }, error: { fontFamily: 'Inter_700Bold', fontSize: 15 }, retry: { marginTop: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 }, retryText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, participantPanel: { marginHorizontal: 16, marginTop: 3, borderWidth: 1, borderRadius: 15, padding: 12, gap: 8 }, participantHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, participantTitle: { fontFamily: 'Inter_700Bold', fontSize: 13 }, participantRow: { minHeight: 29, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, participantName: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 12 }, removeText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, addLabel: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 1, marginTop: 5 }, addText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, swipeContainer: { maxWidth: '92%', borderRadius: 16 }, swipeAction: { width: 110, paddingHorizontal: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5, borderRadius: 16 }, swipeActionText: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 10, textAlign: 'center' }, bubble: { maxWidth: '100%', borderRadius: 16, padding: 11 }, sender: { fontFamily: 'Inter_600SemiBold', fontSize: 10, marginBottom: 4 }, message: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 }, swipeHint: { fontFamily: 'Inter_400Regular', fontSize: 10, textAlign: 'center', paddingVertical: 5 }, composer: { borderTopWidth: 1, paddingHorizontal: 12, paddingTop: 10 }, composerRow: { flexDirection: 'row', gap: 8, alignItems: 'center' }, attach: { width: 38, height: 42, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, input: { flex: 1, height: 42, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontFamily: 'Inter_400Regular', fontSize: 13 }, send: { width: 42, height: 42, borderRadius: 14, justifyContent: 'center', alignItems: 'center' }, attachmentQueue: { gap: 5, marginBottom: 8 }, queuedAttachment: { height: 30, borderRadius: 9, paddingHorizontal: 9, flexDirection: 'row', gap: 6, alignItems: 'center' }, queuedAttachmentText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 11 }, attachmentImage: { width: 210, height: 150, borderRadius: 10, marginTop: 7, backgroundColor: '#00000018' }, attachmentLoading: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 7 }, fileAttachment: { borderWidth: 1, borderRadius: 10, marginTop: 7, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: 240 }, fileAttachmentName: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 11 }, failure: { position: 'absolute', bottom: 70, alignSelf: 'center', paddingHorizontal: 18, paddingVertical: 8 }, actionFailure: { position: 'absolute', top: 65, alignSelf: 'center', paddingHorizontal: 18, paddingVertical: 8 }, failureText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textAlign: 'center' },
+  container: { flex: 1 }, header: { height: 48, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 }, headerActions: { minWidth: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 13 }, title: { flex: 1, textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 17 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 7 }, error: { fontFamily: 'Inter_700Bold', fontSize: 15 }, retry: { marginTop: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 }, retryText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, participantPanel: { marginHorizontal: 16, marginTop: 3, borderWidth: 1, borderRadius: 15, padding: 12, gap: 8 }, participantHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, participantTitle: { fontFamily: 'Inter_700Bold', fontSize: 13 }, participantRow: { minHeight: 29, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, participantName: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 12 }, removeText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, addLabel: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 1, marginTop: 5 }, addText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, swipeContainer: { maxWidth: '92%', borderRadius: 16 }, swipeAction: { width: 110, paddingHorizontal: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5, borderRadius: 16 }, swipeActionText: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 10, textAlign: 'center' }, webMessageRow: { maxWidth: '92%', gap: 5 }, webDeleteAction: { alignSelf: 'flex-start', minHeight: 30, borderWidth: 1, borderRadius: 9, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 5 }, webDeleteText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 }, bubble: { maxWidth: '100%', borderRadius: 16, padding: 11 }, sender: { fontFamily: 'Inter_600SemiBold', fontSize: 10, marginBottom: 4 }, message: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 }, swipeHint: { fontFamily: 'Inter_400Regular', fontSize: 10, textAlign: 'center', paddingVertical: 5 }, composer: { borderTopWidth: 1, paddingHorizontal: 12, paddingTop: 10 }, composerRow: { flexDirection: 'row', gap: 8, alignItems: 'center' }, attach: { width: 38, height: 42, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, input: { flex: 1, height: 42, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontFamily: 'Inter_400Regular', fontSize: 13 }, send: { width: 42, height: 42, borderRadius: 14, justifyContent: 'center', alignItems: 'center' }, attachmentQueue: { gap: 5, marginBottom: 8 }, queuedAttachment: { height: 30, borderRadius: 9, paddingHorizontal: 9, flexDirection: 'row', gap: 6, alignItems: 'center' }, queuedAttachmentText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 11 }, attachmentImage: { width: 210, height: 150, borderRadius: 10, marginTop: 7, backgroundColor: '#00000018' }, attachmentLoading: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 7 }, fileAttachment: { borderWidth: 1, borderRadius: 10, marginTop: 7, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: 240 }, fileAttachmentName: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 11 }, failure: { position: 'absolute', bottom: 70, alignSelf: 'center', paddingHorizontal: 18, paddingVertical: 8 }, actionFailure: { position: 'absolute', top: 65, alignSelf: 'center', paddingHorizontal: 18, paddingVertical: 8 }, failureText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textAlign: 'center' },
 });
