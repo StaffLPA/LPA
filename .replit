@@ -37,7 +37,7 @@ expertMode = true
 
 [postMerge]
 path = "scripts/post-merge.sh"
-timeoutMs = 20000
+timeoutMs = 60000
 
 [userenv]
 
@@ -48,4 +48,4 @@ GOHIGHLEVEL_LOCATION_ID = "JLEdq6MGUpGX1OJD2AgL"
 channel = "stable-25_05"
 
 [objectStorage]
-defaultBucketID = "replit-objstore-c029a727-2ed2-4eea-af1a-700b084ede45"
+defaultBucketID = "replit-objstore-48717ab8-5e9c-4e1a-af18-d009d9dd33cf"
