@@ -10,6 +10,7 @@ import {
   conversationMembersTable,
   conversationsTable,
   db,
+  guardianLinksTable,
   messagesTable,
   pool,
   pushDevicesTable,
@@ -37,6 +38,7 @@ const member = {
   status: "active",
   passwordHash: "test-password-hash",
   teams: ["Varsity"] as string[],
+  gradYear: "2029",
 };
 const nonMember = {
   id: `messaging-test-non-member-${suffix}`,
@@ -248,8 +250,9 @@ test("existing group chats and shared delivery remain isolated to their members"
 test("direct messages are unnamed, available to members, and never duplicated", async () => {
   const directoryResponse = await request("/users", { headers: auth(member) });
   assert.equal(directoryResponse.status, 200);
-  const directory = await directoryResponse.json() as { id: string; status: string }[];
+  const directory = await directoryResponse.json() as { id: string; status: string; gradYear?: string | null }[];
   assert.equal(directory.some(({ id, status }) => id === nonMember.id && status === "active"), true);
+  assert.equal(directory.find(({ id }) => id === member.id)?.gradYear, "2029");
 
   const createResponse = await request("/chats", {
     method: "POST",
@@ -279,20 +282,19 @@ test("direct messages are unnamed, available to members, and never duplicated", 
 
 test("direct-message attachments reach the other participant and stay private", async () => {
   assert(directConversationId);
-  const uploadResponse = await request(`/chats/${directConversationId}/attachments/upload-url`, {
+  const attachmentBody = "private team note text";
+  const uploadResponse = await request(`/chats/${directConversationId}/attachments/upload?fileName=team-note.txt`, {
     method: "POST",
-    headers: auth(member),
-    body: JSON.stringify({ fileName: "team-note.txt", contentType: "text/plain", size: 20 }),
+    headers: { ...auth(member), "content-type": "text/plain" },
+    body: attachmentBody,
   });
   assert.equal(uploadResponse.status, 201);
-  const upload = await uploadResponse.json() as { uploadURL: string; objectPath: string };
-  const uploadPut = await fetch(upload.uploadURL, { method: "PUT", headers: { "content-type": "text/plain" }, body: "private team note text" });
-  assert.equal(uploadPut.ok, true);
+  const upload = await uploadResponse.json() as { objectPath: string };
 
   const sendResponse = await request(`/chats/${directConversationId}/messages`, {
     method: "POST",
     headers: auth(member),
-    body: JSON.stringify({ text: "", attachments: [{ ...upload, fileName: "team-note.txt", contentType: "text/plain", size: 20 }] }),
+    body: JSON.stringify({ text: "", attachments: [{ ...upload, fileName: "team-note.txt", contentType: "text/plain", size: Buffer.byteLength(attachmentBody) }] }),
   });
   assert.equal(sendResponse.status, 201);
   const sent = await sendResponse.json() as { attachments: { id: string; fileName: string }[] };
@@ -785,6 +787,65 @@ test("admins and Staff-Coach users can manage the dashboard API while athletes c
   assert.equal(invalidFeed.status, 404);
 });
 
+test("admins can update one repeated event or apply changes through the remaining series", async () => {
+  const createResponse = await request("/admin/calendar-events/repeat", {
+    method: "POST",
+    headers: auth(admin),
+    body: JSON.stringify({
+      title: "Daily repeating workout",
+      date: "2026-10-10",
+      repeatUntil: "2026-10-12",
+      time: "4:00 PM - 6:00 PM",
+      location: "East Field",
+      team: "Varsity",
+    }),
+  });
+  assert.equal(createResponse.status, 201);
+  const repeatedEvents = await createResponse.json() as Array<{ id: string; date: string; repeatSeriesId: string | null; repeatUntil: string | null }>;
+  assert.equal(repeatedEvents.length, 3);
+  assert.ok(repeatedEvents.every((event) => event.repeatSeriesId === repeatedEvents[0].repeatSeriesId));
+  assert.ok(repeatedEvents.every((event) => event.repeatUntil === "2026-10-12"));
+  teamCalendarEventIds.push(...repeatedEvents.map((event) => event.id));
+
+  const selected = repeatedEvents.find((event) => event.date === "2026-10-11");
+  assert.ok(selected);
+  const updateResponse = await request(`/admin/calendar-events/${selected.id}`, {
+    method: "PATCH",
+    headers: auth(admin),
+    body: JSON.stringify({
+      title: "Updated daily workout",
+      date: "2026-10-11",
+      time: "5:00 PM - 7:00 PM",
+      location: "West Field",
+      team: "Varsity",
+      applyToRemainingRepeatEvents: true,
+    }),
+  });
+  assert.equal(updateResponse.status, 200);
+
+  const listedResponse = await request("/admin/calendar-events?team=Varsity", { headers: auth(admin) });
+  assert.equal(listedResponse.status, 200);
+  const listed = await listedResponse.json() as Array<{ id: string; title: string; time: string; location: string }>;
+  const byId = new Map(listed.map((event) => [event.id, event]));
+  assert.equal(byId.get(repeatedEvents[0].id)?.title, "Daily repeating workout");
+  assert.deepEqual(
+    {
+      title: byId.get(selected.id)?.title,
+      time: byId.get(selected.id)?.time,
+      location: byId.get(selected.id)?.location,
+    },
+    { title: "Updated daily workout", time: "5:00 PM - 7:00 PM", location: "West Field" },
+  );
+  assert.deepEqual(
+    {
+      title: byId.get(repeatedEvents[2].id)?.title,
+      time: byId.get(repeatedEvents[2].id)?.time,
+      location: byId.get(repeatedEvents[2].id)?.location,
+    },
+    { title: "Updated daily workout", time: "5:00 PM - 7:00 PM", location: "West Field" },
+  );
+});
+
 test("all team ICS feeds reflect events created by an admin", async () => {
   const feeds = [
     { team: "14u", slug: "14u" },
@@ -809,5 +870,105 @@ test("all team ICS feeds reflect events created by an admin", async () => {
     assert.equal(feedResponse.status, 200);
     assert.match(feedResponse.headers.get("content-type") ?? "", /text\/calendar/);
     assert.match(await feedResponse.text(), new RegExp(`SUMMARY:ICS ${team} sync ${suffix}`));
+  }
+});
+
+test("full Admins can manage safe athlete and guardian links without sharing chat access", async () => {
+  const familySuffix = randomBytes(8).toString("hex");
+  const staff = { id: `family-staff-${familySuffix}`, fullName: "Family Test Staff", email: `family-staff-${familySuffix}@example.com`, role: "Staff-Coach", status: "active", passwordHash: "test-password-hash", teams: [] as string[] };
+  const guardian = { id: `family-guardian-${familySuffix}`, fullName: "Family Test Guardian", email: `family-guardian-${familySuffix}@example.com`, role: "Parent-Athlete", status: "active", passwordHash: "test-password-hash", teams: [] as string[] };
+  const inactiveGuardian = { id: `family-inactive-${familySuffix}`, fullName: "Inactive Guardian", email: `family-inactive-${familySuffix}@example.com`, role: "Parent-Athlete", status: "revoked", passwordHash: "test-password-hash", teams: [] as string[] };
+  const athlete = { id: `family-athlete-${familySuffix}`, fullName: "Family Test Athlete", email: `family-athlete-${familySuffix}@example.com`, role: "Athlete", status: "active", passwordHash: "test-password-hash", teams: ["Varsity"] as string[], gradYear: "2029" };
+  const secondAthlete = { id: `family-athlete-two-${familySuffix}`, fullName: "Second Family Athlete", email: `family-athlete-two-${familySuffix}@example.com`, role: "Athlete", status: "active", passwordHash: "test-password-hash", teams: ["LPA 14U"] as string[] };
+  const eventIds = [`family-varsity-${familySuffix}`, `family-global-${familySuffix}`, `family-legacy-global-${familySuffix}`, `family-all-teams-${familySuffix}`, `family-other-${familySuffix}`];
+  const privateConversationId = `family-private-${familySuffix}`;
+
+  try {
+    await db.insert(usersTable).values([staff, guardian, inactiveGuardian, athlete, secondAthlete]);
+    await db.insert(calendarEventsTable).values([
+      { id: eventIds[0], title: "Family Varsity Practice", date: "2026-12-10", time: "4:00 PM", location: "LPA Campus", team: "LPA Varsity", createdBy: admin.id },
+      { id: eventIds[1], title: "Family LPA Event", date: "2026-12-11", time: "5:00 PM", location: "LPA Campus", team: "LPA Events", createdBy: admin.id },
+      { id: eventIds[2], title: "Legacy LPA Event", date: "2026-12-12", time: "12:00 AM - 11:30 PM", location: "LPA", team: "LPA", createdBy: admin.id },
+      { id: eventIds[3], title: "All Teams Event", date: "2026-12-13", time: "10:00 AM", location: "LPA Campus", team: "All Teams", createdBy: admin.id },
+      { id: eventIds[4], title: "Other Team Practice", date: "2026-12-14", time: "6:00 PM", location: "LPA Campus", team: "14u", createdBy: admin.id },
+    ]);
+    await db.insert(conversationsTable).values({ id: privateConversationId, name: "Private athlete chat", type: "group", createdBy: athlete.id });
+    await db.insert(conversationMembersTable).values([
+      { id: `family-member-athlete-${familySuffix}`, conversationId: privateConversationId, userId: athlete.id },
+      { id: `family-member-other-${familySuffix}`, conversationId: privateConversationId, userId: nonMember.id },
+    ]);
+
+    const staffAttempt = await request("/admin/guardian-links", { method: "POST", headers: auth(staff), body: JSON.stringify({ athleteId: athlete.id, guardianId: guardian.id }) });
+    assert.equal(staffAttempt.status, 403);
+    const guardianAttempt = await request("/admin/guardian-links", { headers: auth(guardian) });
+    assert.equal(guardianAttempt.status, 403);
+
+    const createdResponse = await request("/admin/guardian-links", { method: "POST", headers: auth(admin), body: JSON.stringify({ athleteId: athlete.id, guardianId: guardian.id }) });
+    assert.equal(createdResponse.status, 201);
+    const created = await createdResponse.json() as { id: string; athlete: { id: string; email?: string }; guardian: { id: string; email?: string } };
+    assert.equal(created.athlete.id, athlete.id);
+    assert.equal(created.guardian.id, guardian.id);
+    assert.equal(created.athlete.email, undefined);
+    assert.equal(created.guardian.email, undefined);
+
+    const duplicate = await request("/admin/guardian-links", { method: "POST", headers: auth(admin), body: JSON.stringify({ athleteId: athlete.id, guardianId: guardian.id }) });
+    assert.equal(duplicate.status, 409);
+    const invalidRoles = await request("/admin/guardian-links", { method: "POST", headers: auth(admin), body: JSON.stringify({ athleteId: guardian.id, guardianId: athlete.id }) });
+    assert.equal(invalidRoles.status, 400);
+    const inactive = await request("/admin/guardian-links", { method: "POST", headers: auth(admin), body: JSON.stringify({ athleteId: athlete.id, guardianId: inactiveGuardian.id }) });
+    assert.equal(inactive.status, 400);
+
+    const athleteList = await request("/guardian/athletes", { headers: auth(guardian) });
+    assert.equal(athleteList.status, 200);
+    const linkedAthletes = await athleteList.json() as Array<{ id: string; email?: string }>;
+    assert.deepEqual(linkedAthletes.map((linkedAthlete) => linkedAthlete.id), [athlete.id]);
+    assert.equal(linkedAthletes[0].email, undefined);
+    const athleteRoleAttempt = await request("/guardian/athletes", { headers: auth(athlete) });
+    assert.equal(athleteRoleAttempt.status, 403);
+
+    const schedule = await request(`/guardian/athletes/${athlete.id}/calendar-events`, { headers: auth(guardian) });
+    assert.equal(schedule.status, 200);
+    const scheduleEvents = await schedule.json() as Array<{ title: string }>;
+    const scheduleTitles = new Set(scheduleEvents.map((event) => event.title));
+    assert.ok(scheduleTitles.has("Family LPA Event"));
+    assert.ok(scheduleTitles.has("Family Varsity Practice"));
+    assert.ok(scheduleTitles.has("Legacy LPA Event"));
+    assert.ok(scheduleTitles.has("All Teams Event"));
+    assert.ok(!scheduleTitles.has("Other Team Practice"));
+    const privateChatAttempt = await request(`/chats/${privateConversationId}/messages`, { headers: auth(guardian) });
+    assert.equal(privateChatAttempt.status, 403);
+
+    const unlinked = await request(`/admin/guardian-links/${created.id}`, { method: "DELETE", headers: auth(admin) });
+    assert.equal(unlinked.status, 204);
+    const emptyAfterUnlink = await request("/guardian/athletes", { headers: auth(guardian) });
+    assert.deepEqual(await emptyAfterUnlink.json(), []);
+
+    const secondLink = await request("/admin/guardian-links", { method: "POST", headers: auth(admin), body: JSON.stringify({ athleteId: secondAthlete.id, guardianId: guardian.id }) });
+    assert.equal(secondLink.status, 201);
+    const relabeled = await request(`/admin/users/${secondAthlete.id}/role`, { method: "PATCH", headers: auth(admin), body: JSON.stringify({ role: "Staff-Coach" }) });
+    assert.equal(relabeled.status, 200);
+    const emptyAfterRoleChange = await request("/guardian/athletes", { headers: auth(guardian) });
+    assert.deepEqual(await emptyAfterRoleChange.json(), []);
+
+    const restored = await request(`/admin/users/${secondAthlete.id}/role`, { method: "PATCH", headers: auth(admin), body: JSON.stringify({ role: "Athlete" }) });
+    assert.equal(restored.status, 200);
+    const thirdLink = await request("/admin/guardian-links", { method: "POST", headers: auth(admin), body: JSON.stringify({ athleteId: secondAthlete.id, guardianId: guardian.id }) });
+    assert.equal(thirdLink.status, 201);
+    const deleteAthlete = await request(`/admin/users/${secondAthlete.id}`, { method: "DELETE", headers: auth(admin) });
+    assert.equal(deleteAthlete.status, 204);
+    const emptyAfterDeletion = await request("/guardian/athletes", { headers: auth(guardian) });
+    assert.deepEqual(await emptyAfterDeletion.json(), []);
+
+    const deactivationLink = await request("/admin/guardian-links", { method: "POST", headers: auth(admin), body: JSON.stringify({ athleteId: athlete.id, guardianId: guardian.id }) });
+    assert.equal(deactivationLink.status, 201);
+    await db.update(usersTable).set({ status: "revoked" }).where(eq(usersTable.id, athlete.id));
+    const emptyAfterDeactivation = await request("/guardian/athletes", { headers: auth(guardian) });
+    assert.deepEqual(await emptyAfterDeactivation.json(), []);
+  } finally {
+    await db.delete(guardianLinksTable).where(inArray(guardianLinksTable.guardianId, [guardian.id, inactiveGuardian.id]));
+    await db.delete(conversationMembersTable).where(eq(conversationMembersTable.conversationId, privateConversationId));
+    await db.delete(conversationsTable).where(eq(conversationsTable.id, privateConversationId));
+    await db.delete(calendarEventsTable).where(inArray(calendarEventsTable.id, eventIds));
+    await db.delete(usersTable).where(inArray(usersTable.id, [staff.id, guardian.id, inactiveGuardian.id, athlete.id, secondAthlete.id]));
   }
 });
