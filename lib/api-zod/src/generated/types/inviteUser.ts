@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { InviteUserGradYear } from './inviteUserGradYear';
 import type { UserRole } from './userRole';
 import type { UserStatus } from './userStatus';
 
@@ -16,6 +17,7 @@ export interface InviteUser {
   role: UserRole;
   status: UserStatus;
   teams: string[];
+  gradYear?: InviteUserGradYear;
   invitedAt: Date;
   inviteExpiresAt?: Date | null;
 }
