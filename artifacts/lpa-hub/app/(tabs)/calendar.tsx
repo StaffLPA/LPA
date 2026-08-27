@@ -1,25 +1,17 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
-import { useApp } from '@/context/AppContext';
-import { useCreateCalendarEvent, useGetCalendarFeed } from '@workspace/api-client-react';
+import { useGetCalendarFeed } from '@workspace/api-client-react';
+import { CALENDAR_TEAM_COLORS, CALENDAR_TEAMS, type CalendarTeam } from '@/constants/teams';
 
 type ViewMode = 'Week' | 'Month';
-type CalendarTeam = 'All Teams' | 'Varsity' | 'Junior Varsity' | '14u' | '15u' | 'LPA Events';
 type CalendarEvent = { id: string; date: string; time: string; endTime?: string; title: string; location: string; tag: string; team: CalendarTeam; tint: string };
 
 const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const teams: { name: CalendarTeam; color: string }[] = [
-  { name: 'All Teams', color: '#AB562B' },
-  { name: 'Varsity', color: '#F1604D' },
-  { name: 'Junior Varsity', color: '#5B8C85' },
-  { name: '14u', color: '#8E78B8' },
-  { name: '15u', color: '#4D8DB8' },
-  { name: 'LPA Events', color: '#F5C85B' },
-];
+const teams = CALENDAR_TEAMS.map((name) => ({ name, color: CALENDAR_TEAM_COLORS[name] }));
 const feedSlugs = {
   Varsity: 'varsity',
   'Junior Varsity': 'lpa-jv',
@@ -41,6 +33,7 @@ const weekDatesFor = (date: string) => {
     return localDateKey(day);
   });
 };
+const eventColorsForDate = (events: CalendarEvent[], date: string) => Array.from(new Set(events.filter((event) => event.date === date).map((event) => event.tint)));
 const formatIcsTime = (value: string | undefined) => {
   const match = value?.match(/T(\d{2})(\d{2})/);
   if (!match) return 'Time TBD';
@@ -84,19 +77,12 @@ function parseIcsEvents(feed: string | undefined, team: Exclude<CalendarTeam, 'A
 export default function CalendarScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { role } = useApp();
-  const isAdmin = role === 'Admin';
   const today = new Date();
   const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(localDateKey(today));
   const [view, setView] = useState<ViewMode>('Week');
   const [selectedTeam, setSelectedTeam] = useState<CalendarTeam>('All Teams');
   const [showTeamMenu, setShowTeamMenu] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
-  const [title, setTitle] = useState('');
-  const [time, setTime] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [location, setLocation] = useState('');
   const [isCalendarFocused, setIsCalendarFocused] = useState(false);
   useFocusEffect(useCallback(() => {
     setIsCalendarFocused(true);
@@ -113,14 +99,13 @@ export default function CalendarScreen() {
   const fifteenUFeed = useGetCalendarFeed({ team: feedSlugs['15u'] }, feedOptions(feedSlugs['15u']));
   const lpaEventsFeed = useGetCalendarFeed({ team: feedSlugs['LPA Events'] }, feedOptions(feedSlugs['LPA Events']));
   const feeds = [
-    { team: 'Varsity' as const, feed: varsityFeed, tint: '#F1604D' },
-    { team: 'Junior Varsity' as const, feed: juniorVarsityFeed, tint: '#5B8C85' },
-    { team: '14u' as const, feed: fourteenUFeed, tint: '#8E78B8' },
-    { team: '15u' as const, feed: fifteenUFeed, tint: '#4D8DB8' },
-    { team: 'LPA Events' as const, feed: lpaEventsFeed, tint: '#F5C85B' },
+    { team: 'Varsity' as const, feed: varsityFeed, tint: CALENDAR_TEAM_COLORS.Varsity },
+    { team: 'Junior Varsity' as const, feed: juniorVarsityFeed, tint: CALENDAR_TEAM_COLORS['Junior Varsity'] },
+    { team: '14u' as const, feed: fourteenUFeed, tint: CALENDAR_TEAM_COLORS['14u'] },
+    { team: '15u' as const, feed: fifteenUFeed, tint: CALENDAR_TEAM_COLORS['15u'] },
+    { team: 'LPA Events' as const, feed: lpaEventsFeed, tint: CALENDAR_TEAM_COLORS['LPA Events'] },
   ];
   const refreshCalendarFeeds = () => Promise.all(feeds.map(({ feed }) => feed.refetch()));
-  const createPersistedEvent = useCreateCalendarEvent({ mutation: { onSuccess: () => { void refreshCalendarFeeds(); setTitle(''); setTime(''); setEndTime(''); setLocation(''); setShowCreate(false); } } });
   const events = useMemo(() => {
     return feeds.flatMap(({ team, feed, tint }) => parseIcsEvents(feed.data, team, tint));
   }, [fifteenUFeed.data, fourteenUFeed.data, juniorVarsityFeed.data, lpaEventsFeed.data, varsityFeed.data]);
@@ -149,25 +134,19 @@ export default function CalendarScreen() {
     next.setDate(next.getDate() + amount * 7);
     chooseDate(localDateKey(next));
   };
-  const createEvent = () => {
-    if (!title.trim() || !time.trim()) return;
-    createPersistedEvent.mutate({ data: { title, date: selectedDate, time: endTime.trim() ? `${time.trim()} - ${endTime.trim()}` : time.trim(), location: location || 'LPA Campus', team: 'LPA Events' } }, { onError: (error) => Alert.alert('Could not add event', error.message) });
-  };
-
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 115 }} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.primary }]}>{monthLabel.toUpperCase()}</Text><Text style={[styles.title, { color: colors.foreground }]}>Calendar</Text></View>{isAdmin ? <Pressable testID="create-event" onPress={() => setShowCreate(true)} style={[styles.add, { backgroundColor: colors.primary }]}><Feather name="plus" size={19} color="#fff" /></Pressable> : null}</View>
+      <View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.primary }]}>{monthLabel.toUpperCase()}</Text><Text style={[styles.title, { color: colors.foreground }]}>Calendar</Text></View></View>
       <View style={styles.filterWrap}><Pressable testID="calendar-team-filter" onPress={() => setShowTeamMenu((visible) => !visible)} style={[styles.filterSelect, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={[styles.filterDot, { backgroundColor: teams.find((team) => team.name === selectedTeam)?.color ?? colors.primary }]} /><Text style={[styles.filterText, { color: colors.foreground }]}>{selectedTeam}</Text><Feather name={showTeamMenu ? 'chevron-up' : 'chevron-down'} size={17} color={colors.mutedForeground} /></Pressable>{showTeamMenu ? <View style={[styles.filterMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>{teams.map((team) => <Pressable key={team.name} testID={`calendar-filter-${team.name}`} onPress={() => { setSelectedTeam(team.name); setShowTeamMenu(false); }} style={styles.filterOption}><View style={[styles.filterDot, { backgroundColor: team.color }]} /><Text style={[styles.filterText, { color: colors.foreground, flex: 1 }]}>{team.name}</Text>{selectedTeam === team.name ? <Feather name="check" size={16} color={colors.primary} /> : null}</Pressable>)}</View> : null}</View>
       <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
          <View style={styles.monthRow}><Text style={[styles.month, { color: colors.foreground }]}>{monthLabel}</Text><View style={styles.arrows}><Pressable testID={view === 'Week' ? 'previous-week' : 'previous-month'} accessibilityLabel={view === 'Week' ? 'Previous week' : 'Previous month'} onPress={() => view === 'Week' ? moveWeek(-1) : moveMonth(-1)} hitSlop={10}><Feather name="chevron-left" size={19} color={colors.foreground} /></Pressable><Pressable testID={view === 'Week' ? 'next-week' : 'next-month'} accessibilityLabel={view === 'Week' ? 'Next week' : 'Next month'} onPress={() => view === 'Week' ? moveWeek(1) : moveMonth(1)} hitSlop={10}><Feather name="chevron-right" size={19} color={colors.foreground} /></Pressable></View></View>
         <View style={styles.weekRow}>{weekdays.map((day, index) => <Text key={`${day}-${index}`} style={[styles.weekday, { color: colors.mutedForeground }]}>{day}</Text>)}</View>
-          {view === 'Month' ? <View style={styles.monthGrid}>{cells.map((day, index) => { const date = day > 0 && day <= days ? `${monthKey}-${String(day).padStart(2, '0')}` : ''; const hasEvent = date !== '' && filteredEvents.some((event) => event.date === date); return <Pressable key={`${monthKey}-${index}`} disabled={!date} onPress={() => chooseDay(day)} style={styles.monthCell}><View style={[styles.monthDate, date === selectedDate && { backgroundColor: colors.primary }]}><Text style={[styles.monthDateText, { color: date === selectedDate ? '#fff' : date ? colors.foreground : colors.muted }]}>{date ? day : ''}</Text></View><View style={[styles.dot, { backgroundColor: hasEvent ? colors.primary : 'transparent' }]} /></Pressable>; })}</View> : <View style={styles.weekRow}>{weekDatesFor(selectedDate).map((date) => { const day = dateFromKey(date).getDate(); return <Pressable key={date} onPress={() => chooseDate(date)} style={styles.dayCell}><View style={[styles.dateCircle, selectedDate === date && { backgroundColor: colors.primary }]}><Text style={[styles.dateText, { color: selectedDate === date ? '#fff' : colors.foreground }]}>{day}</Text></View><View style={[styles.dot, { backgroundColor: filteredEvents.some((event) => event.date === date) ? colors.primary : 'transparent' }]} /></Pressable>; })}</View>}
+           {view === 'Month' ? <View style={styles.monthGrid}>{cells.map((day, index) => { const date = day > 0 && day <= days ? `${monthKey}-${String(day).padStart(2, '0')}` : ''; const eventColors = date ? eventColorsForDate(filteredEvents, date) : []; return <Pressable key={`${monthKey}-${index}`} disabled={!date} onPress={() => chooseDay(day)} style={styles.monthCell}><View style={[styles.monthDate, date === selectedDate && { backgroundColor: colors.primary }]}><Text style={[styles.monthDateText, { color: date === selectedDate ? '#fff' : date ? colors.foreground : colors.muted }]}>{date ? day : ''}</Text></View><ColorDots colors={eventColors} /></Pressable>; })}</View> : <View style={styles.weekRow}>{weekDatesFor(selectedDate).map((date) => { const day = dateFromKey(date).getDate(); return <Pressable key={date} onPress={() => chooseDate(date)} style={styles.dayCell}><View style={[styles.dateCircle, selectedDate === date && { backgroundColor: colors.primary }]}><Text style={[styles.dateText, { color: selectedDate === date ? '#fff' : colors.foreground }]}>{day}</Text></View><ColorDots colors={eventColorsForDate(filteredEvents, date)} /></Pressable>; })}</View>}
       </View>
       <View style={[styles.segment, { backgroundColor: colors.muted }]}>{(['Week', 'Month'] as ViewMode[]).map((item) => <Pressable key={item} onPress={() => setView(item)} style={[styles.segmentButton, view === item && { backgroundColor: colors.card }]}><Text style={[styles.segmentText, { color: view === item ? colors.foreground : colors.mutedForeground }]}>{item}</Text></Pressable>)}</View>
       <View style={styles.sectionRow}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{selectedLabel}</Text><Text style={[styles.count, { color: colors.mutedForeground }]}>{selectedEvents.length} events</Text></View>
       {view === 'Week' ? <WeekOverview colors={colors} events={filteredEvents} selectedDate={selectedDate} /> : <View style={[styles.agendaCard, { backgroundColor: colors.card, borderColor: colors.border }]}>{selectedEvents.length ? selectedEvents.map((item) => <EventRow key={item.id} item={item} colors={colors} />) : <View style={styles.empty}><Feather name="calendar" size={25} color={colors.mutedForeground} /><Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No events scheduled</Text></View>}</View>}
     </ScrollView>
-    <Modal visible={showCreate} transparent animationType="slide" onRequestClose={() => setShowCreate(false)}><View style={styles.backdrop}><View style={[styles.sheet, { backgroundColor: colors.card }]}><View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.foreground }]}>Create event</Text><Pressable onPress={() => setShowCreate(false)}><Feather name="x" size={20} color={colors.mutedForeground} /></Pressable></View><Text style={[styles.modalDate, { color: colors.mutedForeground }]}>{selectedLabel}</Text><TextInput value={title} onChangeText={setTitle} placeholder="Event title" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} /><View style={styles.timeInputs}><TextInput value={time} onChangeText={setTime} placeholder="Start (4:00 PM)" placeholderTextColor={colors.mutedForeground} style={[styles.input, styles.halfInput, { color: colors.foreground, borderColor: colors.border }]} /><TextInput value={endTime} onChangeText={setEndTime} placeholder="End (12:00 PM)" placeholderTextColor={colors.mutedForeground} style={[styles.input, styles.halfInput, { color: colors.foreground, borderColor: colors.border }]} /></View><TextInput value={location} onChangeText={setLocation} placeholder="Location (optional)" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} /><Pressable testID="save-event" onPress={createEvent} disabled={!title.trim() || !time.trim() || createPersistedEvent.isPending} style={[styles.save, { backgroundColor: title.trim() && time.trim() ? colors.primary : colors.muted }]}><Text style={styles.saveText}>{createPersistedEvent.isPending ? 'Adding…' : 'Add event'}</Text></Pressable></View></View></Modal>
   </View>;
 }
 
@@ -176,7 +155,11 @@ function EventRow({ item, colors }: { item: CalendarEvent; colors: ReturnType<ty
 }
 
 function WeekOverview({ colors, events, selectedDate }: { colors: ReturnType<typeof useColors>; events: CalendarEvent[]; selectedDate: string }) {
-  return <View style={[styles.weekOverview, { backgroundColor: colors.card, borderColor: colors.border }]}>{weekDatesFor(selectedDate).map((date, index) => { const day = dateFromKey(date); const count = events.filter((event) => event.date === date).length; return <View key={date} style={[styles.weekLine, index < 6 && { borderBottomColor: colors.border, borderBottomWidth: 1 }]}><View style={[styles.weekNumber, { backgroundColor: date === selectedDate ? colors.primary : colors.muted }]}><Text style={[styles.weekNumberText, { color: date === selectedDate ? '#fff' : colors.foreground }]}>{day.getDate()}</Text></View><View><Text style={[styles.weekTitle, { color: colors.foreground }]}>{count ? `${count} event${count > 1 ? 's' : ''}` : 'No events'}</Text><Text style={[styles.weekMeta, { color: colors.mutedForeground }]}>{day.toLocaleDateString('en-US', { weekday: 'short', month: 'short' })}</Text></View></View>; })}</View>;
+  return <View style={[styles.weekOverview, { backgroundColor: colors.card, borderColor: colors.border }]}>{weekDatesFor(selectedDate).map((date, index) => { const day = dateFromKey(date); const eventColors = eventColorsForDate(events, date); const accentColor = eventColors.length === 1 ? eventColors[0] : eventColors.length > 1 ? CALENDAR_TEAM_COLORS['All Teams'] : 'transparent'; const count = events.filter((event) => event.date === date).length; return <View key={date} style={[styles.weekLine, { borderLeftColor: accentColor, borderLeftWidth: 3 }, index < 6 && { borderBottomColor: colors.border, borderBottomWidth: 1 }]}><View style={[styles.weekNumber, { backgroundColor: date === selectedDate ? colors.primary : colors.muted }]}><Text style={[styles.weekNumberText, { color: date === selectedDate ? '#fff' : colors.foreground }]}>{day.getDate()}</Text></View><View style={{ flex: 1 }}><Text style={[styles.weekTitle, { color: colors.foreground }]}>{count ? `${count} event${count > 1 ? 's' : ''}` : 'No events'}</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}><Text style={[styles.weekMeta, { color: colors.mutedForeground }]}>{day.toLocaleDateString('en-US', { weekday: 'short', month: 'short' })}</Text><ColorDots colors={eventColors} /></View></View></View>; })}</View>;
+}
+
+function ColorDots({ colors }: { colors: string[] }) {
+  return <View style={{ height: 4, flexDirection: 'row', alignItems: 'center', gap: 2 }}>{colors.map((color, index) => <View key={`${color}-${index}`} style={[styles.dot, { backgroundColor: color }]} />)}</View>;
 }
 
 const styles = StyleSheet.create({
