@@ -15,8 +15,8 @@ function inviteMessage(input: InviteNotificationInput) {
   const android = process.env.LPA_ANDROID_STORE_URL ?? "https://play.google.com/store/apps";
   return [
     `Hi ${input.fullName},`,
-    `Legendary Prep Academy invited you to join LPA Hub as ${input.role}.`,
-    `To complete your account, open LPA Hub and select "Need to complete an invite?"`,
+    `Legendary Prep Academy invited you to join LPA as ${input.role}.`,
+    `To complete your account, open LPA and select "Need to complete an invite?"`,
     `Use this exact email address: ${input.email ?? "the email address used for your invitation"}.`,
     `iPhone/iPad: ${ios}`,
     `Android: ${android}`,
@@ -36,7 +36,7 @@ async function sendEmail(input: InviteNotificationInput, message: string) {
     },
     body: JSON.stringify({
       message: {
-        subject: "You're invited to LPA Hub",
+        subject: "You're invited to LPA",
         body: {
           contentType: "Text",
           content: message,
