@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: invites
     description: Admin invite and onboarding operations
+  - name: announcements
+    description: Audience-targeted bulletin board announcements
 paths:
   /healthz:
     get:
@@ -202,6 +204,48 @@ paths:
                 $ref: "#/components/schemas/SessionResponse"
         "401":
           description: Incorrect sign-in details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/forgot-password:
+    post:
+      operationId: requestPasswordReset
+      tags: [invites]
+      summary: Request a six-digit password reset code without revealing account existence
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+      responses:
+        "200":
+          description: Generic password reset request result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [invites]
+      summary: Replace a password using a short-lived single-use code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetConfirmRequest"
+      responses:
+        "200":
+          description: Password reset completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Invalid or expired reset token
           content:
             application/json:
               schema:
@@ -546,6 +590,86 @@ paths:
       responses:
         "204":
           description: Calendar event deleted
+  /announcements:
+    get:
+      operationId: listAnnouncements
+      tags: [announcements]
+      summary: List active announcements for the signed-in user's audience
+      responses:
+        "200":
+          description: Targeted active announcements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Announcement"
+  /admin/announcements:
+    get:
+      operationId: listAdminAnnouncements
+      tags: [announcements]
+      summary: List all announcements for administrators and staff coaches
+      responses:
+        "200":
+          description: All announcements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Announcement"
+    post:
+      operationId: createAnnouncement
+      tags: [announcements]
+      summary: Publish an announcement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementInput"
+      responses:
+        "201":
+          description: Published announcement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+  /admin/announcements/{id}:
+    patch:
+      operationId: updateAnnouncement
+      tags: [announcements]
+      summary: Edit an announcement without re-notifying
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementInput"
+      responses:
+        "200":
+          description: Updated announcement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Announcement"
+    delete:
+      operationId: removeAnnouncement
+      tags: [announcements]
+      summary: Soft-remove an announcement
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Announcement removed
   /chats:
     get:
       operationId: listChats
@@ -694,6 +818,164 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "400":
           description: Message or attachment is invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}/messages/{messageId}/reactions/{emoji}:
+    get:
+      operationId: listChatMessageReactionUsers
+      tags: [messaging]
+      summary: Get the users who used a message reaction
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: messageId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: emoji
+          required: true
+          schema:
+            type: string
+            enum:
+              - "👍"
+              - "❤️"
+              - "😂"
+              - "😮"
+              - "😢"
+              - "🎉"
+              - "👏"
+              - "🙌"
+              - "🔥"
+              - "💯"
+              - "😍"
+              - "🤔"
+              - "😎"
+              - "😡"
+              - "👎"
+              - "🤣"
+              - "🥳"
+              - "🤩"
+              - "🙏"
+              - "💪"
+              - "👀"
+              - "⚾"
+              - "✅"
+              - "⭐"
+      responses:
+        "200":
+          description: Users who used the selected reaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageReactionUsers"
+        "400":
+          description: Unsupported reaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Conversation membership required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Message not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /chats/{conversationId}/messages/{messageId}/reactions:
+    put:
+      operationId: addChatMessageReaction
+      tags: [messaging]
+      summary: Add a reaction to a message
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: messageId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageReactionInput"
+      responses:
+        "200":
+          description: Reaction state after adding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageReaction"
+        "400":
+          description: Unsupported reaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Conversation membership required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Message not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: removeChatMessageReaction
+      tags: [messaging]
+      summary: Remove a reaction from a message
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: messageId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageReactionInput"
+      responses:
+        "200":
+          description: Reaction state after removing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageReaction"
+        "400":
+          description: Unsupported reaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Conversation membership required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Message not found
           content:
             application/json:
               schema:
@@ -957,31 +1239,175 @@ components:
         userId: { type: string }
     ChatMessage:
       type: object
-      required: [id, conversationId, senderId, senderName, text, attachments, createdAt]
+      required: [id, conversationId, senderId, senderName, senderProfilePhotoUri, text, attachments, reactions, replyTo, mentions, createdAt]
       properties:
         id: { type: string }
         conversationId: { type: string }
         senderId: { type: string }
         senderName: { type: string }
+        senderProfilePhotoUri: { type: string, nullable: true }
         text: { type: string }
         attachments:
           type: array
           items:
             $ref: "#/components/schemas/ChatAttachment"
+        reactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageReaction"
+        replyTo:
+          allOf:
+            - $ref: "#/components/schemas/ChatMessageReply"
+          nullable: true
+        mentions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessageMention"
         createdAt: { type: string, format: date-time }
+    ChatMessageReply:
+      type: object
+      required: [id, senderId, senderName, text]
+      properties:
+        id: { type: string }
+        senderId: { type: string }
+        senderName: { type: string }
+        text: { type: string }
+    ChatMessageMention:
+      type: object
+      required: [userId, displayName, start, end]
+      properties:
+        userId: { type: string }
+        displayName: { type: string }
+        start: { type: number, minimum: 0 }
+        end: { type: number, minimum: 1 }
+    MessageReaction:
+      type: object
+      required: [emoji, count, reacted]
+      properties:
+        emoji:
+          type: string
+          enum:
+            - "👍"
+            - "❤️"
+            - "😂"
+            - "😮"
+            - "😢"
+            - "🎉"
+            - "👏"
+            - "🙌"
+            - "🔥"
+            - "💯"
+            - "😍"
+            - "🤔"
+            - "😎"
+            - "😡"
+            - "👎"
+            - "🤣"
+            - "🥳"
+            - "🤩"
+            - "🙏"
+            - "💪"
+            - "👀"
+            - "⚾"
+            - "✅"
+            - "⭐"
+        count: { type: number, minimum: 0 }
+        reacted: { type: boolean }
+    MessageReactionUsers:
+      type: object
+      required: [emoji, users]
+      properties:
+        emoji:
+          type: string
+          enum:
+            - "👍"
+            - "❤️"
+            - "😂"
+            - "😮"
+            - "😢"
+            - "🎉"
+            - "👏"
+            - "🙌"
+            - "🔥"
+            - "💯"
+            - "😍"
+            - "🤔"
+            - "😎"
+            - "😡"
+            - "👎"
+            - "🤣"
+            - "🥳"
+            - "🤩"
+            - "🙏"
+            - "💪"
+            - "👀"
+            - "⚾"
+            - "✅"
+            - "⭐"
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageReactionUser"
+    MessageReactionUser:
+      type: object
+      required: [id, fullName]
+      properties:
+        id: { type: string }
+        fullName: { type: string }
+    MessageReactionInput:
+      type: object
+      required: [emoji]
+      properties:
+        emoji:
+          type: string
+          enum:
+            - "👍"
+            - "❤️"
+            - "😂"
+            - "😮"
+            - "😢"
+            - "🎉"
+            - "👏"
+            - "🙌"
+            - "🔥"
+            - "💯"
+            - "😍"
+            - "🤔"
+            - "😎"
+            - "😡"
+            - "👎"
+            - "🤣"
+            - "🥳"
+            - "🤩"
+            - "🙏"
+            - "💪"
+            - "👀"
+            - "⚾"
+            - "✅"
+            - "⭐"
     ChatMessagePreview:
       type: object
-      required: [id, conversationId, senderId, text, createdAt]
+      required: [id, conversationId, senderId, text, mentions, createdAt]
       properties:
         id: { type: string }
         conversationId: { type: string }
         senderId: { type: string }
         text: { type: string }
+        mentions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessageMention"
         createdAt: { type: string, format: date-time }
     ChatMessageInput:
       type: object
       properties:
         text: { type: string, maxLength: 2000 }
+        replyToMessageId: { type: string }
+        mentions:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/ChatMessageMention"
         attachments:
           type: array
           maxItems: 5
@@ -1061,6 +1487,47 @@ components:
       properties:
         id: { type: string }
         platform: { type: string, enum: [ios, android] }
+    AnnouncementAudienceTag:
+      type: string
+      enum: [Staff-Coach, Parent, Student]
+    AnnouncementStatus:
+      type: string
+      enum: [active, expired, removed]
+    AnnouncementInput:
+      type: object
+      required: [title, body, audienceTags]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, minLength: 1, description: Sanitized rich HTML }
+        durationDays:
+          anyOf:
+            - { type: number, minimum: 1, maximum: 3650 }
+            - { type: "null" }
+        audienceTags:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/AnnouncementAudienceTag"
+    Announcement:
+      type: object
+      required: [id, title, body, durationDays, publishedAt, expiresAt, audienceTags, status, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        body: { type: string }
+        durationDays: { type: ["number", "null"] }
+        publishedAt: { type: string, format: date-time }
+        expiresAt: { type: ["string", "null"], format: date-time }
+        audienceTags:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnnouncementAudienceTag"
+        status:
+          $ref: "#/components/schemas/AnnouncementStatus"
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     HealthStatus:
       type: object
       properties:
@@ -1190,6 +1657,23 @@ components:
       properties:
         identifier: { type: string, minLength: 3 }
         password: { type: string, minLength: 8 }
+    PasswordResetRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier: { type: string, minLength: 3 }
+    PasswordResetConfirmRequest:
+      type: object
+      required: [identifier, code, newPassword]
+      properties:
+        identifier: { type: string, minLength: 3 }
+        code: { type: string, pattern: '^[0-9]{6}$' }
+        newPassword: { type: string, minLength: 8 }
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
     ProfilePhotoUploadInput:
       type: object
       required: [contentType, size]
