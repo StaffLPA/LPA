@@ -4,7 +4,7 @@ import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useListChats } from '@workspace/api-client-react';
+import { useListChats, getListAnnouncementsQueryKey, getListAdminAnnouncementsQueryKey } from '@workspace/api-client-react';
 import { useApp } from '@/context/AppContext';
 import { useColors } from '@/hooks/useColors';
 import { addPushReceivedListener, addPushResponseListener } from '@/lib/messagePushNotifications';
@@ -14,7 +14,7 @@ type Chat = {
   name: string;
   members: { id: string; fullName: string }[];
   unreadCount: number;
-  lastMessage: { id: string; senderId: string; text: string } | null;
+  lastMessage: { id: string; senderId: string; text: string; mentions: { userId: string }[] } | null;
 };
 type AlertMessage = { conversationId: string; messageId: string; title: string; body: string };
 
@@ -92,21 +92,32 @@ export function MessageNotificationCenter() {
         continue;
       }
       const sender = chat.members.find((member) => member.id === last.senderId)?.fullName ?? 'LPA member';
-      show({ conversationId: chat.id, messageId: last.id, title: `${sender} · ${chat.name}`, body: last.text || 'Sent an attachment' });
+      const mentioned = last.mentions.some((mention) => mention.userId === user.id);
+      show({ conversationId: chat.id, messageId: last.id, title: mentioned ? `${sender} mentioned you · ${chat.name}` : `${sender} · ${chat.name}`, body: last.text || 'Sent an attachment' });
     }
   }, [chats.data, isReady, remember, show, user]);
 
   useEffect(() => {
-    const invalidate = (conversationId: string) => {
+    const invalidateChat = (conversationId: string) => {
       void queryClient.invalidateQueries({ queryKey: ['chats'] });
       if (pathname === `/chat/${conversationId}`) void queryClient.invalidateQueries({ queryKey: ['chat-messages', conversationId] });
     };
-    const response = addPushResponseListener((conversationId) => {
-      invalidate(conversationId);
-      router.push(('/chat/' + conversationId) as never);
+    const response = addPushResponseListener((data) => {
+      if (data.conversationId) {
+        invalidateChat(data.conversationId);
+        router.push(('/chat/' + data.conversationId) as never);
+      } else if (data.announcementId) {
+        router.push(`/?announcementId=${data.announcementId}` as never);
+      }
     });
     const received = addPushReceivedListener((notification) => {
-      invalidate(notification.conversationId);
+      if (notification.conversationId) {
+        invalidateChat(notification.conversationId);
+        if (notification.messageId) show({ conversationId: notification.conversationId, messageId: notification.messageId, title: notification.title, body: notification.body });
+      } else if (notification.announcementId) {
+        void queryClient.invalidateQueries({ queryKey: getListAnnouncementsQueryKey() });
+        void queryClient.invalidateQueries({ queryKey: getListAdminAnnouncementsQueryKey() });
+      }
     });
     return () => { response.remove(); received.remove(); };
   }, [pathname, queryClient, router, show]);
