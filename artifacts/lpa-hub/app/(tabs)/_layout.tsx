@@ -1,12 +1,12 @@
 import React, { useMemo } from 'react';
-import { Platform, StyleSheet, useColorScheme, View } from 'react-native';
+import { Platform, StyleSheet, useColorScheme, View, type ColorValue } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import { useListChats } from '@workspace/api-client-react';
 import { LpaIcon, type LpaIconName } from '@/components/LpaIcon';
 
-type TabIconProps = { color: string; focused: boolean };
+type TabIconProps = { color: ColorValue; focused: boolean };
 
 function TabIcon({ color, focused, name }: TabIconProps & { name: LpaIconName }) {
   return <LpaIcon name={name} size={focused ? 23 : 21} color={color} strokeWidth={focused ? 2.1 : 1.8} />;
