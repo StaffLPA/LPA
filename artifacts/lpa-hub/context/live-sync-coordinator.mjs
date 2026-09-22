@@ -17,8 +17,13 @@ export function createSharedSyncCoordinator({
       const [freshUser] = await Promise.all([refreshProfile(), refetchActiveQueries()]);
       onProfile(freshUser);
       onStateChange({ lastSyncedAt: now() });
-    } catch {
-      onStateChange({ syncError: 'Live data could not refresh. Tap to retry.' });
+    } catch (error) {
+      const unauthorized = error && typeof error === 'object' && 'status' in error && error.status === 401;
+      onStateChange({
+        syncError: unauthorized
+          ? 'Your session cannot refresh live data. Cached content remains available; log out to sign in again.'
+          : 'Live data could not refresh. Tap to retry.',
+      });
     } finally {
       inFlight = false;
       onStateChange({ isSyncing: false });
