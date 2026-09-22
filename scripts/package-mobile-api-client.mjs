@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,7 +9,11 @@ const mobileDir = path.join(root, "artifacts", "lpa-hub");
 const vendorDir = path.join(mobileDir, "vendor");
 
 mkdirSync(vendorDir, { recursive: true });
-rmSync(path.join(vendorDir, "workspace-api-client-react-0.0.0.tgz"), { force: true });
+for (const file of readdirSync(vendorDir)) {
+  if (/^workspace-api-client-react-.*\.tgz$/.test(file)) {
+    rmSync(path.join(vendorDir, file), { force: true });
+  }
+}
 
 execFileSync(
   "pnpm",
