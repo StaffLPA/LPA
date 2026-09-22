@@ -216,6 +216,43 @@ export const SignInResponse = zod.object({
 
 
 /**
+ * @summary Request a six-digit password reset code without revealing account existence
+ */
+export const requestPasswordResetBodyIdentifierMin = 3;
+
+
+
+export const RequestPasswordResetBody = zod.object({
+  "identifier": zod.string().min(requestPasswordResetBodyIdentifierMin)
+})
+
+export const RequestPasswordResetResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Replace a password using a short-lived single-use code
+ */
+export const resetPasswordBodyIdentifierMin = 3;
+
+export const resetPasswordBodyCodeRegExp = new RegExp('^[0-9]{6}$');
+export const resetPasswordBodyNewPasswordMin = 8;
+
+
+
+export const ResetPasswordBody = zod.object({
+  "identifier": zod.string().min(resetPasswordBodyIdentifierMin),
+  "code": zod.string().regex(resetPasswordBodyCodeRegExp),
+  "newPassword": zod.string().min(resetPasswordBodyNewPasswordMin)
+})
+
+export const ResetPasswordResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
  * @summary Create a signed upload URL for a profile photo
  */
 export const createProfilePhotoUploadUrlBodySizeMax = 5242880;
@@ -565,9 +602,130 @@ export const DeleteCalendarEventResponse = zod.void()
 
 
 /**
+ * @summary List active announcements for the signed-in user's audience
+ */
+export const ListAnnouncementsResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "durationDays": zod.number().nullable(),
+  "publishedAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "audienceTags": zod.array(zod.enum(['Staff-Coach', 'Parent', 'Student'])),
+  "status": zod.enum(['active', 'expired', 'removed']),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListAnnouncementsResponse = zod.array(ListAnnouncementsResponseItem)
+
+
+/**
+ * @summary List all announcements for administrators and staff coaches
+ */
+export const ListAdminAnnouncementsResponseItem = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "durationDays": zod.number().nullable(),
+  "publishedAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "audienceTags": zod.array(zod.enum(['Staff-Coach', 'Parent', 'Student'])),
+  "status": zod.enum(['active', 'expired', 'removed']),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListAdminAnnouncementsResponse = zod.array(ListAdminAnnouncementsResponseItem)
+
+
+/**
+ * @summary Publish an announcement
+ */
+export const createAnnouncementBodyTitleMax = 200;
+
+
+export const createAnnouncementBodyDurationDaysOneMax = 3650;
+
+
+
+
+export const CreateAnnouncementBody = zod.object({
+  "title": zod.string().min(1).max(createAnnouncementBodyTitleMax),
+  "body": zod.string().min(1).describe('Sanitized rich HTML'),
+  "durationDays": zod.union([zod.number().min(1).max(createAnnouncementBodyDurationDaysOneMax),zod.null()]).optional(),
+  "audienceTags": zod.array(zod.enum(['Staff-Coach', 'Parent', 'Student'])).min(1)
+})
+
+export const CreateAnnouncementResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "durationDays": zod.number().nullable(),
+  "publishedAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "audienceTags": zod.array(zod.enum(['Staff-Coach', 'Parent', 'Student'])),
+  "status": zod.enum(['active', 'expired', 'removed']),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Edit an announcement without re-notifying
+ */
+export const UpdateAnnouncementParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const updateAnnouncementBodyTitleMax = 200;
+
+
+export const updateAnnouncementBodyDurationDaysOneMax = 3650;
+
+
+
+
+export const UpdateAnnouncementBody = zod.object({
+  "title": zod.string().min(1).max(updateAnnouncementBodyTitleMax),
+  "body": zod.string().min(1).describe('Sanitized rich HTML'),
+  "durationDays": zod.union([zod.number().min(1).max(updateAnnouncementBodyDurationDaysOneMax),zod.null()]).optional(),
+  "audienceTags": zod.array(zod.enum(['Staff-Coach', 'Parent', 'Student'])).min(1)
+})
+
+export const UpdateAnnouncementResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "body": zod.string(),
+  "durationDays": zod.number().nullable(),
+  "publishedAt": zod.coerce.date(),
+  "expiresAt": zod.coerce.date().nullable(),
+  "audienceTags": zod.array(zod.enum(['Staff-Coach', 'Parent', 'Student'])),
+  "status": zod.enum(['active', 'expired', 'removed']),
+  "createdBy": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Soft-remove an announcement
+ */
+export const RemoveAnnouncementParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const RemoveAnnouncementResponse = zod.void()
+
+
+/**
  * @summary List conversations for the signed-in user
  */
 export const listChatsResponseUnreadCountMin = 0;
+
+export const listChatsResponseLastMessageOneMentionsItemStartMin = 0;
+
 
 
 
@@ -589,6 +747,12 @@ export const ListChatsResponseItem = zod.object({
   "conversationId": zod.string(),
   "senderId": zod.string(),
   "text": zod.string(),
+  "mentions": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "start": zod.number().min(listChatsResponseLastMessageOneMentionsItemStartMin),
+  "end": zod.number().min(1)
+})),
   "createdAt": zod.coerce.date()
 }),zod.null()])
 })
@@ -611,6 +775,9 @@ export const CreateChatBody = zod.object({
 
 export const createChatResponseUnreadCountMin = 0;
 
+export const createChatResponseLastMessageOneMentionsItemStartMin = 0;
+
+
 
 
 export const CreateChatResponse = zod.object({
@@ -631,6 +798,12 @@ export const CreateChatResponse = zod.object({
   "conversationId": zod.string(),
   "senderId": zod.string(),
   "text": zod.string(),
+  "mentions": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "start": zod.number().min(createChatResponseLastMessageOneMentionsItemStartMin),
+  "end": zod.number().min(1)
+})),
   "createdAt": zod.coerce.date()
 }),zod.null()])
 })
@@ -687,6 +860,11 @@ export const listChatMessagesResponseAttachmentsItemFileNameMax = 160;
 
 export const listChatMessagesResponseAttachmentsItemSizeMax = 10485760;
 
+export const listChatMessagesResponseReactionsItemCountMin = 0;
+
+export const listChatMessagesResponseMentionsItemStartMin = 0;
+
+
 
 
 export const ListChatMessagesResponseItem = zod.object({
@@ -694,12 +872,30 @@ export const ListChatMessagesResponseItem = zod.object({
   "conversationId": zod.string(),
   "senderId": zod.string(),
   "senderName": zod.string(),
+  "senderProfilePhotoUri": zod.string().nullable(),
   "text": zod.string(),
   "attachments": zod.array(zod.object({
   "id": zod.string(),
   "fileName": zod.string().max(listChatMessagesResponseAttachmentsItemFileNameMax),
   "contentType": zod.string(),
   "size": zod.number().min(1).max(listChatMessagesResponseAttachmentsItemSizeMax)
+})),
+  "reactions": zod.array(zod.object({
+  "emoji": zod.enum(['👍', '❤️', '😂', '😮', '😢', '🎉', '👏', '🙌', '🔥', '💯', '😍', '🤔', '😎', '😡', '👎', '🤣', '🥳', '🤩', '🙏', '💪', '👀', '⚾', '✅', '⭐']),
+  "count": zod.number().min(listChatMessagesResponseReactionsItemCountMin),
+  "reacted": zod.boolean()
+})),
+  "replyTo": zod.object({
+  "id": zod.string(),
+  "senderId": zod.string(),
+  "senderName": zod.string(),
+  "text": zod.string()
+}).nullable(),
+  "mentions": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "start": zod.number().min(listChatMessagesResponseMentionsItemStartMin),
+  "end": zod.number().min(1)
 })),
   "createdAt": zod.coerce.date()
 })
@@ -715,6 +911,11 @@ export const SendChatMessageParams = zod.object({
 
 export const sendChatMessageBodyTextMax = 2000;
 
+export const sendChatMessageBodyMentionsItemStartMin = 0;
+
+
+export const sendChatMessageBodyMentionsMax = 32;
+
 export const sendChatMessageBodyAttachmentsItemObjectPathRegExp = new RegExp('^/objects/uploads/[a-f0-9-]{36}$');
 export const sendChatMessageBodyAttachmentsItemFileNameMax = 160;
 
@@ -727,6 +928,13 @@ export const sendChatMessageBodyAttachmentsMax = 5;
 
 export const SendChatMessageBody = zod.object({
   "text": zod.string().max(sendChatMessageBodyTextMax).optional(),
+  "replyToMessageId": zod.string().optional(),
+  "mentions": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "start": zod.number().min(sendChatMessageBodyMentionsItemStartMin),
+  "end": zod.number().min(1)
+})).max(sendChatMessageBodyMentionsMax).optional(),
   "attachments": zod.array(zod.object({
   "objectPath": zod.string().regex(sendChatMessageBodyAttachmentsItemObjectPathRegExp),
   "fileName": zod.string().min(1).max(sendChatMessageBodyAttachmentsItemFileNameMax),
@@ -739,6 +947,11 @@ export const sendChatMessageResponseAttachmentsItemFileNameMax = 160;
 
 export const sendChatMessageResponseAttachmentsItemSizeMax = 10485760;
 
+export const sendChatMessageResponseReactionsItemCountMin = 0;
+
+export const sendChatMessageResponseMentionsItemStartMin = 0;
+
+
 
 
 export const SendChatMessageResponse = zod.object({
@@ -746,6 +959,7 @@ export const SendChatMessageResponse = zod.object({
   "conversationId": zod.string(),
   "senderId": zod.string(),
   "senderName": zod.string(),
+  "senderProfilePhotoUri": zod.string().nullable(),
   "text": zod.string(),
   "attachments": zod.array(zod.object({
   "id": zod.string(),
@@ -753,7 +967,88 @@ export const SendChatMessageResponse = zod.object({
   "contentType": zod.string(),
   "size": zod.number().min(1).max(sendChatMessageResponseAttachmentsItemSizeMax)
 })),
+  "reactions": zod.array(zod.object({
+  "emoji": zod.enum(['👍', '❤️', '😂', '😮', '😢', '🎉', '👏', '🙌', '🔥', '💯', '😍', '🤔', '😎', '😡', '👎', '🤣', '🥳', '🤩', '🙏', '💪', '👀', '⚾', '✅', '⭐']),
+  "count": zod.number().min(sendChatMessageResponseReactionsItemCountMin),
+  "reacted": zod.boolean()
+})),
+  "replyTo": zod.object({
+  "id": zod.string(),
+  "senderId": zod.string(),
+  "senderName": zod.string(),
+  "text": zod.string()
+}).nullable(),
+  "mentions": zod.array(zod.object({
+  "userId": zod.string(),
+  "displayName": zod.string(),
+  "start": zod.number().min(sendChatMessageResponseMentionsItemStartMin),
+  "end": zod.number().min(1)
+})),
   "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get the users who used a message reaction
+ */
+export const ListChatMessageReactionUsersParams = zod.object({
+  "conversationId": zod.coerce.string(),
+  "messageId": zod.coerce.string(),
+  "emoji": zod.enum(['👍', '❤️', '😂', '😮', '😢', '🎉', '👏', '🙌', '🔥', '💯', '😍', '🤔', '😎', '😡', '👎', '🤣', '🥳', '🤩', '🙏', '💪', '👀', '⚾', '✅', '⭐'])
+})
+
+export const ListChatMessageReactionUsersResponse = zod.object({
+  "emoji": zod.enum(['👍', '❤️', '😂', '😮', '😢', '🎉', '👏', '🙌', '🔥', '💯', '😍', '🤔', '😎', '😡', '👎', '🤣', '🥳', '🤩', '🙏', '💪', '👀', '⚾', '✅', '⭐']),
+  "users": zod.array(zod.object({
+  "id": zod.string(),
+  "fullName": zod.string()
+}))
+})
+
+
+/**
+ * @summary Add a reaction to a message
+ */
+export const AddChatMessageReactionParams = zod.object({
+  "conversationId": zod.coerce.string(),
+  "messageId": zod.coerce.string()
+})
+
+export const AddChatMessageReactionBody = zod.object({
+  "emoji": zod.enum(['👍', '❤️', '😂', '😮', '😢', '🎉', '👏', '🙌', '🔥', '💯', '😍', '🤔', '😎', '😡', '👎', '🤣', '🥳', '🤩', '🙏', '💪', '👀', '⚾', '✅', '⭐'])
+})
+
+export const addChatMessageReactionResponseCountMin = 0;
+
+
+
+export const AddChatMessageReactionResponse = zod.object({
+  "emoji": zod.enum(['👍', '❤️', '😂', '😮', '😢', '🎉', '👏', '🙌', '🔥', '💯', '😍', '🤔', '😎', '😡', '👎', '🤣', '🥳', '🤩', '🙏', '💪', '👀', '⚾', '✅', '⭐']),
+  "count": zod.number().min(addChatMessageReactionResponseCountMin),
+  "reacted": zod.boolean()
+})
+
+
+/**
+ * @summary Remove a reaction from a message
+ */
+export const RemoveChatMessageReactionParams = zod.object({
+  "conversationId": zod.coerce.string(),
+  "messageId": zod.coerce.string()
+})
+
+export const RemoveChatMessageReactionBody = zod.object({
+  "emoji": zod.enum(['👍', '❤️', '😂', '😮', '😢', '🎉', '👏', '🙌', '🔥', '💯', '😍', '🤔', '😎', '😡', '👎', '🤣', '🥳', '🤩', '🙏', '💪', '👀', '⚾', '✅', '⭐'])
+})
+
+export const removeChatMessageReactionResponseCountMin = 0;
+
+
+
+export const RemoveChatMessageReactionResponse = zod.object({
+  "emoji": zod.enum(['👍', '❤️', '😂', '😮', '😢', '🎉', '👏', '🙌', '🔥', '💯', '😍', '🤔', '😎', '😡', '👎', '🤣', '🥳', '🤩', '🙏', '💪', '👀', '⚾', '✅', '⭐']),
+  "count": zod.number().min(removeChatMessageReactionResponseCountMin),
+  "reacted": zod.boolean()
 })
 
 
