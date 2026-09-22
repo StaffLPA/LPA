@@ -1,6 +1,6 @@
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
-  /** Keep an individual request failure visible to its caller without clearing the active session. */
+  /** @deprecated Unauthorized responses are always request-level errors. */
   suppressUnauthorizedHandler?: boolean;
 };
 
@@ -20,7 +20,6 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
-let _unauthorizedHandler: UnauthorizedHandler | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -48,9 +47,12 @@ export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
 }
 
-/** Register a client-side response to an expired or invalid session. */
-export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
-  _unauthorizedHandler = handler;
+/**
+ * @deprecated Kept as a compatibility no-op. Unauthorized responses must stay
+ * visible to the individual request caller instead of triggering global state
+ * changes such as signing the user out.
+ */
+export function setUnauthorizedHandler(_handler: UnauthorizedHandler | null): void {
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -336,7 +338,7 @@ export async function customFetch<T = unknown>(
   options: CustomFetchOptions = {},
 ): Promise<T> {
   input = applyBaseUrl(input);
-  const { responseType = "auto", headers: headersInit, suppressUnauthorizedHandler = false, ...init } = options;
+  const { responseType = "auto", suppressUnauthorizedHandler: _suppressUnauthorizedHandler, headers: headersInit, ...init } = options;
 
   const method = resolveMethod(input, init.method);
 
@@ -380,7 +382,6 @@ export async function customFetch<T = unknown>(
   const response = await fetch(input, { ...init, method, headers });
 
   if (!response.ok) {
-    if (response.status === 401 && !suppressUnauthorizedHandler) _unauthorizedHandler?.();
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }
