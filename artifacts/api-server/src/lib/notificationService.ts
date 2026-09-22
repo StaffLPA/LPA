@@ -6,6 +6,11 @@ type InviteNotificationInput = {
   phone: string | null;
   role: string;
 };
+type PasswordResetNotificationInput = {
+  fullName: string;
+  email: string;
+  code: string;
+};
 
 const connectors = new ReplitConnectors();
 type InviteSender = (input: InviteNotificationInput) => Promise<void>;
@@ -23,7 +28,7 @@ function inviteMessage(input: InviteNotificationInput) {
   ].join("\n\n");
 }
 
-async function sendEmail(input: InviteNotificationInput, message: string) {
+async function sendEmail(input: { fullName: string; email: string | null }, subject: string, message: string) {
   if (!input.email) {
     throw new Error("Outlook invite delivery requires an email address.");
   }
@@ -36,7 +41,7 @@ async function sendEmail(input: InviteNotificationInput, message: string) {
     },
     body: JSON.stringify({
       message: {
-        subject: "You're invited to LPA",
+        subject,
         body: {
           contentType: "Text",
           content: message,
@@ -64,16 +69,37 @@ async function sendOutlookInvite(input: InviteNotificationInput) {
     throw new Error("An email address is required to send an Outlook invite.");
   }
   const message = inviteMessage(input);
-  await sendEmail(input, message);
+  await sendEmail(input, "You're invited to LPA", message);
+}
+
+async function sendOutlookPasswordReset(input: PasswordResetNotificationInput) {
+  const message = [
+    `Hi ${input.fullName},`,
+    "We received a request to reset your LPA password.",
+    `Your LPA password reset authentication code is: ${input.code}`,
+    "Enter this six-digit code in the LPA app, then choose a new password.",
+    "This code expires in 30 minutes and can only be used once.",
+    "If you did not request this, you can ignore this email.",
+  ].join("\n\n");
+  await sendEmail(input, "Reset your LPA password", message);
 }
 
 let inviteSender: InviteSender = sendOutlookInvite;
+let passwordResetSender: (input: PasswordResetNotificationInput) => Promise<void> = sendOutlookPasswordReset;
 
 export function setInviteNotificationSenderForTests(sender?: InviteSender) {
   inviteSender = sender ?? sendOutlookInvite;
 }
 
+export function setPasswordResetNotificationSenderForTests(sender?: (input: PasswordResetNotificationInput) => Promise<void>) {
+  passwordResetSender = sender ?? sendOutlookPasswordReset;
+}
+
 /** Direct Outlook delivery; recipients use the exact email shown in the message. */
 export async function sendInviteNotification(input: InviteNotificationInput) {
   await inviteSender(input);
+}
+
+export async function sendPasswordResetNotification(input: PasswordResetNotificationInput) {
+  await passwordResetSender(input);
 }
