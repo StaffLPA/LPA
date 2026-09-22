@@ -40,27 +40,30 @@ export async function requestMessagePushToken(): Promise<RegisteredPushToken | n
   return { expoPushToken: token.data, platform: Platform.OS };
 }
 
-export function addPushResponseListener(listener: (conversationId: string, messageId?: string) => void) {
+export function addPushResponseListener(listener: (data: { conversationId?: string, messageId?: string, announcementId?: string }) => void) {
   if (Platform.OS === 'web') return { remove: () => undefined };
   return Notifications.addNotificationResponseReceivedListener((response) => {
     const data = response.notification.request.content.data;
-    const conversationId = typeof data?.conversationId === 'string' ? data.conversationId : '';
+    const conversationId = typeof data?.conversationId === 'string' ? data.conversationId : undefined;
     const messageId = typeof data?.messageId === 'string' ? data.messageId : undefined;
-    if (conversationId) listener(conversationId, messageId);
+    const announcementId = typeof data?.announcementId === 'string' ? data.announcementId : undefined;
+    if (conversationId || announcementId) listener({ conversationId, messageId, announcementId });
   });
 }
 
-export function addPushReceivedListener(listener: (input: { conversationId: string; messageId?: string; title: string; body: string }) => void) {
+export function addPushReceivedListener(listener: (input: { conversationId?: string; messageId?: string; announcementId?: string; title: string; body: string }) => void) {
   if (Platform.OS === 'web') return { remove: () => undefined };
   return Notifications.addNotificationReceivedListener((notification) => {
     const data = notification.request.content.data;
-    const conversationId = typeof data?.conversationId === 'string' ? data.conversationId : '';
-    if (!conversationId) return;
+    const conversationId = typeof data?.conversationId === 'string' ? data.conversationId : undefined;
+    const announcementId = typeof data?.announcementId === 'string' ? data.announcementId : undefined;
+    if (!conversationId && !announcementId) return;
     listener({
       conversationId,
       messageId: typeof data?.messageId === 'string' ? data.messageId : undefined,
-      title: notification.request.content.title ?? 'New message',
-      body: notification.request.content.body ?? 'You have a new message.',
+      announcementId,
+      title: notification.request.content.title ?? 'New notification',
+      body: notification.request.content.body ?? 'You have a new notification.',
     });
   });
 }
