@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const usersTable = pgTable(
@@ -20,6 +20,9 @@ export const usersTable = pgTable(
     status: text("status").notNull().default("invited"),
     teams: text("teams").array().notNull().default([]),
     passwordHash: text("password_hash"),
+    passwordResetTokenHash: text("password_reset_token_hash"),
+    passwordResetTokenExpiresAt: timestamp("password_reset_token_expires_at", { withTimezone: true }),
+    passwordResetCodeAttempts: integer("password_reset_code_attempts").notNull().default(0),
     inviteTokenHash: text("invite_token_hash"),
     inviteTokenExpiresAt: timestamp("invite_token_expires_at", { withTimezone: true }),
     invitedBy: text("invited_by"),
