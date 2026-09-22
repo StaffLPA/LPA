@@ -6,13 +6,20 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ChatAttachment } from './chatAttachment';
+import type { ChatMessageMention } from './chatMessageMention';
+import type { ChatMessageReply } from './chatMessageReply';
+import type { MessageReaction } from './messageReaction';
 
 export interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
   senderName: string;
+  senderProfilePhotoUri: string | null;
   text: string;
   attachments: ChatAttachment[];
+  reactions: MessageReaction[];
+  replyTo: ChatMessageReply | null;
+  mentions: ChatMessageMention[];
   createdAt: Date;
 }
