@@ -2,8 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { customFetch, registerPushToken, removePushToken, setAuthTokenGetter, setUnauthorizedHandler } from '@workspace/api-client-react';
+import { customFetch, registerPushToken, removePushToken, setAuthTokenGetter } from '@workspace/api-client-react';
 import { createSharedSyncCoordinator, startSharedSyncTriggers } from './live-sync-coordinator.mjs';
+import { clearStoredSession, loadStoredSession, persistStoredSession } from './session-store.mjs';
 import { requestMessagePushToken, type RegisteredPushToken } from '@/lib/messagePushNotifications';
 
 export type Role = 'Admin' | 'Staff-Coach' | 'Parent-Athlete' | 'Athlete';
@@ -50,16 +51,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setAuthTokenGetter(() => sessionToken);
-    AsyncStorage.multiGet(['lpa-active-user', 'lpa-session-token', 'lpa-submissions']).then((items) => {
-      const stored = Object.fromEntries(items);
-      if (stored['lpa-session-token'] && stored['lpa-active-user']) {
-        sessionToken = stored['lpa-session-token'];
-        setUser(JSON.parse(stored['lpa-active-user']) as StoredUser);
+    Promise.all([loadStoredSession(AsyncStorage), AsyncStorage.getItem('lpa-submissions')]).then(([storedSession, storedSubmissions]) => {
+      if (storedSession) {
+        sessionToken = storedSession.token;
+        setUser(storedSession.user as StoredUser);
       }
-      items.forEach(([key, value]) => {
-        if (!value) return;
-        if (key === 'lpa-submissions') setSubmissions(JSON.parse(value) as Submission[]);
-      });
+      if (storedSubmissions) setSubmissions(JSON.parse(storedSubmissions) as Submission[]);
     }).catch(() => { sessionToken = null; }).finally(() => setIsReady(true));
   }, []);
 
@@ -75,13 +72,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSyncError(null);
     setPushToken(null);
     queryClient.clear();
-    void AsyncStorage.multiRemove(['lpa-active-user', 'lpa-session-token', user ? `lpa-push-token:${user.id}` : 'lpa-push-token']);
+    void clearStoredSession(AsyncStorage, user?.id);
   }, [pushToken, queryClient, user]);
   const completeAuthentication = useCallback(async (nextUser: StoredUser, token: string) => {
     sessionToken = token;
     queryClient.clear();
     setUser(nextUser);
-    await AsyncStorage.multiSet([['lpa-session-token', token], ['lpa-active-user', JSON.stringify(nextUser)]]);
+    await persistStoredSession(AsyncStorage, nextUser, token);
   }, [queryClient]);
   const updateUser = useCallback((nextUser: StoredUser) => {
     setUser(nextUser);
@@ -100,10 +97,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (state.lastSyncedAt !== undefined) setLastSyncedAt(state.lastSyncedAt);
     },
   }), [queryClient, updateUser, user]);
-  useEffect(() => {
-    setUnauthorizedHandler(signOut);
-    return () => setUnauthorizedHandler(null);
-  }, [signOut]);
   useEffect(() => {
     if (!user || !sessionToken) return;
 
