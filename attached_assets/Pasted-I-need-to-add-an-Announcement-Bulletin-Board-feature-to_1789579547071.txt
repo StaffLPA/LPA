@@ -1,0 +1,60 @@
+I need to add an Announcement / Bulletin Board feature to my app. Here are the full requirements:
+1. Data Model
+Create an Announcement model/table with these fields:
+•	id (unique identifier)
+•	title (string, required)
+•	body (text, required)
+•	duration_days (integer — number of days the announcement stays live after publishing; blank/null = never expires)
+•	published_at (timestamp, set when admin publishes it)
+•	expires_at (timestamp, calculated automatically as published_at + duration_days, null if no duration set)
+•	audience_tags (array/multi-select — values can be one or more of: Staff-Coach, Parent, Student)
+•	status (enum: active, expired, removed)
+•	created_by (admin user reference)
+•	created_at / updated_at (timestamps)
+2. Admin Dashboard — Announcement Management
+Add a new "Announcements" section to the admin dashboard with:
+Create Announcement form:
+•	Title — text input
+•	Body — multi-line text area
+•	Duration — numeric input labeled "Duration: ___ Days" (blank = no expiration)
+•	Where to Appear? — multi-select tag picker with options: Staff-Coach, Parent, Student (admin can select one, multiple, or all)
+•	Publish button
+Rich Text Formatting for the Body field:
+Replace the plain text area for Body with a rich text editor (e.g., TipTap, Quill, or Slate — pick whichever integrates best with the existing stack) that gives the admin a formatting toolbar with:
+•	Font family selector
+•	Font size selector
+•	Font color picker
+•	Text highlight/background color
+•	Text alignment (left, center, right, justify)
+•	Bullet list and numbered list
+•	Bold, Italic, Underline, Strikethrough
+•	Insert hyperlink (with a way to edit/remove the link after inserting)
+Store the formatted body as HTML (or the editor's native JSON format, converted to sanitized HTML on save) instead of plain text, so formatting is preserved. Sanitize the HTML on save to strip any unsafe tags/scripts. When rendering the announcement on the home page bulletin board, render this formatted HTML so the styling (fonts, colors, alignment, bold/italic/underline, highlights, bullets, links) displays exactly as the admin set it. Links should open safely (e.g., in-app browser or new tab, with rel="noopener noreferrer").
+Announcement list/table view:
+•	Show all announcements (active, expired, removed) with Title, Audience tags, Days remaining (or "Expired"/"No expiration"), Published date
+•	Each announcement has Edit and Remove actions
+•	Editing an announcement should let the admin update title, body, duration, and audience tags, and re-save
+•	Removing an announcement should soft-delete it (set status to removed) so it immediately disappears from the home page/bulletin board and stops notifying, without deleting historical records
+3. Auto-Expiration Logic
+•	On a scheduled job (e.g., daily cron or on-read check), any announcement where expires_at < now() should automatically be set to status = expired and stop displaying on the home page.
+•	Announcements with no duration_days set should remain active indefinitely until manually removed.
+4. Home Page — Bulletin Board / Announcement Section
+•	Add a new "Announcements" card/section to the home dashboard (before  "Quick access").
+•	It should support multiple announcements displayed at once (stacked list or carousel — your choice of best UX pattern for this app's style).
+•	Each user only sees announcements where their user tag (Staff-Coach, Parent, or Student) matches one of the announcement's selected audience_tags. If a user has multiple tags, they should see the union of all announcements relevant to any of their tags.
+•	Only show announcements with status = active (not expired, not removed).
+•	Sort by most recently published first.
+•	Each card shows Title + Body (truncate long body text with "Read more" if needed).
+5. Push Notifications
+•	When an admin clicks Publish on a new announcement, trigger a push notification to all users whose tag(s) match the selected audience_tags.
+•	Notification content: Title of the announcement as the push title, and the first ~100 characters of the body as the preview text — strip all HTML/formatting for this preview so only plain text is sent to the notification (the formatted version still displays in-app on the bulletin board).
+•	Tapping the notification should deep-link the user into the app's home page, scrolled to / highlighting the Announcements section.
+•	Editing an existing announcement should NOT re-trigger a push notification (only the initial publish does), unless I later ask for a "re-notify" option.
+•	Removing an announcement should not send a notification.
+6. Permissions
+•	Only Admin and Staff-Coach users can create, edit, or remove announcements.
+•	Regular users (Parent/Guardian, Athlete) can only view announcements targeted to their tag(s); they cannot post or edit.
+7. Tech Notes
+•	Use whatever push notification service is already integrated in this project (e.g., Firebase Cloud Messaging, OneSignal, Expo push, etc.) — if none is set up yet, recommend the simplest option for this stack and set it up.
+•	Reuse existing user "tag"/role fields if they already exist in the user model; if not, add a tags field (array) to the User model with the three tag options above.
+
