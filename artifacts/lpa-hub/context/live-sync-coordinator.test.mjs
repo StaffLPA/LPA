@@ -44,6 +44,28 @@ test('revalidates active queries and clears a retryable error after a later succ
   assert.equal(states.at(-1).isSyncing, false);
 });
 
+test('keeps cached session state available when the profile request is unauthorized', async () => {
+  let sessionStillAvailable = true;
+  const states = [];
+  const sync = createSharedSyncCoordinator({
+    hasSession: () => sessionStillAvailable,
+    refreshProfile: async () => {
+      const error = new Error('expired');
+      error.status = 401;
+      throw error;
+    },
+    refetchActiveQueries: async () => {},
+    onProfile: () => assert.fail('Unauthorized profile data must not replace cached user data'),
+    onStateChange: (state) => states.push(state),
+  });
+
+  await sync();
+
+  assert.equal(sessionStillAvailable, true);
+  assert.match(states.find((state) => state.syncError)?.syncError ?? '', /Cached content remains available/);
+  assert.equal(states.at(-1).isSyncing, false);
+});
+
 test('refreshes without waiting for a timer when the app returns to foreground or browser focus', async () => {
   const listeners = new Map();
   const appState = {
