@@ -5,11 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ChatMessageMention } from './chatMessageMention';
 
 export interface ChatMessagePreview {
   id: string;
   conversationId: string;
   senderId: string;
   text: string;
+  mentions: ChatMessageMention[];
   createdAt: Date;
 }
