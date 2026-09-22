@@ -20,6 +20,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  Announcement,
+  AnnouncementInput,
   CalendarEvent,
   CalendarEventInput,
   ChatAttachmentAccessUrl,
@@ -46,6 +48,12 @@ import type {
   ListCalendarEventsParams,
   ListSharedCalendarEventsParams,
   ListUsersParams,
+  MessageReaction,
+  MessageReactionInput,
+  MessageReactionUsers,
+  MessageResponse,
+  PasswordResetConfirmRequest,
+  PasswordResetRequest,
   ProfilePhotoUpload,
   ProfilePhotoUploadInput,
   PushToken,
@@ -742,6 +750,148 @@ export const useSignIn = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getSignInMutationOptions(options));
+    }
+
+export const getRequestPasswordResetUrl = () => {
+
+
+
+
+  return `/api/auth/forgot-password`
+}
+
+/**
+ * @summary Request a six-digit password reset code without revealing account existence
+ */
+export const requestPasswordReset = async (passwordResetRequest: PasswordResetRequest, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getRequestPasswordResetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(passwordResetRequest)
+  }
+);}
+
+
+
+
+
+export const getRequestPasswordResetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestPasswordReset>>, TError,{data: BodyType<PasswordResetRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestPasswordReset>>, TError,{data: BodyType<PasswordResetRequest>}, TContext> => {
+
+const mutationKey = ['requestPasswordReset'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestPasswordReset>>, {data: BodyType<PasswordResetRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestPasswordReset(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestPasswordResetMutationResult = NonNullable<Awaited<ReturnType<typeof requestPasswordReset>>>
+    export type RequestPasswordResetMutationBody = BodyType<PasswordResetRequest>
+    export type RequestPasswordResetMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Request a six-digit password reset code without revealing account existence
+ */
+export const useRequestPasswordReset = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestPasswordReset>>, TError,{data: BodyType<PasswordResetRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestPasswordReset>>,
+        TError,
+        {data: BodyType<PasswordResetRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestPasswordResetMutationOptions(options));
+    }
+
+export const getResetPasswordUrl = () => {
+
+
+
+
+  return `/api/auth/reset-password`
+}
+
+/**
+ * @summary Replace a password using a short-lived single-use code
+ */
+export const resetPassword = async (passwordResetConfirmRequest: PasswordResetConfirmRequest, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+  return customFetch<MessageResponse>(getResetPasswordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(passwordResetConfirmRequest)
+  }
+);}
+
+
+
+
+
+export const getResetPasswordMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetPassword>>, TError,{data: BodyType<PasswordResetConfirmRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resetPassword>>, TError,{data: BodyType<PasswordResetConfirmRequest>}, TContext> => {
+
+const mutationKey = ['resetPassword'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetPassword>>, {data: BodyType<PasswordResetConfirmRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  resetPassword(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof resetPassword>>>
+    export type ResetPasswordMutationBody = BodyType<PasswordResetConfirmRequest>
+    export type ResetPasswordMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Replace a password using a short-lived single-use code
+ */
+export const useResetPassword = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetPassword>>, TError,{data: BodyType<PasswordResetConfirmRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resetPassword>>,
+        TError,
+        {data: BodyType<PasswordResetConfirmRequest>},
+        TContext
+      > => {
+      return useMutation(getResetPasswordMutationOptions(options));
     }
 
 export const getCreateProfilePhotoUploadUrlUrl = () => {
@@ -1869,6 +2019,374 @@ export const useDeleteCalendarEvent = <TError = ErrorType<unknown>,
       return useMutation(getDeleteCalendarEventMutationOptions(options));
     }
 
+export const getListAnnouncementsUrl = () => {
+
+
+
+
+  return `/api/announcements`
+}
+
+/**
+ * @summary List active announcements for the signed-in user's audience
+ */
+export const listAnnouncements = async ( options?: Parameters<typeof customFetch>[1]): Promise<Announcement[]> => {
+
+  return customFetch<Announcement[]>(getListAnnouncementsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAnnouncementsQueryKey = () => {
+    return [
+    `/api/announcements`
+    ] as const;
+    }
+
+
+export const getListAnnouncementsQueryOptions = <TData = Awaited<ReturnType<typeof listAnnouncements>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnnouncements>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAnnouncementsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAnnouncements>>> = ({ signal }) => listAnnouncements({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAnnouncements>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAnnouncementsQueryResult = NonNullable<Awaited<ReturnType<typeof listAnnouncements>>>
+export type ListAnnouncementsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List active announcements for the signed-in user's audience
+ */
+
+export function useListAnnouncements<TData = Awaited<ReturnType<typeof listAnnouncements>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnnouncements>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAnnouncementsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAdminAnnouncementsUrl = () => {
+
+
+
+
+  return `/api/admin/announcements`
+}
+
+/**
+ * @summary List all announcements for administrators and staff coaches
+ */
+export const listAdminAnnouncements = async ( options?: Parameters<typeof customFetch>[1]): Promise<Announcement[]> => {
+
+  return customFetch<Announcement[]>(getListAdminAnnouncementsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminAnnouncementsQueryKey = () => {
+    return [
+    `/api/admin/announcements`
+    ] as const;
+    }
+
+
+export const getListAdminAnnouncementsQueryOptions = <TData = Awaited<ReturnType<typeof listAdminAnnouncements>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminAnnouncements>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminAnnouncementsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminAnnouncements>>> = ({ signal }) => listAdminAnnouncements({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminAnnouncements>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminAnnouncementsQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminAnnouncements>>>
+export type ListAdminAnnouncementsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List all announcements for administrators and staff coaches
+ */
+
+export function useListAdminAnnouncements<TData = Awaited<ReturnType<typeof listAdminAnnouncements>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminAnnouncements>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminAnnouncementsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAnnouncementUrl = () => {
+
+
+
+
+  return `/api/admin/announcements`
+}
+
+/**
+ * @summary Publish an announcement
+ */
+export const createAnnouncement = async (announcementInput: AnnouncementInput, options?: Parameters<typeof customFetch>[1]): Promise<Announcement> => {
+
+  return customFetch<Announcement>(getCreateAnnouncementUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(announcementInput)
+  }
+);}
+
+
+
+
+
+export const getCreateAnnouncementMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAnnouncement>>, TError,{data: BodyType<AnnouncementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAnnouncement>>, TError,{data: BodyType<AnnouncementInput>}, TContext> => {
+
+const mutationKey = ['createAnnouncement'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAnnouncement>>, {data: BodyType<AnnouncementInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAnnouncement(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAnnouncementMutationResult = NonNullable<Awaited<ReturnType<typeof createAnnouncement>>>
+    export type CreateAnnouncementMutationBody = BodyType<AnnouncementInput>
+    export type CreateAnnouncementMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Publish an announcement
+ */
+export const useCreateAnnouncement = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAnnouncement>>, TError,{data: BodyType<AnnouncementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAnnouncement>>,
+        TError,
+        {data: BodyType<AnnouncementInput>},
+        TContext
+      > => {
+      return useMutation(getCreateAnnouncementMutationOptions(options));
+    }
+
+export const getUpdateAnnouncementUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/announcements/${id}`
+}
+
+/**
+ * @summary Edit an announcement without re-notifying
+ */
+export const updateAnnouncement = async (id: string,
+    announcementInput: AnnouncementInput, options?: Parameters<typeof customFetch>[1]): Promise<Announcement> => {
+
+  return customFetch<Announcement>(getUpdateAnnouncementUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(announcementInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateAnnouncementMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAnnouncement>>, TError,{id: string;data: BodyType<AnnouncementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAnnouncement>>, TError,{id: string;data: BodyType<AnnouncementInput>}, TContext> => {
+
+const mutationKey = ['updateAnnouncement'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAnnouncement>>, {id: string;data: BodyType<AnnouncementInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateAnnouncement(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAnnouncementMutationResult = NonNullable<Awaited<ReturnType<typeof updateAnnouncement>>>
+    export type UpdateAnnouncementMutationBody = BodyType<AnnouncementInput>
+    export type UpdateAnnouncementMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Edit an announcement without re-notifying
+ */
+export const useUpdateAnnouncement = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAnnouncement>>, TError,{id: string;data: BodyType<AnnouncementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAnnouncement>>,
+        TError,
+        {id: string;data: BodyType<AnnouncementInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateAnnouncementMutationOptions(options));
+    }
+
+export const getRemoveAnnouncementUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/announcements/${id}`
+}
+
+/**
+ * @summary Soft-remove an announcement
+ */
+export const removeAnnouncement = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRemoveAnnouncementUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveAnnouncementMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeAnnouncement>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeAnnouncement>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['removeAnnouncement'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeAnnouncement>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  removeAnnouncement(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveAnnouncementMutationResult = NonNullable<Awaited<ReturnType<typeof removeAnnouncement>>>
+
+    export type RemoveAnnouncementMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Soft-remove an announcement
+ */
+export const useRemoveAnnouncement = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeAnnouncement>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeAnnouncement>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRemoveAnnouncementMutationOptions(options));
+    }
+
 export const getListChatsUrl = () => {
 
 
@@ -2377,6 +2895,241 @@ export const useSendChatMessage = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getSendChatMessageMutationOptions(options));
+    }
+
+export const getListChatMessageReactionUsersUrl = (conversationId: string,
+    messageId: string,
+    emoji: '👍' | '❤️' | '😂' | '😮' | '😢' | '🎉' | '👏' | '🙌' | '🔥' | '💯' | '😍' | '🤔' | '😎' | '😡' | '👎' | '🤣' | '🥳' | '🤩' | '🙏' | '💪' | '👀' | '⚾' | '✅' | '⭐',) => {
+
+
+
+
+  return `/api/chats/${conversationId}/messages/${messageId}/reactions/${emoji}`
+}
+
+/**
+ * @summary Get the users who used a message reaction
+ */
+export const listChatMessageReactionUsers = async (conversationId: string,
+    messageId: string,
+    emoji: '👍' | '❤️' | '😂' | '😮' | '😢' | '🎉' | '👏' | '🙌' | '🔥' | '💯' | '😍' | '🤔' | '😎' | '😡' | '👎' | '🤣' | '🥳' | '🤩' | '🙏' | '💪' | '👀' | '⚾' | '✅' | '⭐', options?: Parameters<typeof customFetch>[1]): Promise<MessageReactionUsers> => {
+
+  return customFetch<MessageReactionUsers>(getListChatMessageReactionUsersUrl(conversationId,messageId,emoji),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListChatMessageReactionUsersQueryKey = (conversationId: string,
+    messageId: string,
+    emoji: '👍' | '❤️' | '😂' | '😮' | '😢' | '🎉' | '👏' | '🙌' | '🔥' | '💯' | '😍' | '🤔' | '😎' | '😡' | '👎' | '🤣' | '🥳' | '🤩' | '🙏' | '💪' | '👀' | '⚾' | '✅' | '⭐',) => {
+    return [
+    `/api/chats/${conversationId}/messages/${messageId}/reactions/${emoji}`
+    ] as const;
+    }
+
+
+export const getListChatMessageReactionUsersQueryOptions = <TData = Awaited<ReturnType<typeof listChatMessageReactionUsers>>, TError = ErrorType<ErrorResponse>>(conversationId: string,
+    messageId: string,
+    emoji: '👍' | '❤️' | '😂' | '😮' | '😢' | '🎉' | '👏' | '🙌' | '🔥' | '💯' | '😍' | '🤔' | '😎' | '😡' | '👎' | '🤣' | '🥳' | '🤩' | '🙏' | '💪' | '👀' | '⚾' | '✅' | '⭐', options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listChatMessageReactionUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListChatMessageReactionUsersQueryKey(conversationId,messageId,emoji);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChatMessageReactionUsers>>> = ({ signal }) => listChatMessageReactionUsers(conversationId,messageId,emoji, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: conversationId !== null && conversationId !== undefined && messageId !== null && messageId !== undefined && emoji !== null && emoji !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listChatMessageReactionUsers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListChatMessageReactionUsersQueryResult = NonNullable<Awaited<ReturnType<typeof listChatMessageReactionUsers>>>
+export type ListChatMessageReactionUsersQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the users who used a message reaction
+ */
+
+export function useListChatMessageReactionUsers<TData = Awaited<ReturnType<typeof listChatMessageReactionUsers>>, TError = ErrorType<ErrorResponse>>(
+ conversationId: string,
+    messageId: string,
+    emoji: '👍' | '❤️' | '😂' | '😮' | '😢' | '🎉' | '👏' | '🙌' | '🔥' | '💯' | '😍' | '🤔' | '😎' | '😡' | '👎' | '🤣' | '🥳' | '🤩' | '🙏' | '💪' | '👀' | '⚾' | '✅' | '⭐', options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listChatMessageReactionUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListChatMessageReactionUsersQueryOptions(conversationId,messageId,emoji,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddChatMessageReactionUrl = (conversationId: string,
+    messageId: string,) => {
+
+
+
+
+  return `/api/chats/${conversationId}/messages/${messageId}/reactions`
+}
+
+/**
+ * @summary Add a reaction to a message
+ */
+export const addChatMessageReaction = async (conversationId: string,
+    messageId: string,
+    messageReactionInput: MessageReactionInput, options?: Parameters<typeof customFetch>[1]): Promise<MessageReaction> => {
+
+  return customFetch<MessageReaction>(getAddChatMessageReactionUrl(conversationId,messageId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(messageReactionInput)
+  }
+);}
+
+
+
+
+
+export const getAddChatMessageReactionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addChatMessageReaction>>, TError,{conversationId: string;messageId: string;data: BodyType<MessageReactionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addChatMessageReaction>>, TError,{conversationId: string;messageId: string;data: BodyType<MessageReactionInput>}, TContext> => {
+
+const mutationKey = ['addChatMessageReaction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addChatMessageReaction>>, {conversationId: string;messageId: string;data: BodyType<MessageReactionInput>}> = (props) => {
+          const {conversationId,messageId,data} = props ?? {};
+
+          return  addChatMessageReaction(conversationId,messageId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddChatMessageReactionMutationResult = NonNullable<Awaited<ReturnType<typeof addChatMessageReaction>>>
+    export type AddChatMessageReactionMutationBody = BodyType<MessageReactionInput>
+    export type AddChatMessageReactionMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Add a reaction to a message
+ */
+export const useAddChatMessageReaction = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addChatMessageReaction>>, TError,{conversationId: string;messageId: string;data: BodyType<MessageReactionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addChatMessageReaction>>,
+        TError,
+        {conversationId: string;messageId: string;data: BodyType<MessageReactionInput>},
+        TContext
+      > => {
+      return useMutation(getAddChatMessageReactionMutationOptions(options));
+    }
+
+export const getRemoveChatMessageReactionUrl = (conversationId: string,
+    messageId: string,) => {
+
+
+
+
+  return `/api/chats/${conversationId}/messages/${messageId}/reactions`
+}
+
+/**
+ * @summary Remove a reaction from a message
+ */
+export const removeChatMessageReaction = async (conversationId: string,
+    messageId: string,
+    messageReactionInput: MessageReactionInput, options?: Parameters<typeof customFetch>[1]): Promise<MessageReaction> => {
+
+  return customFetch<MessageReaction>(getRemoveChatMessageReactionUrl(conversationId,messageId),
+  {
+    ...options,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(messageReactionInput)
+  }
+);}
+
+
+
+
+
+export const getRemoveChatMessageReactionMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeChatMessageReaction>>, TError,{conversationId: string;messageId: string;data: BodyType<MessageReactionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeChatMessageReaction>>, TError,{conversationId: string;messageId: string;data: BodyType<MessageReactionInput>}, TContext> => {
+
+const mutationKey = ['removeChatMessageReaction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeChatMessageReaction>>, {conversationId: string;messageId: string;data: BodyType<MessageReactionInput>}> = (props) => {
+          const {conversationId,messageId,data} = props ?? {};
+
+          return  removeChatMessageReaction(conversationId,messageId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveChatMessageReactionMutationResult = NonNullable<Awaited<ReturnType<typeof removeChatMessageReaction>>>
+    export type RemoveChatMessageReactionMutationBody = BodyType<MessageReactionInput>
+    export type RemoveChatMessageReactionMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Remove a reaction from a message
+ */
+export const useRemoveChatMessageReaction = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeChatMessageReaction>>, TError,{conversationId: string;messageId: string;data: BodyType<MessageReactionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeChatMessageReaction>>,
+        TError,
+        {conversationId: string;messageId: string;data: BodyType<MessageReactionInput>},
+        TContext
+      > => {
+      return useMutation(getRemoveChatMessageReactionMutationOptions(options));
     }
 
 export const getCreateChatAttachmentUploadUrlUrl = (conversationId: string,) => {
