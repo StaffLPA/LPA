@@ -9,6 +9,8 @@
     "typecheck:libs": "tsc --build",
     "check:react-types": "node scripts/check-react-types.mjs",
     "check:react-types:upgrade": "node scripts/check-react-types.mjs",
+    "check:ios-release": "sh scripts/check-ios-release.sh",
+    "test:ios-release-validator": "node --test scripts/validate-mobile-ios-release.test.mjs",
     "test:react-types": "node --test scripts/check-react-types.test.mjs",
     "typecheck": "pnpm run check:react-types && pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
