@@ -7,18 +7,20 @@ import { eq, inArray } from "drizzle-orm";
 import app from "../src/app";
 import {
   calendarEventsTable,
+  announcementsTable,
   conversationMembersTable,
   conversationsTable,
   db,
   guardianLinksTable,
   messagesTable,
+  messageReactionsTable,
   pool,
   pushDevicesTable,
   usersTable,
 } from "@workspace/db";
 import { createSession } from "../src/lib/auth";
-import { setInviteNotificationSenderForTests } from "../src/lib/notificationService";
-import { sendMessagePushNotification, setMessagePushSenderForTests, type MessagePushNotification } from "../src/lib/messagePushService";
+import { setInviteNotificationSenderForTests, setPasswordResetNotificationSenderForTests } from "../src/lib/notificationService";
+import { setAnnouncementPushSenderForTests, sendMessagePushNotification, setMessagePushSenderForTests, type AnnouncementPushNotification, type MessagePushNotification } from "../src/lib/messagePushService";
 
 const suffix = randomBytes(8).toString("hex");
 const admin = {
@@ -39,6 +41,7 @@ const member = {
   passwordHash: "test-password-hash",
   teams: ["Varsity"] as string[],
   gradYear: "2029",
+  profilePhotoUri: "https://example.com/messaging-test-member.jpg",
 };
 const nonMember = {
   id: `messaging-test-non-member-${suffix}`,
@@ -49,10 +52,29 @@ const nonMember = {
   passwordHash: "test-password-hash",
   teams: [] as string[],
 };
+const parent = {
+  id: `messaging-test-parent-${suffix}`,
+  fullName: "Messaging Test Parent",
+  email: `messaging-test-parent-${suffix}@example.com`,
+  role: "Parent-Athlete",
+  status: "active",
+  passwordHash: "test-password-hash",
+  teams: [] as string[],
+};
+const coach = {
+  id: `messaging-test-coach-${suffix}`,
+  fullName: "Messaging Test Coach",
+  email: `messaging-test-coach-${suffix}@example.com`,
+  role: "Staff-Coach",
+  status: "active",
+  passwordHash: "test-password-hash",
+  teams: [] as string[],
+};
 
 let server: http.Server;
 let baseUrl: string;
 let conversationId: string;
+let reactionConversationId: string;
 let groupConversationId: string;
 let directConversationId: string;
 let managedConversationId: string;
@@ -63,11 +85,15 @@ let revokedUserId: string;
 let calendarEventId: string;
 const teamCalendarEventIds: string[] = [];
 const pushNotifications: MessagePushNotification[] = [];
+const announcementPushNotifications: AnnouncementPushNotification[] = [];
+let deliveredPasswordReset: { email: string; code: string } | null = null;
 
 before(async () => {
-  await db.insert(usersTable).values([admin, member, nonMember]);
+  await db.insert(usersTable).values([admin, member, nonMember, parent, coach]);
   setInviteNotificationSenderForTests(async () => undefined);
+  setPasswordResetNotificationSenderForTests(async ({ email, code }) => { deliveredPasswordReset = { email, code }; });
   setMessagePushSenderForTests(async (notification) => { pushNotifications.push(notification); });
+  setAnnouncementPushSenderForTests(async (notification) => { announcementPushNotifications.push(notification); });
   server = app.listen(0);
   await once(server, "listening");
   const address = server.address();
@@ -89,6 +115,11 @@ after(async () => {
     await db.delete(messagesTable).where(eq(messagesTable.conversationId, conversationId));
     await db.delete(conversationMembersTable).where(eq(conversationMembersTable.conversationId, conversationId));
     await db.delete(conversationsTable).where(eq(conversationsTable.id, conversationId));
+  }
+  if (reactionConversationId) {
+    await db.delete(messagesTable).where(eq(messagesTable.conversationId, reactionConversationId));
+    await db.delete(conversationMembersTable).where(eq(conversationMembersTable.conversationId, reactionConversationId));
+    await db.delete(conversationsTable).where(eq(conversationsTable.id, reactionConversationId));
   }
   if (groupConversationId) {
     await db.delete(messagesTable).where(eq(messagesTable.conversationId, groupConversationId));
@@ -115,9 +146,12 @@ after(async () => {
   if (revokedUserId) await db.delete(usersTable).where(eq(usersTable.id, revokedUserId));
   if (calendarEventId) await db.delete(calendarEventsTable).where(eq(calendarEventsTable.id, calendarEventId));
   if (teamCalendarEventIds.length) await db.delete(calendarEventsTable).where(inArray(calendarEventsTable.id, teamCalendarEventIds));
+  await db.delete(announcementsTable).where(eq(announcementsTable.createdBy, admin.id));
   await db.delete(usersTable).where(inArray(usersTable.id, [admin.id, member.id, nonMember.id]));
+  await db.delete(usersTable).where(inArray(usersTable.id, [parent.id, coach.id]));
   setInviteNotificationSenderForTests();
   setMessagePushSenderForTests();
+  setAnnouncementPushSenderForTests();
   await pool.end();
 });
 
@@ -211,6 +245,319 @@ test("members can access existing channel history while non-members are denied",
     body: JSON.stringify({ text: "This must not be delivered." }),
   });
   assert.equal(deniedSend.status, 403);
+});
+
+test("announcement authorization, audience targeting, expiry, editing, and removal stay isolated", async () => {
+  const denied = await request("/admin/announcements", { headers: auth(member) });
+  assert.equal(denied.status, 403);
+  const unauthenticated = await request("/announcements");
+  assert.equal(unauthenticated.status, 401);
+
+  for (const [user, token] of [[member, "announcement-athlete"], [parent, "announcement-parent"], [coach, "announcement-coach"]] as const) {
+    const registered = await request("/push-tokens", {
+      method: "POST",
+      headers: auth(user),
+      body: JSON.stringify({ expoPushToken: `ExpoPushToken[${token}-${suffix}]`, platform: "ios" }),
+    });
+    assert.equal(registered.status, 201);
+  }
+  const beforePushes = announcementPushNotifications.length;
+  const createdResponse = await request("/admin/announcements", {
+    method: "POST",
+    headers: auth(admin),
+    body: JSON.stringify({
+      title: "Practice reminder",
+      body: "<p><strong>Bring water</strong> and cleats.</p>",
+      durationDays: 1,
+      audienceTags: ["Student", "Parent", "Staff-Coach"],
+    }),
+  });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json() as { id: string; expiresAt: string | null; status: string };
+  assert.equal(created.status, "active");
+  assert.notEqual(created.expiresAt, null);
+  for (let attempt = 0; attempt < 20 && announcementPushNotifications.length === beforePushes; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(announcementPushNotifications.length, beforePushes + 1);
+  assert.equal(new Set(announcementPushNotifications.at(-1)?.tokens).size, 3);
+
+  for (const user of [member, parent, coach] as const) {
+    const visible = await request("/announcements", { headers: auth(user) });
+    assert.equal(visible.status, 200);
+    assert.equal((await visible.json() as Array<{ id: string }>).some(({ id }) => id === created.id), true);
+  }
+
+  const editedResponse = await request(`/admin/announcements/${created.id}`, {
+    method: "PATCH",
+    headers: auth(admin),
+    body: JSON.stringify({ title: "Updated reminder", body: "<p>Updated body.</p>", durationDays: null, audienceTags: ["Student"] }),
+  });
+  assert.equal(editedResponse.status, 200);
+  const edited = await editedResponse.json() as { title: string; expiresAt: string | null; audienceTags: string[] };
+  assert.equal(edited.title, "Updated reminder");
+  assert.equal(edited.expiresAt, null);
+  assert.deepEqual(edited.audienceTags, ["Student"]);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(announcementPushNotifications.length, beforePushes + 1);
+  const parentAfterEdit = await request("/announcements", { headers: auth(parent) });
+  assert.equal((await parentAfterEdit.json() as Array<{ id: string }>).some(({ id }) => id === created.id), false);
+
+  await db.update(announcementsTable).set({ expiresAt: new Date(Date.now() - 1_000) }).where(eq(announcementsTable.id, created.id));
+  const expiredResponse = await request("/announcements", { headers: auth(member) });
+  assert.equal(expiredResponse.status, 200);
+  assert.equal((await expiredResponse.json() as Array<{ id: string }>).some(({ id }) => id === created.id), false);
+  const adminRows = await request("/admin/announcements", { headers: auth(coach) });
+  assert.equal((await adminRows.json() as Array<{ id: string; status: string }>).find(({ id }) => id === created.id)?.status, "expired");
+
+  const removableResponse = await request("/admin/announcements", {
+    method: "POST",
+    headers: auth(coach),
+    body: JSON.stringify({ title: "Remove me", body: "<p>Temporary.</p>", audienceTags: ["Student"] }),
+  });
+  assert.equal(removableResponse.status, 201);
+  const removable = await removableResponse.json() as { id: string };
+  const removeResponse = await request(`/admin/announcements/${removable.id}`, { method: "DELETE", headers: auth(admin) });
+  assert.equal(removeResponse.status, 204);
+  const afterRemoval = await request("/announcements", { headers: auth(member) });
+  assert.equal((await afterRemoval.json() as Array<{ id: string }>).some(({ id }) => id === removable.id), false);
+  await db.delete(pushDevicesTable).where(inArray(pushDevicesTable.userId, [member.id, parent.id, coach.id]));
+  await db.delete(announcementsTable).where(inArray(announcementsTable.createdBy, [admin.id, coach.id]));
+});
+
+test("message replies preserve quoted messages, sender photos, and timestamps", async () => {
+  const conversation = await seedExistingConversation("group", "Reply metadata regression group");
+
+  const originalResponse = await request(`/chats/${conversation.id}/messages`, {
+    method: "POST",
+    headers: auth(member),
+    body: JSON.stringify({ text: "Original message from the athlete." }),
+  });
+  assert.equal(originalResponse.status, 201);
+  const original = await originalResponse.json() as {
+    id: string;
+    senderProfilePhotoUri: string | null;
+    createdAt: string;
+    replyTo: null;
+  };
+  assert.equal(original.senderProfilePhotoUri, member.profilePhotoUri);
+  assert.equal(Number.isNaN(Date.parse(original.createdAt)), false);
+  assert.equal(original.replyTo, null);
+
+  const replyResponse = await request(`/chats/${conversation.id}/messages`, {
+    method: "POST",
+    headers: auth(admin),
+    body: JSON.stringify({ text: "Reply from the admin.", replyToMessageId: original.id }),
+  });
+  assert.equal(replyResponse.status, 201);
+  const reply = await replyResponse.json() as {
+    id: string;
+    senderProfilePhotoUri: string | null;
+    replyTo: { id: string; senderId: string; senderName: string; text: string } | null;
+  };
+  assert.equal(reply.senderProfilePhotoUri, null);
+  assert.deepEqual(reply.replyTo, {
+    id: original.id,
+    senderId: member.id,
+    senderName: member.fullName,
+    text: "Original message from the athlete.",
+  });
+
+  const selfReplyResponse = await request(`/chats/${conversation.id}/messages`, {
+    method: "POST",
+    headers: auth(admin),
+    body: JSON.stringify({ text: "Replying to my own message.", replyToMessageId: reply.id }),
+  });
+  assert.equal(selfReplyResponse.status, 201);
+  const selfReply = await selfReplyResponse.json() as {
+    replyTo: { id: string; senderId: string; senderName: string; text: string } | null;
+  };
+  assert.deepEqual(selfReply.replyTo, {
+    id: reply.id,
+    senderId: admin.id,
+    senderName: admin.fullName,
+    text: "Reply from the admin.",
+  });
+
+  const historyResponse = await request(`/chats/${conversation.id}/messages`, { headers: auth(member) });
+  assert.equal(historyResponse.status, 200);
+  const history = await historyResponse.json() as Array<{
+    id: string;
+    senderProfilePhotoUri: string | null;
+    createdAt: string;
+    replyTo: { id: string; senderId: string; senderName: string; text: string } | null;
+  }>;
+  assert.equal(history.length, 3);
+  assert.equal(history[0].senderProfilePhotoUri, member.profilePhotoUri);
+  assert.equal(Number.isNaN(Date.parse(history[2].createdAt)), false);
+  assert.equal(history[1].replyTo?.id, original.id);
+  assert.equal(history[2].replyTo?.id, reply.id);
+});
+
+test("message mentions validate members, reject malformed metadata, and survive reloads", async () => {
+  const conversation = await seedExistingConversation("group", "Mention metadata regression group");
+  const text = `Please check this, @${member.fullName}.`;
+  const start = text.indexOf(`@${member.fullName}`);
+  const mention = { userId: member.id, displayName: member.fullName, start, end: start + member.fullName.length + 1 };
+
+  const sentResponse = await request(`/chats/${conversation.id}/messages`, {
+    method: "POST",
+    headers: auth(admin),
+    body: JSON.stringify({ text, mentions: [mention, mention] }),
+  });
+  assert.equal(sentResponse.status, 201);
+  const sent = await sentResponse.json() as { id: string; mentions: typeof mention[] };
+  assert.deepEqual(sent.mentions, [mention, mention]);
+
+  const historyResponse = await request(`/chats/${conversation.id}/messages`, { headers: auth(member) });
+  assert.equal(historyResponse.status, 200);
+  const history = await historyResponse.json() as Array<{ id: string; mentions: typeof mention[] }>;
+  assert.deepEqual(history.find((message) => message.id === sent.id)?.mentions, [mention, mention]);
+
+  const nonMemberText = `Hello @${nonMember.fullName}`;
+  const nonMemberStart = nonMemberText.indexOf("@");
+  const nonMemberResponse = await request(`/chats/${conversation.id}/messages`, {
+    method: "POST",
+    headers: auth(admin),
+    body: JSON.stringify({ text: nonMemberText, mentions: [{ userId: nonMember.id, displayName: nonMember.fullName, start: nonMemberStart, end: nonMemberText.length }] }),
+  });
+  assert.equal(nonMemberResponse.status, 400);
+
+  const malformedResponse = await request(`/chats/${conversation.id}/messages`, {
+    method: "POST",
+    headers: auth(admin),
+    body: JSON.stringify({ text, mentions: [{ ...mention, start: mention.start + 1 }] }),
+  });
+  assert.equal(malformedResponse.status, 400);
+});
+
+test("members can add and remove message reactions while non-members are denied", async () => {
+  const conversation = await seedExistingConversation("channel", "Reaction access channel");
+  reactionConversationId = conversation.id;
+
+  const sendResponse = await request(`/chats/${conversation.id}/messages`, {
+    method: "POST",
+    headers: auth(member),
+    body: JSON.stringify({ text: "React to this message." }),
+  });
+  assert.equal(sendResponse.status, 201);
+  const sent = await sendResponse.json() as { id: string; reactions: unknown[] };
+  assert.deepEqual(sent.reactions, []);
+
+  const firstAdd = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "PUT",
+    headers: auth(member),
+    body: JSON.stringify({ emoji: "👍" }),
+  });
+  assert.equal(firstAdd.status, 200);
+  assert.deepEqual(await firstAdd.json(), { emoji: "👍", count: 1, reacted: true });
+
+  const duplicateAdd = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "PUT",
+    headers: auth(member),
+    body: JSON.stringify({ emoji: "👍" }),
+  });
+  assert.equal(duplicateAdd.status, 200);
+  assert.deepEqual(await duplicateAdd.json(), { emoji: "👍", count: 1, reacted: true });
+
+  const newEmojiAdd = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "PUT",
+    headers: auth(member),
+    body: JSON.stringify({ emoji: "🔥" }),
+  });
+  assert.equal(newEmojiAdd.status, 200);
+  assert.deepEqual(await newEmojiAdd.json(), { emoji: "🔥", count: 1, reacted: true });
+
+  const secondAdd = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "PUT",
+    headers: auth(admin),
+    body: JSON.stringify({ emoji: "👍" }),
+  });
+  assert.equal(secondAdd.status, 200);
+  assert.deepEqual(await secondAdd.json(), { emoji: "👍", count: 2, reacted: true });
+
+  const memberHistory = await request(`/chats/${conversation.id}/messages`, { headers: auth(member) });
+  assert.equal(memberHistory.status, 200);
+  const memberMessage = (await memberHistory.json() as Array<{ id: string; reactions: Array<{ emoji: string; count: number; reacted: boolean }> }>).find(({ id }) => id === sent.id);
+  assert.deepEqual(memberMessage?.reactions, [
+    { emoji: "👍", count: 2, reacted: true },
+    { emoji: "🔥", count: 1, reacted: true },
+  ]);
+
+  const adminHistory = await request(`/chats/${conversation.id}/messages`, { headers: auth(admin) });
+  const adminMessage = (await adminHistory.json() as Array<{ id: string; reactions: Array<{ emoji: string; count: number; reacted: boolean }> }>).find(({ id }) => id === sent.id);
+  assert.deepEqual(adminMessage?.reactions, [
+    { emoji: "👍", count: 2, reacted: true },
+    { emoji: "🔥", count: 1, reacted: false },
+  ]);
+
+  const adminFireAdd = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "PUT",
+    headers: auth(admin),
+    body: JSON.stringify({ emoji: "🔥" }),
+  });
+  assert.equal(adminFireAdd.status, 200);
+  assert.deepEqual(await adminFireAdd.json(), { emoji: "🔥", count: 2, reacted: true });
+
+  const thumbsUpUsers = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions/👍`, { headers: auth(member) });
+  assert.equal(thumbsUpUsers.status, 200);
+  assert.deepEqual(await thumbsUpUsers.json(), {
+    emoji: "👍",
+    users: [
+      { id: admin.id, fullName: admin.fullName },
+      { id: member.id, fullName: member.fullName },
+    ],
+  });
+
+  const fireUsers = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions/🔥`, { headers: auth(member) });
+  assert.equal(fireUsers.status, 200);
+  assert.deepEqual(await fireUsers.json(), {
+    emoji: "🔥",
+    users: [
+      { id: admin.id, fullName: admin.fullName },
+      { id: member.id, fullName: member.fullName },
+    ],
+  });
+
+  const deniedReactionUsers = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions/👍`, { headers: auth(nonMember) });
+  assert.equal(deniedReactionUsers.status, 403);
+
+  const deniedAdd = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "PUT",
+    headers: auth(nonMember),
+    body: JSON.stringify({ emoji: "❤️" }),
+  });
+  assert.equal(deniedAdd.status, 403);
+
+  const invalidReaction = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "PUT",
+    headers: auth(member),
+    body: JSON.stringify({ emoji: "🚀" }),
+  });
+  assert.equal(invalidReaction.status, 400);
+
+  const firstRemove = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "DELETE",
+    headers: auth(member),
+    body: JSON.stringify({ emoji: "👍" }),
+  });
+  assert.equal(firstRemove.status, 200);
+  assert.deepEqual(await firstRemove.json(), { emoji: "👍", count: 1, reacted: false });
+
+  const repeatedRemove = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "DELETE",
+    headers: auth(member),
+    body: JSON.stringify({ emoji: "👍" }),
+  });
+  assert.equal(repeatedRemove.status, 200);
+  assert.deepEqual(await repeatedRemove.json(), { emoji: "👍", count: 1, reacted: false });
+
+  const deniedRemove = await request(`/chats/${conversation.id}/messages/${sent.id}/reactions`, {
+    method: "DELETE",
+    headers: auth(nonMember),
+    body: JSON.stringify({ emoji: "👍" }),
+  });
+  assert.equal(deniedRemove.status, 403);
 });
 
 test("existing group chats and shared delivery remain isolated to their members", async () => {
@@ -394,6 +741,46 @@ test("group messages notify every registered participant except the sender", asy
   assert(groupPush);
   assert.deepEqual(groupPush.tokens, [memberToken]);
   assert.equal(groupPush.title, "Push delivery group");
+  await db.delete(conversationsTable).where(eq(conversationsTable.id, conversation.id));
+});
+
+test("mentions notify each mentioned user once without duplicating ordinary group notifications", async () => {
+  const conversationName = "Mention delivery group";
+  const conversation = await seedExistingConversation("group", conversationName);
+  await db.insert(conversationMembersTable).values({ id: `mention-member-${suffix}`, conversationId: conversation.id, userId: nonMember.id });
+  const memberToken = `ExpoPushToken[mentioned-member-${suffix}]`;
+  const ordinaryToken = `ExpoPushToken[ordinary-member-${suffix}]`;
+  assert.equal((await request("/push-tokens", { method: "POST", headers: auth(member), body: JSON.stringify({ expoPushToken: memberToken, platform: "android" }) })).status, 201);
+  assert.equal((await request("/push-tokens", { method: "POST", headers: auth(nonMember), body: JSON.stringify({ expoPushToken: ordinaryToken, platform: "ios" }) })).status, 201);
+  const text = `Review this, @${member.fullName}.`;
+  const start = text.indexOf("@");
+  const sentResponse = await request(`/chats/${conversation.id}/messages`, {
+    method: "POST",
+    headers: auth(admin),
+    body: JSON.stringify({
+      text,
+      mentions: [
+        { userId: member.id, displayName: member.fullName, start, end: start + member.fullName.length + 1 },
+        { userId: member.id, displayName: member.fullName, start, end: start + member.fullName.length + 1 },
+      ],
+    }),
+  });
+  assert.equal(sentResponse.status, 201);
+  const sent = await sentResponse.json() as { id: string };
+  await waitForPush(sent.id);
+  for (let attempt = 0; attempt < 20 && pushNotifications.filter((notification) => notification.messageId === sent.id).length < 2; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const notifications = pushNotifications.filter((notification) => notification.messageId === sent.id);
+  assert.equal(notifications.length, 2);
+  const mentionPush = notifications.find((notification) => notification.notificationType === "mention");
+  const ordinaryPush = notifications.find((notification) => notification.notificationType === "message");
+  assert.equal(mentionPush?.tokens.includes(memberToken), true);
+  assert.equal(mentionPush?.tokens.includes(ordinaryToken), false);
+  assert.equal(mentionPush?.title, `${admin.fullName} mentioned you · ${conversationName}`);
+  assert.equal(ordinaryPush?.tokens.includes(ordinaryToken), true);
+  assert.equal(ordinaryPush?.tokens.includes(memberToken), false);
+  assert.equal(notifications.flatMap((notification) => notification.tokens).filter((token) => token === memberToken).length, 1);
   await db.delete(conversationsTable).where(eq(conversationsTable.id, conversation.id));
 });
 
@@ -634,6 +1021,43 @@ test("an admin can invite, activate, and sign in a new user", async () => {
   const signedIn = await signInResponse.json() as { sessionToken: string; user: { id: string; status: string } };
   assert.ok(signedIn.sessionToken);
   assert.deepEqual({ id: signedIn.user.id, status: signedIn.user.status }, { id: invited.id, status: "active" });
+
+  const unknownReset = await request("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ identifier: `unknown-${suffix}@example.com` }),
+  });
+  const resetRequest = await request("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ identifier: email.toUpperCase() }),
+  });
+  assert.equal(unknownReset.status, 200);
+  assert.equal(resetRequest.status, 200);
+  assert.deepEqual(await unknownReset.json(), await resetRequest.json());
+  assert.equal(deliveredPasswordReset?.email.toLowerCase(), email);
+  assert.match(deliveredPasswordReset!.code, /^\d{6}$/);
+
+  const resetResponse = await request("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ identifier: email.toUpperCase(), code: deliveredPasswordReset!.code, newPassword: "new-invite-password-456" }),
+  });
+  assert.equal(resetResponse.status, 200);
+
+  const reusedReset = await request("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ identifier: email, code: deliveredPasswordReset!.code, newPassword: "another-password-789" }),
+  });
+  assert.equal(reusedReset.status, 400);
+
+  const oldPasswordSignIn = await request("/auth/sign-in", {
+    method: "POST",
+    body: JSON.stringify({ identifier: email, password: "invite-password-123" }),
+  });
+  assert.equal(oldPasswordSignIn.status, 401);
+  const newPasswordSignIn = await request("/auth/sign-in", {
+    method: "POST",
+    body: JSON.stringify({ identifier: email, password: "new-invite-password-456" }),
+  });
+  assert.equal(newPasswordSignIn.status, 200);
 });
 
 test("expired and revoked invitations return actionable lookup states", async () => {
