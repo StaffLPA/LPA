@@ -8,6 +8,13 @@ export type MessagePushNotification = {
   body: string;
   conversationId: string;
   messageId: string;
+  notificationType?: "message" | "mention";
+};
+export type AnnouncementPushNotification = {
+  tokens: string[];
+  title: string;
+  body: string;
+  announcementId: string;
 };
 
 type MessagePushSender = (notification: MessagePushNotification) => Promise<void>;
@@ -65,7 +72,7 @@ async function processExpoPushReceipts(receiptTokens: Map<string, string>) {
   }
 }
 
-async function sendExpoPushNotification(notification: MessagePushNotification) {
+async function sendExpoPushNotification(notification: MessagePushNotification | AnnouncementPushNotification) {
   const messages = notification.tokens
     .filter(isExpoPushToken)
     .map((to) => ({
@@ -74,7 +81,9 @@ async function sendExpoPushNotification(notification: MessagePushNotification) {
       channelId: "messages",
       title: notification.title,
       body: notification.body,
-      data: { conversationId: notification.conversationId, messageId: notification.messageId },
+      data: "announcementId" in notification
+        ? { announcementId: notification.announcementId, target: "home-announcements", notificationType: "announcement" }
+        : { conversationId: notification.conversationId, messageId: notification.messageId, notificationType: notification.notificationType ?? "message" },
     }));
 
   for (let start = 0; start < messages.length; start += 100) {
@@ -111,6 +120,22 @@ export async function sendMessagePushNotification(notification: MessagePushNotif
     await messagePushSender(notification);
   } catch (error) {
     logger.warn({ err: error, conversationId: notification.conversationId, messageId: notification.messageId }, "Message push notification failed");
+    throw error;
+  }
+}
+
+let announcementPushSender: (notification: AnnouncementPushNotification) => Promise<void> = sendExpoPushNotification;
+
+export function setAnnouncementPushSenderForTests(sender?: (notification: AnnouncementPushNotification) => Promise<void>) {
+  announcementPushSender = sender ?? sendExpoPushNotification;
+}
+
+export async function sendAnnouncementPushNotification(notification: AnnouncementPushNotification) {
+  if (!notification.tokens.length) return;
+  try {
+    await announcementPushSender(notification);
+  } catch (error) {
+    logger.warn({ err: error, announcementId: notification.announcementId }, "Announcement push notification failed");
     throw error;
   }
 }
