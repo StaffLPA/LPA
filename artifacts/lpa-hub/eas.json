@@ -3,9 +3,9 @@
     "production": {
       "corepack": true,
       "pnpm": "10.26.1",
-      "node": "20.19.4",
+      "node": "22.13.0",
       "android": {
-        "image": "sdk-54",
+        "image": "sdk-57",
         "buildType": "app-bundle"
       }
     }
