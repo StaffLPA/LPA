@@ -1,13 +1,15 @@
 import { randomBytes } from "node:crypto";
 import express, { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { createChatAttachmentDownloadURL, createChatAttachmentUpload, getChatAttachmentFile, storeChatAttachment } from "../lib/chatAttachmentStorage";
+import { createProfilePhotoAccessURL, isProfilePhotoPath } from "../lib/profilePhotoStorage";
 import {
   conversationMembersTable,
   conversationReadStatesTable,
   conversationsTable,
   db,
   messageAttachmentsTable,
+  messageReactionsTable,
   messagesTable,
   pushDevicesTable,
   usersTable,
@@ -21,6 +23,14 @@ const value = (input: unknown) => typeof input === "string" && input.trim() ? in
 const maximumMessageLength = 2000;
 const maximumAttachmentBytes = 10 * 1024 * 1024;
 const id = () => randomBytes(16).toString("hex");
+const supportedReactionEmojis = [
+  "👍", "❤️", "😂", "😮", "😢", "🎉",
+  "👏", "🙌", "🔥", "💯", "😍", "🤔",
+  "😎", "😡", "👎", "🤣", "🥳", "🤩",
+  "🙏", "💪", "👀", "⚾", "✅", "⭐",
+] as const;
+type SupportedReactionEmoji = typeof supportedReactionEmojis[number];
+const isSupportedReactionEmoji = (input: unknown): input is SupportedReactionEmoji => typeof input === "string" && (supportedReactionEmojis as readonly string[]).includes(input);
 const mapConversation = (conversation: typeof conversationsTable.$inferSelect, lastMessage: typeof messagesTable.$inferSelect | undefined, members: User[], viewerId?: string, unreadCount = 0) => ({
   id: conversation.id,
   name: conversation.type === "direct"
@@ -37,16 +47,44 @@ const mapConversation = (conversation: typeof conversationsTable.$inferSelect, l
     conversationId: lastMessage.conversationId,
     senderId: lastMessage.senderId,
     text: lastMessage.text || "Attachment",
+    mentions: (lastMessage.mentions ?? []) as MessageMention[],
     createdAt: lastMessage.createdAt.toISOString(),
   } : null,
 });
-const mapMessage = (message: typeof messagesTable.$inferSelect, sender: User | undefined, attachments: (typeof messageAttachmentsTable.$inferSelect)[] = []) => ({
+type MessageReactionSummary = { emoji: string; count: number; reacted: boolean };
+type MessageMention = { userId: string; displayName: string; start: number; end: number };
+type ReplyMessageSummary = { id: string; senderId: string; senderName: string; text: string };
+const profilePhotoUrlCache = new Map<string, { url: string; expiresAt: number }>();
+const profilePhotoUrl = async (path: string | null) => {
+  if (!path) return null;
+  if (!isProfilePhotoPath(path)) return path;
+  const cached = profilePhotoUrlCache.get(path);
+  if (cached && cached.expiresAt > Date.now()) return cached.url;
+  try {
+    const url = await createProfilePhotoAccessURL(path);
+    profilePhotoUrlCache.set(path, { url, expiresAt: Date.now() + 4 * 60_000 });
+    return url;
+  } catch {
+    return null;
+  }
+};
+const mapMessage = async (
+  message: typeof messagesTable.$inferSelect,
+  sender: User | undefined,
+  attachments: (typeof messageAttachmentsTable.$inferSelect)[] = [],
+  reactions: MessageReactionSummary[] = [],
+  replyTo: ReplyMessageSummary | null = null,
+) => ({
   id: message.id,
   conversationId: message.conversationId,
   senderId: message.senderId,
   senderName: sender?.fullName ?? "LPA member",
+  senderProfilePhotoUri: await profilePhotoUrl(sender?.profilePhotoUri ?? null),
   text: message.text,
   attachments: attachments.map((attachment) => ({ id: attachment.id, fileName: attachment.fileName, contentType: attachment.contentType, size: attachment.size })),
+  reactions,
+  replyTo,
+  mentions: (message.mentions ?? []) as MessageMention[],
   createdAt: message.createdAt.toISOString(),
 });
 
@@ -67,6 +105,43 @@ async function attachmentsForMessages(messageIds: string[]) {
   if (!messageIds.length) return new Map<string, (typeof messageAttachmentsTable.$inferSelect)[]>();
   const attachments = await db.select().from(messageAttachmentsTable).where(inArray(messageAttachmentsTable.messageId, messageIds));
   return new Map(messageIds.map((messageId) => [messageId, attachments.filter((attachment) => attachment.messageId === messageId)]));
+}
+
+async function reactionsForMessages(messageIds: string[], viewerId: string) {
+  if (!messageIds.length) return new Map<string, MessageReactionSummary[]>();
+  const rows = await db.select().from(messageReactionsTable).where(inArray(messageReactionsTable.messageId, messageIds));
+  const grouped = new Map<string, Map<string, MessageReactionSummary>>();
+  for (const row of rows) {
+    const byEmoji = grouped.get(row.messageId) ?? new Map<string, MessageReactionSummary>();
+    const current = byEmoji.get(row.emoji) ?? { emoji: row.emoji, count: 0, reacted: false };
+    current.count += 1;
+    current.reacted ||= row.userId === viewerId;
+    byEmoji.set(row.emoji, current);
+    grouped.set(row.messageId, byEmoji);
+  }
+  return new Map(messageIds.map((messageId) => [
+    messageId,
+    supportedReactionEmojis
+      .map((emoji) => grouped.get(messageId)?.get(emoji))
+      .filter((reaction): reaction is MessageReactionSummary => Boolean(reaction)),
+  ]));
+}
+
+async function reactionForMessage(messageId: string, emoji: SupportedReactionEmoji, viewerId: string) {
+  const rows = await db.select().from(messageReactionsTable).where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.emoji, emoji)));
+  return {
+    emoji,
+    count: rows.length,
+    reacted: rows.some((row) => row.userId === viewerId),
+  };
+}
+
+async function reactionUsersForMessage(messageId: string, emoji: SupportedReactionEmoji) {
+  return db.select({ id: usersTable.id, fullName: usersTable.fullName })
+    .from(messageReactionsTable)
+    .innerJoin(usersTable, eq(messageReactionsTable.userId, usersTable.id))
+    .where(and(eq(messageReactionsTable.messageId, messageId), eq(messageReactionsTable.emoji, emoji)))
+    .orderBy(asc(usersTable.fullName));
 }
 
 async function isMember(conversationId: string, userId: string) {
@@ -102,18 +177,33 @@ async function notifyMessageRecipients(input: {
   messageId: string;
   text: string;
   attachments: AttachmentInput[];
+  mentions: MessageMention[];
 }) {
   const recipients = (await getMembers(input.conversation.id)).filter((member) => member.id !== input.sender.id);
   if (!recipients.length) return;
   const devices = await db.select().from(pushDevicesTable).where(inArray(pushDevicesTable.userId, recipients.map((recipient) => recipient.id)));
   const title = input.conversation.type === "direct" ? input.sender.fullName : input.conversation.name;
-  await sendMessagePushNotification({
-    tokens: devices.map((device) => device.expoPushToken),
-    title,
-    body: messagePreview(input.text, input.attachments),
-    conversationId: input.conversation.id,
-    messageId: input.messageId,
-  });
+  const mentionedUserIds = new Set(input.mentions.map((mention) => mention.userId).filter((userId) => userId !== input.sender.id));
+  const mentionTokens = devices.filter((device) => mentionedUserIds.has(device.userId)).map((device) => device.expoPushToken);
+  const ordinaryTokens = devices.filter((device) => !mentionedUserIds.has(device.userId)).map((device) => device.expoPushToken);
+  await Promise.all([
+    sendMessagePushNotification({
+      tokens: mentionTokens,
+      title: `${input.sender.fullName} mentioned you${input.conversation.type === "direct" ? "" : ` · ${input.conversation.name}`}`,
+      body: messagePreview(input.text, input.attachments),
+      conversationId: input.conversation.id,
+      messageId: input.messageId,
+      notificationType: "mention",
+    }),
+    sendMessagePushNotification({
+      tokens: ordinaryTokens,
+      title,
+      body: messagePreview(input.text, input.attachments),
+      conversationId: input.conversation.id,
+      messageId: input.messageId,
+      notificationType: "message",
+    }),
+  ]);
 }
 
 function canManageConversation(user: User, conversation: typeof conversationsTable.$inferSelect) {
@@ -155,7 +245,9 @@ router.get("/chats", async (req, res) => {
       id: String(message.id),
       conversationId: String(message.conversation_id),
       senderId: String(message.sender_id),
+      replyToMessageId: null,
       text: String(message.text ?? ""),
+      mentions: [],
       createdAt: new Date(String(message.created_at)),
     });
   }
@@ -294,10 +386,25 @@ router.get("/chats/:conversationId/messages", async (req, res) => {
   const user = await requireSession(req, res); if (!user) return;
   if (!await isMember(req.params.conversationId, user.id)) { res.status(403).json({ message: "You are not a member of this conversation." }); return; }
   const messages = (await db.select().from(messagesTable).where(eq(messagesTable.conversationId, req.params.conversationId)).orderBy(desc(messagesTable.createdAt)).limit(100)).reverse();
-  const senderIds = [...new Set(messages.map((message) => message.senderId))];
+  const replyIds = [...new Set(messages.map((message) => message.replyToMessageId).filter((messageId): messageId is string => Boolean(messageId)))];
+  const replyMessages = replyIds.length ? await db.select().from(messagesTable).where(inArray(messagesTable.id, replyIds)) : [];
+  const senderIds = [...new Set([...messages.map((message) => message.senderId), ...replyMessages.map((message) => message.senderId)])];
   const senders = senderIds.length ? await db.select().from(usersTable).where(inArray(usersTable.id, senderIds)) : [];
-  const attachments = await attachmentsForMessages(messages.map((message) => message.id));
-  res.json(messages.map((message) => mapMessage(message, senders.find((sender) => sender.id === message.senderId), attachments.get(message.id))));
+  const [attachments, reactions] = await Promise.all([
+    attachmentsForMessages(messages.map((message) => message.id)),
+    reactionsForMessages(messages.map((message) => message.id), user.id),
+  ]);
+  res.json(await Promise.all(messages.map((message) => {
+    const reply = replyMessages.find((candidate) => candidate.id === message.replyToMessageId);
+    const replySender = reply ? senders.find((sender) => sender.id === reply.senderId) : undefined;
+    return mapMessage(
+      message,
+      senders.find((sender) => sender.id === message.senderId),
+      attachments.get(message.id),
+      reactions.get(message.id),
+      reply ? { id: reply.id, senderId: reply.senderId, senderName: replySender?.fullName ?? "LPA member", text: reply.text || "Attachment" } : null,
+    );
+  })));
 });
 
 router.post("/chats/:conversationId/attachments/upload-url", async (req, res) => {
@@ -332,13 +439,52 @@ router.post("/chats/:conversationId/messages", async (req, res) => {
   const user = await requireSession(req, res); if (!user) return;
   if (!await isMember(req.params.conversationId, user.id)) { res.status(403).json({ message: "You are not a member of this conversation." }); return; }
   const text = value(req.body.text);
+  const replyToMessageId = value(req.body.replyToMessageId);
+  const rawMentions: MessageMention[] = Array.isArray(req.body.mentions) ? req.body.mentions.map((mention: unknown) => {
+    if (!mention || typeof mention !== "object") return null;
+    const item = mention as Record<string, unknown>;
+    return typeof item.userId === "string" && item.userId.trim() && typeof item.displayName === "string" && item.displayName.trim()
+      && Number.isInteger(item.start) && Number.isInteger(item.end)
+      ? { userId: item.userId.trim(), displayName: item.displayName.trim(), start: Number(item.start), end: Number(item.end) }
+      : null;
+  }).filter((mention: MessageMention | null): mention is MessageMention => Boolean(mention)) : [];
+  if ((Array.isArray(req.body.mentions) && rawMentions.length !== req.body.mentions.length) || rawMentions.length > 32) {
+    res.status(400).json({ message: "Mentions are invalid or exceed the message limit." }); return;
+  }
   const attachments: Array<AttachmentInput | null> = Array.isArray(req.body.attachments) ? req.body.attachments.map((attachment: unknown) => attachmentValue(attachment)) : [];
   if (attachments.some((attachment) => !attachment) || attachments.length > 5) { res.status(400).json({ message: "Messages can include up to five supported attachments of 10 MB each." }); return; }
   const validAttachments = attachments.filter((attachment): attachment is AttachmentInput => Boolean(attachment));
   if (!text && !validAttachments.length) { res.status(400).json({ message: "Add a message or attachment before sending." }); return; }
   if (text && text.length > maximumMessageLength) { res.status(400).json({ message: "Messages must be 2,000 characters or fewer." }); return; }
+  const mentionedUserIds = [...new Set(rawMentions.map((mention) => mention.userId))];
+  const mentionedMembers = mentionedUserIds.length
+    ? await db.select({ id: usersTable.id, fullName: usersTable.fullName })
+      .from(conversationMembersTable)
+      .innerJoin(usersTable, eq(conversationMembersTable.userId, usersTable.id))
+      .where(and(eq(conversationMembersTable.conversationId, req.params.conversationId), inArray(usersTable.id, mentionedUserIds)))
+    : [];
+  if (mentionedMembers.length !== mentionedUserIds.length) {
+    res.status(400).json({ message: "Every mentioned user must be a current member of this conversation." }); return;
+  }
+  const mentionedMemberNames = new Map(mentionedMembers.map((member) => [member.id, member.fullName]));
+  const normalizedMentions = rawMentions.map((mention) => {
+    const displayName = mentionedMemberNames.get(mention.userId);
+    const expectedText = displayName ? `@${displayName}` : "";
+    return displayName && mention.start >= 0 && mention.end > mention.start && mention.end <= (text?.length ?? 0)
+      && (text ?? "").slice(mention.start, mention.end) === expectedText
+      ? { ...mention, displayName }
+      : null;
+  });
+  if (normalizedMentions.some((mention) => !mention)) {
+    res.status(400).json({ message: "One or more mentions no longer match the message text." }); return;
+  }
+  const mentions = normalizedMentions.filter((mention): mention is MessageMention => Boolean(mention));
+  const [replyToMessage] = replyToMessageId
+    ? await db.select().from(messagesTable).where(and(eq(messagesTable.id, replyToMessageId), eq(messagesTable.conversationId, req.params.conversationId))).limit(1)
+    : [];
+  if (replyToMessageId && !replyToMessage) { res.status(400).json({ message: "The message you are replying to is no longer available." }); return; }
   try { await Promise.all(validAttachments.map((attachment) => getChatAttachmentFile(attachment.objectPath))); } catch { res.status(400).json({ message: "One or more attachments could not be found. Please upload again." }); return; }
-  const message = { id: id(), conversationId: req.params.conversationId, senderId: user.id, text: text ?? "" };
+  const message = { id: id(), conversationId: req.params.conversationId, senderId: user.id, replyToMessageId: replyToMessage?.id ?? null, text: text ?? "", mentions };
   const [created] = await db.transaction(async (tx) => {
     const [saved] = await tx.insert(messagesTable).values(message).returning();
     if (validAttachments.length) await tx.insert(messageAttachmentsTable).values(validAttachments.map((attachment) => ({ id: id(), messageId: message.id, ...attachment })));
@@ -349,10 +495,49 @@ router.post("/chats/:conversationId/messages", async (req, res) => {
   const savedAttachments = validAttachments.map((attachment) => ({ id: "", messageId: message.id, ...attachment, createdAt: created.createdAt }));
   const conversation = await getConversation(message.conversationId);
   if (conversation) {
-    void notifyMessageRecipients({ conversation, sender: user, messageId: message.id, text: message.text, attachments: validAttachments })
+    void notifyMessageRecipients({ conversation, sender: user, messageId: message.id, text: message.text, attachments: validAttachments, mentions })
       .catch((error) => req.log.warn({ err: error, conversationId: message.conversationId, messageId: message.id }, "Message was saved but push delivery failed"));
   }
-  res.status(201).json(mapMessage({ ...message, createdAt: created.createdAt }, user, savedAttachments));
+  const replySender = replyToMessage ? (replyToMessage.senderId === user.id ? user : (await db.select().from(usersTable).where(eq(usersTable.id, replyToMessage.senderId)).limit(1))[0]) : undefined;
+  res.status(201).json(await mapMessage(
+    { ...message, createdAt: created.createdAt },
+    user,
+    savedAttachments,
+    [],
+    replyToMessage ? { id: replyToMessage.id, senderId: replyToMessage.senderId, senderName: replySender?.fullName ?? "LPA member", text: replyToMessage.text || "Attachment" } : null,
+  ));
+});
+
+router.get("/chats/:conversationId/messages/:messageId/reactions/:emoji", async (req, res) => {
+  const user = await requireSession(req, res); if (!user) return;
+  if (!await isMember(req.params.conversationId, user.id)) { res.status(403).json({ message: "You are not a member of this conversation." }); return; }
+  const emoji = req.params.emoji;
+  if (!isSupportedReactionEmoji(emoji)) { res.status(400).json({ message: "Choose one of the supported message reactions." }); return; }
+  const [message] = await db.select({ id: messagesTable.id }).from(messagesTable).where(and(eq(messagesTable.id, req.params.messageId), eq(messagesTable.conversationId, req.params.conversationId))).limit(1);
+  if (!message) { res.status(404).json({ message: "Message not found." }); return; }
+  res.json({ emoji, users: await reactionUsersForMessage(message.id, emoji) });
+});
+
+router.put("/chats/:conversationId/messages/:messageId/reactions", async (req, res) => {
+  const user = await requireSession(req, res); if (!user) return;
+  if (!await isMember(req.params.conversationId, user.id)) { res.status(403).json({ message: "You are not a member of this conversation." }); return; }
+  const emoji = req.body?.emoji;
+  if (!isSupportedReactionEmoji(emoji)) { res.status(400).json({ message: "Choose one of the supported message reactions." }); return; }
+  const [message] = await db.select({ id: messagesTable.id }).from(messagesTable).where(and(eq(messagesTable.id, req.params.messageId), eq(messagesTable.conversationId, req.params.conversationId))).limit(1);
+  if (!message) { res.status(404).json({ message: "Message not found." }); return; }
+  await db.insert(messageReactionsTable).values({ id: id(), messageId: message.id, userId: user.id, emoji }).onConflictDoNothing();
+  res.status(200).json(await reactionForMessage(message.id, emoji, user.id));
+});
+
+router.delete("/chats/:conversationId/messages/:messageId/reactions", async (req, res) => {
+  const user = await requireSession(req, res); if (!user) return;
+  if (!await isMember(req.params.conversationId, user.id)) { res.status(403).json({ message: "You are not a member of this conversation." }); return; }
+  const emoji = req.body?.emoji;
+  if (!isSupportedReactionEmoji(emoji)) { res.status(400).json({ message: "Choose one of the supported message reactions." }); return; }
+  const [message] = await db.select({ id: messagesTable.id }).from(messagesTable).where(and(eq(messagesTable.id, req.params.messageId), eq(messagesTable.conversationId, req.params.conversationId))).limit(1);
+  if (!message) { res.status(404).json({ message: "Message not found." }); return; }
+  await db.delete(messageReactionsTable).where(and(eq(messageReactionsTable.messageId, message.id), eq(messageReactionsTable.userId, user.id), eq(messageReactionsTable.emoji, emoji)));
+  res.status(200).json(await reactionForMessage(message.id, emoji, user.id));
 });
 
 router.get("/chats/:conversationId/attachments/:attachmentId", async (req, res) => {
