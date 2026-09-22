@@ -58,14 +58,145 @@ export interface ChatAttachment {
   size: number;
 }
 
+export type MessageReactionEmoji = typeof MessageReactionEmoji[keyof typeof MessageReactionEmoji];
+
+
+export const MessageReactionEmoji = {
+  '👍': '👍',
+  '❤️': '❤️',
+  '😂': '😂',
+  '😮': '😮',
+  '😢': '😢',
+  '🎉': '🎉',
+  '👏': '👏',
+  '🙌': '🙌',
+  '🔥': '🔥',
+  '💯': '💯',
+  '😍': '😍',
+  '🤔': '🤔',
+  '😎': '😎',
+  '😡': '😡',
+  '👎': '👎',
+  '🤣': '🤣',
+  '🥳': '🥳',
+  '🤩': '🤩',
+  '🙏': '🙏',
+  '💪': '💪',
+  '👀': '👀',
+  '⚾': '⚾',
+  '✅': '✅',
+  '⭐': '⭐',
+} as const;
+
+export interface MessageReaction {
+  emoji: MessageReactionEmoji;
+  /** @minimum 0 */
+  count: number;
+  reacted: boolean;
+}
+
+export interface ChatMessageReply {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+}
+
+export interface ChatMessageMention {
+  userId: string;
+  displayName: string;
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 1 */
+  end: number;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
   senderName: string;
+  senderProfilePhotoUri: string | null;
   text: string;
   attachments: ChatAttachment[];
+  reactions: MessageReaction[];
+  replyTo: ChatMessageReply | null;
+  mentions: ChatMessageMention[];
   createdAt: string;
+}
+
+export type MessageReactionUsersEmoji = typeof MessageReactionUsersEmoji[keyof typeof MessageReactionUsersEmoji];
+
+
+export const MessageReactionUsersEmoji = {
+  '👍': '👍',
+  '❤️': '❤️',
+  '😂': '😂',
+  '😮': '😮',
+  '😢': '😢',
+  '🎉': '🎉',
+  '👏': '👏',
+  '🙌': '🙌',
+  '🔥': '🔥',
+  '💯': '💯',
+  '😍': '😍',
+  '🤔': '🤔',
+  '😎': '😎',
+  '😡': '😡',
+  '👎': '👎',
+  '🤣': '🤣',
+  '🥳': '🥳',
+  '🤩': '🤩',
+  '🙏': '🙏',
+  '💪': '💪',
+  '👀': '👀',
+  '⚾': '⚾',
+  '✅': '✅',
+  '⭐': '⭐',
+} as const;
+
+export interface MessageReactionUser {
+  id: string;
+  fullName: string;
+}
+
+export interface MessageReactionUsers {
+  emoji: MessageReactionUsersEmoji;
+  users: MessageReactionUser[];
+}
+
+export type MessageReactionInputEmoji = typeof MessageReactionInputEmoji[keyof typeof MessageReactionInputEmoji];
+
+
+export const MessageReactionInputEmoji = {
+  '👍': '👍',
+  '❤️': '❤️',
+  '😂': '😂',
+  '😮': '😮',
+  '😢': '😢',
+  '🎉': '🎉',
+  '👏': '👏',
+  '🙌': '🙌',
+  '🔥': '🔥',
+  '💯': '💯',
+  '😍': '😍',
+  '🤔': '🤔',
+  '😎': '😎',
+  '😡': '😡',
+  '👎': '👎',
+  '🤣': '🤣',
+  '🥳': '🥳',
+  '🤩': '🤩',
+  '🙏': '🙏',
+  '💪': '💪',
+  '👀': '👀',
+  '⚾': '⚾',
+  '✅': '✅',
+  '⭐': '⭐',
+} as const;
+
+export interface MessageReactionInput {
+  emoji: MessageReactionInputEmoji;
 }
 
 export interface ChatMessagePreview {
@@ -73,6 +204,7 @@ export interface ChatMessagePreview {
   conversationId: string;
   senderId: string;
   text: string;
+  mentions: ChatMessageMention[];
   createdAt: string;
 }
 
@@ -96,6 +228,9 @@ export interface ChatAttachmentInput {
 export interface ChatMessageInput {
   /** @maxLength 2000 */
   text?: string;
+  replyToMessageId?: string;
+  /** @maxItems 32 */
+  mentions?: ChatMessageMention[];
   /** @maxItems 5 */
   attachments?: ChatAttachmentInput[];
 }
@@ -180,6 +315,56 @@ export const PushTokenPlatform = {
 export interface PushToken {
   id: string;
   platform: PushTokenPlatform;
+}
+
+export type AnnouncementAudienceTag = typeof AnnouncementAudienceTag[keyof typeof AnnouncementAudienceTag];
+
+
+export const AnnouncementAudienceTag = {
+  'Staff-Coach': 'Staff-Coach',
+  Parent: 'Parent',
+  Student: 'Student',
+} as const;
+
+export type AnnouncementStatus = typeof AnnouncementStatus[keyof typeof AnnouncementStatus];
+
+
+export const AnnouncementStatus = {
+  active: 'active',
+  expired: 'expired',
+  removed: 'removed',
+} as const;
+
+export interface AnnouncementInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title: string;
+  /**
+     * Sanitized rich HTML
+     * @minLength 1
+     */
+  body: string;
+  durationDays?: number | null;
+  /** @minItems 1 */
+  audienceTags: AnnouncementAudienceTag[];
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  /** @nullable */
+  durationDays: number | null;
+  publishedAt: string;
+  /** @nullable */
+  expiresAt: string | null;
+  audienceTags: AnnouncementAudienceTag[];
+  status: AnnouncementStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface HealthStatus {
@@ -350,6 +535,24 @@ export interface SignInRequest {
   identifier: string;
   /** @minLength 8 */
   password: string;
+}
+
+export interface PasswordResetRequest {
+  /** @minLength 3 */
+  identifier: string;
+}
+
+export interface PasswordResetConfirmRequest {
+  /** @minLength 3 */
+  identifier: string;
+  /** @pattern ^[0-9]{6}$ */
+  code: string;
+  /** @minLength 8 */
+  newPassword: string;
+}
+
+export interface MessageResponse {
+  message: string;
 }
 
 export type ProfilePhotoUploadInputContentType = typeof ProfilePhotoUploadInputContentType[keyof typeof ProfilePhotoUploadInputContentType];
