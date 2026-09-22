@@ -6,10 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ChatAttachmentInput } from './chatAttachmentInput';
+import type { ChatMessageMention } from './chatMessageMention';
 
 export interface ChatMessageInput {
   /** @maxLength 2000 */
   text?: string;
+  replyToMessageId?: string;
+  /** @maxItems 32 */
+  mentions?: ChatMessageMention[];
   /** @maxItems 5 */
   attachments?: ChatAttachmentInput[];
 }
