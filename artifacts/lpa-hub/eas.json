@@ -3,7 +3,7 @@
     "production": {
       "corepack": true,
       "pnpm": "10.26.1",
-      "node": "22.13.0",
+      "node": "22.14.0",
       "android": {
         "image": "sdk-57",
         "buildType": "app-bundle"
