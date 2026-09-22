@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
 
@@ -44,14 +44,24 @@ export const pushDevicesTable = pgTable("push_devices", {
   userIndex: index("push_devices_user_idx").on(table.userId),
 }));
 
+export type MessageMentionRecord = {
+  userId: string;
+  displayName: string;
+  start: number;
+  end: number;
+};
+
 export const messagesTable = pgTable("messages", {
   id: text("id").primaryKey(),
   conversationId: text("conversation_id").notNull().references(() => conversationsTable.id, { onDelete: "cascade" }),
   senderId: text("sender_id").notNull(),
+  replyToMessageId: text("reply_to_message_id").references((): AnyPgColumn => messagesTable.id, { onDelete: "set null" }),
   text: text("text").notNull(),
+  mentions: jsonb("mentions").$type<MessageMentionRecord[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   conversationCreatedIndex: index("messages_conversation_created_idx").on(table.conversationId, table.createdAt),
+  replyToMessageIndex: index("messages_reply_to_message_idx").on(table.replyToMessageId),
 }));
 
 export const messageAttachmentsTable = pgTable("message_attachments", {
@@ -66,15 +76,29 @@ export const messageAttachmentsTable = pgTable("message_attachments", {
   messageIndex: index("message_attachments_message_idx").on(table.messageId),
 }));
 
+export const messageReactionsTable = pgTable("message_reactions", {
+  id: text("id").primaryKey(),
+  messageId: text("message_id").notNull().references(() => messagesTable.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  emoji: text("emoji").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  messageUserEmojiUnique: uniqueIndex("message_reactions_message_user_emoji_unique").on(table.messageId, table.userId, table.emoji),
+  messageIndex: index("message_reactions_message_idx").on(table.messageId),
+  userIndex: index("message_reactions_user_idx").on(table.userId),
+}));
+
 export const insertConversationSchema = createInsertSchema(conversationsTable).omit({ createdAt: true });
 export const insertConversationMemberSchema = createInsertSchema(conversationMembersTable).omit({ joinedAt: true });
 export const insertConversationReadStateSchema = createInsertSchema(conversationReadStatesTable).omit({ lastReadAt: true, updatedAt: true });
 export const insertPushDeviceSchema = createInsertSchema(pushDevicesTable).omit({ createdAt: true, updatedAt: true });
 export const insertMessageSchema = createInsertSchema(messagesTable).omit({ createdAt: true });
 export const insertMessageAttachmentSchema = createInsertSchema(messageAttachmentsTable).omit({ createdAt: true });
+export const insertMessageReactionSchema = createInsertSchema(messageReactionsTable).omit({ createdAt: true });
 export type Conversation = z.infer<typeof insertConversationSchema>;
 export type ConversationMember = z.infer<typeof insertConversationMemberSchema>;
 export type ConversationReadState = z.infer<typeof insertConversationReadStateSchema>;
 export type PushDevice = z.infer<typeof insertPushDeviceSchema>;
 export type Message = z.infer<typeof insertMessageSchema>;
 export type MessageAttachment = z.infer<typeof insertMessageAttachmentSchema>;
+export type MessageReaction = z.infer<typeof insertMessageReactionSchema>;
