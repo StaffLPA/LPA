@@ -9,7 +9,7 @@ const supported = [
     id: "mobile",
     name: "mobile artifact (@workspace/lpa-hub)",
     packageFile: "artifacts/lpa-hub/package.json",
-    typeLine: "19.1",
+    typeLine: "19.2",
   },
   {
     id: "web",
@@ -45,7 +45,7 @@ function printUsage(output = console.error) {
   output(`Usage:
 Supported commands:
   pnpm run check:react-types
-  pnpm run check:react-types:upgrade -- --candidate mobile=19.1.10,19.1.7 --candidate web=19.2.18,19.2.4
+  pnpm run check:react-types:upgrade -- --candidate mobile=19.2.18,19.2.4 --candidate web=19.2.18,19.2.4
   node scripts/check-react-types.mjs --candidate-from-manifests
 
 Candidate values are @types/react and @types/react-dom specifiers, in that order.
@@ -184,10 +184,10 @@ if (failures.length > 0) {
 
 if (candidates.size > 0) {
   console.log(
-    `React type compatibility check passed for ${candidates.size} candidate upgrade${candidates.size === 1 ? "" : "s"}: mobile supports React 19.1 types and web supports React 19.2 types.`,
+    `React type compatibility check passed for ${candidates.size} candidate upgrade${candidates.size === 1 ? "" : "s"}: mobile and web support React 19.2 types.`,
   );
 } else {
   console.log(
-    "React type compatibility check passed: mobile uses React 19.1 types and web uses React 19.2 types.",
+    "React type compatibility check passed: mobile and web use React 19.2 types.",
   );
 }
