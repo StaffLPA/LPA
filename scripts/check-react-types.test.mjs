@@ -108,11 +108,11 @@ test("derives candidates from the mobile manifest and shared web catalog", () =>
   assert.equal(result.status, 0, result.stderr);
   assert.match(
     mobilePackage.devDependencies["@types/react"],
-    /^~19\.1\.\d+$/,
+    /^~19\.2\.\d+$/,
   );
   assert.match(
     mobilePackage.devDependencies["@types/react-dom"],
-    /^~19\.1\.\d+$/,
+    /^~19\.2\.\d+$/,
   );
   assert.equal(webPackage.devDependencies["@types/react"], "catalog:");
   assert.equal(webPackage.devDependencies["@types/react-dom"], "catalog:");
@@ -124,7 +124,7 @@ test("derives candidates from the mobile manifest and shared web catalog", () =>
   assert.match(result.stdout, /passed for 2 candidate upgrades/);
   assert.match(
     result.stdout,
-    /mobile supports React 19\.1 types and web supports React 19\.2 types/,
+    /mobile and web support React 19\.2 types/,
   );
 });
 
