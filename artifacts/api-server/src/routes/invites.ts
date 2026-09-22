@@ -1,8 +1,8 @@
-import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypto";
+import { randomBytes, randomInt, scryptSync, createHash, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, arrayContains, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, arrayContains, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { calendarEventsTable, conversationMembersTable, conversationsTable, db, guardianLinksTable, usersTable, type User } from "@workspace/db";
-import { sendInviteNotification } from "../lib/notificationService";
+import { sendInviteNotification, sendPasswordResetNotification } from "../lib/notificationService";
 import { createSession, requireAdmin, requireSession, requireStaff } from "../lib/auth";
 import { createProfilePhotoAccessURL, createProfilePhotoUpload, isProfilePhotoPath } from "../lib/profilePhotoStorage";
 
@@ -54,6 +54,10 @@ const mapDirectoryUser = async (user: User) => ({
   profilePhotoUri: await profilePhotoUrl(user.profilePhotoUri),
 });
 const newInvite = () => { const token = randomBytes(32).toString("hex"); return { tokenHash: createHash("sha256").update(token).digest("hex"), expiresAt: new Date(Date.now() + 7 * 86400000) }; };
+const newPasswordReset = () => {
+  const code = String(randomInt(100000, 1_000_000));
+  return { code, tokenHash: createHash("sha256").update(code).digest("hex"), expiresAt: new Date(Date.now() + 30 * 60_000) };
+};
 async function matchingUsers(userEmail: string | null, userPhone: string | null) {
   const conditions = [
     userEmail ? sql`lower(${usersTable.email}) = ${userEmail}` : undefined,
@@ -209,6 +213,58 @@ router.post("/auth/sign-in", async (req, res) => {
   if (!identifier || !password) { res.status(400).json({ message: "Enter your email or phone number and password." }); return; }
   if (!user || user.status !== "active" || !passwordMatches(password, user)) { res.status(401).json({ message: "The sign-in details are incorrect." }); return; }
   res.json({ user: await mapUser(user), sessionToken: createSession(user) });
+});
+router.post("/auth/forgot-password", async (req, res) => {
+  const identifier = email(req.body.identifier);
+  const genericResponse = { message: "If that email belongs to an active LPA account, a six-digit authentication code is on the way." };
+  if (!identifier) { res.status(400).json({ message: "Enter the email address for your LPA account." }); return; }
+  const matches = await matchingUsers(identifier, null);
+  const user = matches.length === 1 && matches[0].status === "active" && matches[0].email ? matches[0] : null;
+  if (user) {
+    const reset = newPasswordReset();
+    await db.update(usersTable).set({ passwordResetTokenHash: reset.tokenHash, passwordResetTokenExpiresAt: reset.expiresAt, passwordResetCodeAttempts: 0 }).where(eq(usersTable.id, user.id));
+    void sendPasswordResetNotification({ fullName: user.fullName, email: user.email!, code: reset.code })
+      .catch((error) => req.log.error({ err: error, userId: user.id }, "Password reset delivery failed"));
+  }
+  res.json(genericResponse);
+});
+router.post("/auth/reset-password", async (req, res) => {
+  const identifier = email(req.body.identifier), code = value(req.body.code), newPassword = value(req.body.newPassword);
+  if (!identifier || !code || !/^\d{6}$/.test(code) || !newPassword || newPassword.length < 8) {
+    res.status(400).json({ message: "Enter the email address, six-digit code, and a password with at least 8 characters." }); return;
+  }
+  const tokenHash = createHash("sha256").update(code).digest("hex");
+  const [candidate] = await db.select({ id: usersTable.id }).from(usersTable).where(and(
+    eq(usersTable.status, "active"),
+    sql`lower(${usersTable.email}) = ${identifier}`,
+    eq(usersTable.passwordResetTokenHash, tokenHash),
+    gt(usersTable.passwordResetTokenExpiresAt, new Date()),
+    lt(usersTable.passwordResetCodeAttempts, 5),
+  )).limit(1);
+  if (!candidate) {
+    const [account] = await db.select({ id: usersTable.id }).from(usersTable).where(and(eq(usersTable.status, "active"), sql`lower(${usersTable.email}) = ${identifier}`)).limit(1);
+    if (account) {
+      await db.update(usersTable).set({ passwordResetCodeAttempts: sql`${usersTable.passwordResetCodeAttempts} + 1` }).where(and(
+        eq(usersTable.id, account.id),
+        gt(usersTable.passwordResetTokenExpiresAt, new Date()),
+        lt(usersTable.passwordResetCodeAttempts, 5),
+      ));
+    }
+    res.status(400).json({ message: "That email or six-digit code is invalid, expired, or has reached its attempt limit." }); return;
+  }
+  const [updated] = await db.update(usersTable).set({
+    passwordHash: scryptSync(newPassword, candidate.id, 64).toString("hex"),
+    passwordResetTokenHash: null,
+    passwordResetTokenExpiresAt: null,
+  }).where(and(
+    eq(usersTable.id, candidate.id),
+    eq(usersTable.status, "active"),
+    eq(usersTable.passwordResetTokenHash, tokenHash),
+    gt(usersTable.passwordResetTokenExpiresAt, new Date()),
+    lt(usersTable.passwordResetCodeAttempts, 5),
+  )).returning();
+  if (!updated) { res.status(400).json({ message: "That email or six-digit code is invalid, expired, or has reached its attempt limit." }); return; }
+  res.json({ message: "Password updated. You can now sign in with your new password." });
 });
 router.get("/auth/me", async (req, res) => { const user = await requireSession(req, res); if (user) res.json(await mapUser(user)); });
 router.post("/auth/profile-photo/upload-url", async (req, res) => {
