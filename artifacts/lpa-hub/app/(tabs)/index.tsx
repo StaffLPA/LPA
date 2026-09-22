@@ -1,13 +1,14 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { useListSharedCalendarEvents } from '@workspace/api-client-react';
+import { useListSharedCalendarEvents, useListAnnouncements, getListAnnouncementsQueryKey } from '@workspace/api-client-react';
 import { eventBelongsToTeams } from '@/constants/teams';
 import { LpaIcon, type LpaIconName } from '@/components/LpaIcon';
+import { AnnouncementCard } from '@/components/AnnouncementCard';
 
 const teamColors: Record<string, string> = {
   Varsity: '#F1604D',
@@ -33,10 +34,28 @@ export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const announcementId = typeof params.announcementId === 'string' ? params.announcementId : null;
+  const scrollViewRef = useRef<ScrollView>(null);
+  const announcementsLayoutRef = useRef<number | null>(null);
+
   const { role, user } = useApp();
   const calendar = useListSharedCalendarEvents(undefined, {
     query: { queryKey: ['home-calendar-events'] },
   });
+
+  const announcements = useListAnnouncements({
+    query: { queryKey: getListAnnouncementsQueryKey() }
+  });
+
+  useEffect(() => {
+    if (announcementId && announcementsLayoutRef.current !== null && scrollViewRef.current) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: announcementsLayoutRef.current! - 20, animated: true });
+      }, 300);
+    }
+  }, [announcementId, announcements.data]);
+
   const firstName = user?.firstName?.trim() || user?.fullName.trim().split(/\s+/)[0] || 'there';
   const upcomingEvents = useMemo(() => {
     const now = Date.now();
@@ -48,7 +67,7 @@ export default function HomeScreen() {
   }, [calendar.data, user?.teams]);
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollViewRef} contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View>
             <Text style={[styles.eyebrow, { color: colors.primary }]}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase()}</Text>
@@ -66,6 +85,22 @@ export default function HomeScreen() {
            <Pressable testID="messages-shortcut" onPress={() => router.push('/(tabs)/messages')} style={styles.heroButton}><Text style={styles.heroButtonText}>Open messages</Text><LpaIcon name="arrow-up-right" size={16} color="#050505" /></Pressable>
           <View style={styles.heroAccent} />
         </LinearGradient>
+
+        {announcements.isLoading ? null : announcements.data && announcements.data.length > 0 ? (
+          <View
+            onLayout={(e) => { announcementsLayoutRef.current = e.nativeEvent.layout.y; }}
+            style={{ paddingHorizontal: 18, marginBottom: 12 }}
+          >
+            <View style={[styles.sectionRow, { paddingHorizontal: 4 }]}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>Announcements</Text></View>
+            {announcements.data.map((announcement) => (
+              <AnnouncementCard
+                key={announcement.id}
+                announcement={announcement}
+                highlighted={announcement.id === announcementId}
+              />
+            ))}
+          </View>
+        ) : null}
 
          <View style={styles.sectionRow}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>Quick access</Text></View>
         <View style={styles.quickGrid}>
