@@ -7,19 +7,13 @@
     "icon": "./assets/images/lpa-outlaws-mark.png",
     "scheme": "lpa",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/lpa-outlaws-mark.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#050505"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.legendaryprepacademy.lpa"
     },
     "android": {
       "package": "com.legendaryprepacademy.lpa",
-      "versionCode": 2
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/images/lpa-outlaws-mark.png"
@@ -32,6 +26,24 @@
         }
       ],
       "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/lpa-outlaws-mark.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#050505"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow LPA to access photos you choose to send in messages.",
+          "savePhotosPermission": "Allow LPA to save message images to your photo library.",
+          "granularPermissions": [
+            "photo"
+          ]
+        }
+      ],
       [
         "expo-notifications",
         {
