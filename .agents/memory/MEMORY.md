@@ -3,3 +3,7 @@
 - [OpenAPI Zod email format](openapi-zod-email-format.md) — Current contract generation cannot emit `format: email` against the installed Zod version.
 - [Expo Android builds](expo-android-builds.md) — Standalone LPA builds must retain the production API fallback and App Bundle release profile.
 - [Expo cloud workspace packaging](expo-cloud-workspace-packaging.md) — Expo can check out LPA in isolation, so its frozen lockfile and packed API client must ship with the artifact.
+- [Expo Go 57 preview sessions](expo-go-57-preview-sessions.md) — physical iOS previews must ignore EXPO_TOKEN and use the Replit-provided session so CLI and Expo Go accounts match.
+- [Reaction-user API contract](reaction-users-endpoint.md) — Use an emoji path segment for reaction-user lookups to avoid duplicate generated query-parameter exports.
+- [Mention notifications](mention-notifications.md) — Mentioned chat members receive one distinct alert without also receiving the ordinary message notification.
+- [Pell custom toolbar actions](pell-custom-toolbar-actions.md) — Pell custom buttons require action-named props; its customAction callback is ignored.
