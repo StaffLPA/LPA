@@ -22,3 +22,4 @@ export * from "./guardianLinks";
 export * from "./messaging";
 export * from "./calendarEvents";
 export * from "./appSettings";
+export * from "./announcements";
