@@ -8,7 +8,7 @@ import { useGetCalendarFeed } from '@workspace/api-client-react';
 import { CALENDAR_TEAM_COLORS, CALENDAR_TEAMS, type CalendarTeam } from '@/constants/teams';
 
 type ViewMode = 'Week' | 'Month';
-type CalendarEvent = { id: string; date: string; time: string; endTime?: string; title: string; location: string; tag: string; team: CalendarTeam; tint: string };
+type CalendarEvent = { id: string; date: string; endDate?: string; time: string; endTime?: string; title: string; location: string; tag: string; team: CalendarTeam; tint: string };
 
 const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const teams = CALENDAR_TEAMS.map((name) => ({ name, color: CALENDAR_TEAM_COLORS[name] }));
@@ -34,6 +34,28 @@ const weekDatesFor = (date: string) => {
   });
 };
 const eventColorsForDate = (events: CalendarEvent[], date: string) => Array.from(new Set(events.filter((event) => event.date === date).map((event) => event.tint)));
+const eventTimestamp = (date: string, time: string) => {
+  const day = dateFromKey(date);
+  const match = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (match) {
+    let hours = Number(match[1]);
+    if (match[3].toUpperCase() === 'PM' && hours !== 12) hours += 12;
+    if (match[3].toUpperCase() === 'AM' && hours === 12) hours = 0;
+    day.setHours(hours, Number(match[2]), 0, 0);
+  }
+  return day.getTime();
+};
+const dateRangeLabel = (startDate: string, endDate = startDate) => {
+  const start = dateFromKey(startDate);
+  const end = dateFromKey(endDate);
+  if (startDate === endDate) return start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const startLabel = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const endLabel = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${startLabel} – ${endLabel}`;
+};
+const timeRangeLabel = (event: CalendarEvent) => event.endTime && event.endTime !== 'Time TBD' && event.endTime !== event.time
+  ? `${event.time} – ${event.endTime}`
+  : event.time;
 const formatIcsTime = (value: string | undefined) => {
   const match = value?.match(/T(\d{2})(\d{2})/);
   if (!match) return 'Time TBD';
@@ -51,9 +73,11 @@ function parseIcsEvents(feed: string | undefined, team: Exclude<CalendarTeam, 'A
     if (line === 'END:VEVENT' && values) {
       const startsAt = values.DTSTART;
       const date = startsAt?.match(/^(\d{4})(\d{2})(\d{2})/)?.slice(1).join('-');
+      const endDate = values.DTEND?.match(/^(\d{4})(\d{2})(\d{2})/)?.slice(1).join('-');
       if (date && values.UID && values.SUMMARY) events.push({
         id: values.UID.replace(/@lpahub$/, ''),
         date,
+        endDate: endDate && endDate !== date ? endDate : undefined,
         time: formatIcsTime(startsAt),
         endTime: formatIcsTime(values.DTEND),
         title: unescapeIcs(values.SUMMARY),
@@ -116,7 +140,20 @@ export default function CalendarScreen() {
   const cells = Array.from({ length: Math.ceil((leading + days) / 7) * 7 }, (_, index) => index - leading + 1);
   const filteredEvents = useMemo(() => selectedTeam === 'All Teams' ? events : events.filter((event) => event.team === selectedTeam), [events, selectedTeam]);
   const selectedEvents = useMemo(() => filteredEvents.filter((event) => event.date === selectedDate), [filteredEvents, selectedDate]);
+  const selectedWeek = useMemo(() => weekDatesFor(selectedDate), [selectedDate]);
+  const weekEvents = useMemo(() => {
+    const [weekStart, weekEnd] = [selectedWeek[0], selectedWeek[selectedWeek.length - 1]];
+    const now = Date.now();
+    return filteredEvents
+      .filter((event) => {
+        const eventEndDate = event.endDate ?? event.date;
+        const overlapsWeek = event.date <= weekEnd && eventEndDate >= weekStart;
+        return overlapsWeek && eventTimestamp(event.date, event.time) >= now;
+      })
+      .sort((a, b) => eventTimestamp(a.date, a.time) - eventTimestamp(b.date, b.time));
+  }, [filteredEvents, selectedWeek]);
   const selectedLabel = new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const selectedWeekLabel = dateRangeLabel(selectedWeek[0], selectedWeek[selectedWeek.length - 1]);
 
   const moveMonth = (amount: number) => {
     const next = new Date(monthDate.getFullYear(), monthDate.getMonth() + amount, 1);
@@ -144,8 +181,8 @@ export default function CalendarScreen() {
            {view === 'Month' ? <View style={styles.monthGrid}>{cells.map((day, index) => { const date = day > 0 && day <= days ? `${monthKey}-${String(day).padStart(2, '0')}` : ''; const eventColors = date ? eventColorsForDate(filteredEvents, date) : []; return <Pressable key={`${monthKey}-${index}`} disabled={!date} onPress={() => chooseDay(day)} style={styles.monthCell}><View style={[styles.monthDate, date === selectedDate && { backgroundColor: colors.primary }]}><Text style={[styles.monthDateText, { color: date === selectedDate ? '#fff' : date ? colors.foreground : colors.muted }]}>{date ? day : ''}</Text></View><ColorDots colors={eventColors} /></Pressable>; })}</View> : <View style={styles.weekRow}>{weekDatesFor(selectedDate).map((date) => { const day = dateFromKey(date).getDate(); return <Pressable key={date} onPress={() => chooseDate(date)} style={styles.dayCell}><View style={[styles.dateCircle, selectedDate === date && { backgroundColor: colors.primary }]}><Text style={[styles.dateText, { color: selectedDate === date ? '#fff' : colors.foreground }]}>{day}</Text></View><ColorDots colors={eventColorsForDate(filteredEvents, date)} /></Pressable>; })}</View>}
       </View>
       <View style={[styles.segment, { backgroundColor: colors.muted }]}>{(['Week', 'Month'] as ViewMode[]).map((item) => <Pressable key={item} onPress={() => setView(item)} style={[styles.segmentButton, view === item && { backgroundColor: colors.card }]}><Text style={[styles.segmentText, { color: view === item ? colors.foreground : colors.mutedForeground }]}>{item}</Text></Pressable>)}</View>
-      <View style={styles.sectionRow}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{selectedLabel}</Text><Text style={[styles.count, { color: colors.mutedForeground }]}>{selectedEvents.length} events</Text></View>
-      {view === 'Week' ? <WeekOverview colors={colors} events={filteredEvents} selectedDate={selectedDate} /> : <View style={[styles.agendaCard, { backgroundColor: colors.card, borderColor: colors.border }]}>{selectedEvents.length ? selectedEvents.map((item) => <EventRow key={item.id} item={item} colors={colors} />) : <View style={styles.empty}><Feather name="calendar" size={25} color={colors.mutedForeground} /><Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No events scheduled</Text></View>}</View>}
+       <View style={styles.sectionRow}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{view === 'Week' ? selectedWeekLabel : selectedLabel}</Text><Text style={[styles.count, { color: colors.mutedForeground }]}>{view === 'Week' ? `${weekEvents.length} upcoming` : `${selectedEvents.length} events`}</Text></View>
+       {view === 'Week' ? <WeekEvents colors={colors} events={weekEvents} /> : <View style={[styles.agendaCard, { backgroundColor: colors.card, borderColor: colors.border }]}>{selectedEvents.length ? selectedEvents.map((item) => <EventRow key={item.id} item={item} colors={colors} />) : <View style={styles.empty}><Feather name="calendar" size={25} color={colors.mutedForeground} /><Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No events scheduled</Text></View>}</View>}
     </ScrollView>
   </View>;
 }
@@ -154,8 +191,23 @@ function EventRow({ item, colors }: { item: CalendarEvent; colors: ReturnType<ty
   return <View style={styles.eventRow}><Text style={[styles.eventTime, { color: colors.mutedForeground }]}>{item.endTime && item.endTime !== 'Time TBD' ? `${item.time}\n– ${item.endTime}` : item.time}</Text><View style={[styles.eventBar, { backgroundColor: item.tint }]} /><View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{item.title}</Text><Text style={[styles.eventLocation, { color: colors.mutedForeground }]}><Feather name="map-pin" size={11} color={colors.mutedForeground} /> {item.location}</Text></View><Text style={[styles.tag, { color: item.tint, backgroundColor: `${item.tint}18` }]}>{item.tag}</Text></View>;
 }
 
-function WeekOverview({ colors, events, selectedDate }: { colors: ReturnType<typeof useColors>; events: CalendarEvent[]; selectedDate: string }) {
-  return <View style={[styles.weekOverview, { backgroundColor: colors.card, borderColor: colors.border }]}>{weekDatesFor(selectedDate).map((date, index) => { const day = dateFromKey(date); const eventColors = eventColorsForDate(events, date); const accentColor = eventColors.length === 1 ? eventColors[0] : eventColors.length > 1 ? CALENDAR_TEAM_COLORS['All Teams'] : 'transparent'; const count = events.filter((event) => event.date === date).length; return <View key={date} style={[styles.weekLine, { borderLeftColor: accentColor, borderLeftWidth: 3 }, index < 6 && { borderBottomColor: colors.border, borderBottomWidth: 1 }]}><View style={[styles.weekNumber, { backgroundColor: date === selectedDate ? colors.primary : colors.muted }]}><Text style={[styles.weekNumberText, { color: date === selectedDate ? '#fff' : colors.foreground }]}>{day.getDate()}</Text></View><View style={{ flex: 1 }}><Text style={[styles.weekTitle, { color: colors.foreground }]}>{count ? `${count} event${count > 1 ? 's' : ''}` : 'No events'}</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}><Text style={[styles.weekMeta, { color: colors.mutedForeground }]}>{day.toLocaleDateString('en-US', { weekday: 'short', month: 'short' })}</Text><ColorDots colors={eventColors} /></View></View></View>; })}</View>;
+function WeekEvents({ colors, events }: { colors: ReturnType<typeof useColors>; events: CalendarEvent[] }) {
+  return <View style={[styles.weekEventsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    {events.length ? events.map((item, index) => {
+      const eventDate = dateFromKey(item.date);
+      const eventColor = item.tint;
+      return <View key={item.id} style={[styles.weekEvent, index < events.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+        <View style={[styles.weekDateBlock, { backgroundColor: `${eventColor}18` }]}>
+          <Text style={[styles.weekDateDay, { color: eventColor }]}>{eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</Text>
+          <Text style={[styles.weekDateNumber, { color: colors.foreground }]}>{eventDate.getDate()}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.weekEventTitle, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
+          <Text style={[styles.weekEventMeta, { color: colors.mutedForeground }]} numberOfLines={2}>{dateRangeLabel(item.date, item.endDate)} · {timeRangeLabel(item)} · {item.location}</Text>
+        </View>
+      </View>;
+    }) : <View style={styles.empty}><Feather name="calendar" size={25} color={colors.mutedForeground} /><Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No upcoming events this week</Text></View>}
+  </View>;
 }
 
 function ColorDots({ colors }: { colors: string[] }) {
@@ -163,5 +215,5 @@ function ColorDots({ colors }: { colors: string[] }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 }, header: { paddingHorizontal: 22, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }, eyebrow: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1.3, marginBottom: 6 }, title: { fontFamily: 'Inter_700Bold', fontSize: 29, letterSpacing: -0.8 }, add: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, filterWrap: { marginHorizontal: 18, marginBottom: 14, zIndex: 5 }, filterSelect: { minHeight: 45, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 }, filterMenu: { position: 'absolute', top: 51, left: 0, right: 0, borderWidth: 1, borderRadius: 14, paddingVertical: 5, zIndex: 10, elevation: 6 }, filterOption: { minHeight: 42, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 }, filterDot: { width: 8, height: 8, borderRadius: 4 }, filterText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, calendarCard: { marginHorizontal: 18, borderRadius: 19, borderWidth: 1, padding: 16 }, monthRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }, month: { fontFamily: 'Inter_700Bold', fontSize: 15 }, arrows: { flexDirection: 'row', gap: 18 }, weekRow: { flexDirection: 'row', justifyContent: 'space-between' }, weekday: { fontFamily: 'Inter_600SemiBold', fontSize: 10, width: 32, textAlign: 'center' }, dayCell: { alignItems: 'center', gap: 5, width: 32 }, dateCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, dateText: { fontFamily: 'Inter_700Bold', fontSize: 13 }, monthGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }, monthCell: { width: '14.2857%', height: 49, alignItems: 'center', gap: 3 }, monthDate: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }, monthDateText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, dot: { width: 4, height: 4, borderRadius: 2 }, segment: { marginHorizontal: 18, marginTop: 18, borderRadius: 14, padding: 3, flexDirection: 'row' }, segmentButton: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 11 }, segmentText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, sectionRow: { marginHorizontal: 22, marginTop: 25, marginBottom: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, sectionTitle: { fontFamily: 'Inter_700Bold', fontSize: 15 }, count: { fontFamily: 'Inter_400Regular', fontSize: 11 }, agendaCard: { marginHorizontal: 18, borderWidth: 1, borderRadius: 18, overflow: 'hidden' }, eventRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderBottomWidth: 1, borderBottomColor: '#D9DED9' }, eventTime: { fontFamily: 'Inter_500Medium', width: 58, fontSize: 10, lineHeight: 14 }, eventBar: { width: 3, height: 38, borderRadius: 2 }, eventTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 5 }, eventLocation: { fontFamily: 'Inter_400Regular', fontSize: 11 }, tag: { fontFamily: 'Inter_700Bold', fontSize: 8, letterSpacing: 0.5, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 7 }, empty: { minHeight: 100, alignItems: 'center', justifyContent: 'center', gap: 8 }, emptyText: { fontFamily: 'Inter_500Medium', fontSize: 12 }, weekOverview: { marginHorizontal: 18, borderWidth: 1, borderRadius: 18, overflow: 'hidden' }, weekLine: { flexDirection: 'row', alignItems: 'center', gap: 13, minHeight: 58, paddingHorizontal: 14 }, weekNumber: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center' }, weekNumberText: { fontFamily: 'Inter_700Bold', fontSize: 13 }, weekTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, weekMeta: { fontFamily: 'Inter_400Regular', fontSize: 10, marginTop: 3 }, backdrop: { flex: 1, backgroundColor: '#00000088', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 22, paddingBottom: 35 }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }, modalTitle: { fontFamily: 'Inter_700Bold', fontSize: 22 }, modalDate: { fontFamily: 'Inter_400Regular', fontSize: 12, marginBottom: 16 }, input: { height: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontFamily: 'Inter_400Regular', fontSize: 13, marginBottom: 9 }, timeInputs: { flexDirection: 'row', gap: 8 }, halfInput: { flex: 1 }, save: { height: 49, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 6 }, saveText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 13 },
+  container: { flex: 1 }, header: { paddingHorizontal: 22, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }, eyebrow: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1.3, marginBottom: 6 }, title: { fontFamily: 'Inter_700Bold', fontSize: 29, letterSpacing: -0.8 }, add: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, filterWrap: { marginHorizontal: 18, marginBottom: 14, zIndex: 5 }, filterSelect: { minHeight: 45, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 }, filterMenu: { position: 'absolute', top: 51, left: 0, right: 0, borderWidth: 1, borderRadius: 14, paddingVertical: 5, zIndex: 10, elevation: 6 }, filterOption: { minHeight: 42, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 }, filterDot: { width: 8, height: 8, borderRadius: 4 }, filterText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, calendarCard: { marginHorizontal: 18, borderRadius: 19, borderWidth: 1, padding: 16 }, monthRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }, month: { fontFamily: 'Inter_700Bold', fontSize: 15 }, arrows: { flexDirection: 'row', gap: 18 }, weekRow: { flexDirection: 'row', justifyContent: 'space-between' }, weekday: { fontFamily: 'Inter_600SemiBold', fontSize: 10, width: 32, textAlign: 'center' }, dayCell: { alignItems: 'center', gap: 5, width: 32 }, dateCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, dateText: { fontFamily: 'Inter_700Bold', fontSize: 13 }, monthGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }, monthCell: { width: '14.2857%', height: 49, alignItems: 'center', gap: 3 }, monthDate: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }, monthDateText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, dot: { width: 4, height: 4, borderRadius: 2 }, segment: { marginHorizontal: 18, marginTop: 18, borderRadius: 14, padding: 3, flexDirection: 'row' }, segmentButton: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 11 }, segmentText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, sectionRow: { marginHorizontal: 22, marginTop: 25, marginBottom: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, sectionTitle: { fontFamily: 'Inter_700Bold', fontSize: 15 }, count: { fontFamily: 'Inter_400Regular', fontSize: 11 }, agendaCard: { marginHorizontal: 18, borderWidth: 1, borderRadius: 18, overflow: 'hidden' }, eventRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderBottomWidth: 1, borderBottomColor: '#D9DED9' }, eventTime: { fontFamily: 'Inter_500Medium', width: 58, fontSize: 10, lineHeight: 14 }, eventBar: { width: 3, height: 38, borderRadius: 2 }, eventTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 5 }, eventLocation: { fontFamily: 'Inter_400Regular', fontSize: 11 }, tag: { fontFamily: 'Inter_700Bold', fontSize: 8, letterSpacing: 0.5, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 7 }, empty: { minHeight: 100, alignItems: 'center', justifyContent: 'center', gap: 8 }, emptyText: { fontFamily: 'Inter_500Medium', fontSize: 12 }, weekEventsCard: { marginHorizontal: 18, borderWidth: 1, borderRadius: 18, overflow: 'hidden' }, weekEvent: { flexDirection: 'row', alignItems: 'center', gap: 13, padding: 13 }, weekDateBlock: { width: 48, height: 53, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, weekDateDay: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 0.6 }, weekDateNumber: { fontFamily: 'Inter_700Bold', fontSize: 22, lineHeight: 24 }, weekEventTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 4 }, weekEventMeta: { fontFamily: 'Inter_400Regular', fontSize: 11 }, backdrop: { flex: 1, backgroundColor: '#00000088', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 22, paddingBottom: 35 }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }, modalTitle: { fontFamily: 'Inter_700Bold', fontSize: 22 }, modalDate: { fontFamily: 'Inter_400Regular', fontSize: 12, marginBottom: 16 }, input: { height: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontFamily: 'Inter_400Regular', fontSize: 13, marginBottom: 9 }, timeInputs: { flexDirection: 'row', gap: 8 }, halfInput: { flex: 1 }, save: { height: 49, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 6 }, saveText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 13 },
 });
