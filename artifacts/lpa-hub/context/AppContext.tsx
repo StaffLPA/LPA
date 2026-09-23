@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { customFetch, registerPushToken, removePushToken, setAuthTokenGetter } from '@workspace/api-client-react';
 import { createSharedSyncCoordinator, startSharedSyncTriggers } from './live-sync-coordinator.mjs';
 import { clearStoredSession, loadStoredSession, persistStoredSession } from './session-store.mjs';
-import { requestMessagePushToken, type RegisteredPushToken } from '@/lib/messagePushNotifications';
+import { requestMessagePushToken, setApplicationBadgeCount, type RegisteredPushToken } from '@/lib/messagePushNotifications';
 
 export type Role = 'Admin' | 'Staff-Coach' | 'Parent-Athlete' | 'Athlete';
 export type StoredUser = { id: string; fullName: string; firstName?: string | null; lastName?: string | null; email?: string | null; phone?: string | null; address?: string | null; birthday?: string | null; gender?: string | null; role: Role; status: string; teams: string[]; photoUri?: string | null; profilePhotoUri?: string | null; profilePhotoPath?: string | null };
@@ -73,6 +73,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPushToken(null);
     queryClient.clear();
     void clearStoredSession(AsyncStorage, user?.id);
+    void setApplicationBadgeCount(0).catch(() => undefined);
   }, [pushToken, queryClient, user]);
   const completeAuthentication = useCallback(async (nextUser: StoredUser, token: string) => {
     sessionToken = token;
@@ -112,15 +113,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user || !sessionToken) return;
     let cancelled = false;
-    void requestMessagePushToken().then(async (token) => {
-      if (!token || cancelled) return;
-      await registerPushToken(token, { suppressUnauthorizedHandler: true });
-      if (cancelled) return;
-      setPushToken(token);
-      await AsyncStorage.setItem(`lpa-push-token:${user.id}`, JSON.stringify(token));
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [user]);
+    let registering = false;
+    const registerDevice = async () => {
+      if (registering || cancelled || !sessionToken) return;
+      registering = true;
+      try {
+        const token = await requestMessagePushToken();
+        if (!token || cancelled) return;
+        await registerPushToken(token, { suppressUnauthorizedHandler: true });
+        if (cancelled) return;
+        setPushToken(token);
+        await AsyncStorage.setItem(`lpa-push-token:${user.id}`, JSON.stringify(token));
+      } finally {
+        registering = false;
+      }
+    };
+    void registerDevice().catch(() => undefined);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void registerDevice().catch(() => undefined);
+    });
+    return () => {
+      cancelled = true;
+      appStateSubscription.remove();
+    };
+  }, [user?.id]);
 
   const addSubmission = (type: string) => {
     const next = [{ id: Date.now().toString(), type, date: 'Just now', status: 'Submitted' as const }, ...submissions];
