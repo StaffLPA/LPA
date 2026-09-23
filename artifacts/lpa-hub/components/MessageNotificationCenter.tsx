@@ -7,7 +7,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useListChats, getListAnnouncementsQueryKey, getListAdminAnnouncementsQueryKey } from '@workspace/api-client-react';
 import { useApp } from '@/context/AppContext';
 import { useColors } from '@/hooks/useColors';
-import { addPushReceivedListener, addPushResponseListener } from '@/lib/messagePushNotifications';
+import { addPushReceivedListener, addPushResponseListener, setApplicationBadgeCount } from '@/lib/messagePushNotifications';
 
 type Chat = {
   id: string;
@@ -26,12 +26,18 @@ export function MessageNotificationCenter() {
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
-  const chats = useListChats({ query: { queryKey: ['chats'], enabled: Boolean(user) } });
+  const chats = useListChats({ query: { queryKey: ['chats'], enabled: Boolean(user), refetchInterval: 10_000 } });
   const [alert, setAlert] = useState<AlertMessage | null>(null);
   const [isReady, setIsReady] = useState(false);
   const seenRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const baselineReadyRef = useRef(false);
+  const unreadCount = ((chats.data ?? []) as Chat[]).reduce((total, chat) => total + chat.unreadCount, 0);
+
+  useEffect(() => {
+    if (user && chats.data === undefined) return;
+    void setApplicationBadgeCount(user ? unreadCount : 0).catch(() => undefined);
+  }, [chats.data, unreadCount, user]);
 
   const persistSeen = useCallback(() => {
     if (!user) return;
@@ -113,7 +119,6 @@ export function MessageNotificationCenter() {
     const received = addPushReceivedListener((notification) => {
       if (notification.conversationId) {
         invalidateChat(notification.conversationId);
-        if (notification.messageId) show({ conversationId: notification.conversationId, messageId: notification.messageId, title: notification.title, body: notification.body });
       } else if (notification.announcementId) {
         void queryClient.invalidateQueries({ queryKey: getListAnnouncementsQueryKey() });
         void queryClient.invalidateQueries({ queryKey: getListAdminAnnouncementsQueryKey() });
