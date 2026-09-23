@@ -40,6 +40,7 @@ export type LpaIconName =
   | 'mail'
   | 'phone'
   | 'bell'
+  | 'bell-off'
   | 'alert-circle'
   | 'chevron-up'
   | 'clock'
@@ -132,6 +133,8 @@ export function LpaIcon({ name, size = 20, color, strokeWidth = 1.9 }: {
         return <Path d="M7 4.5 9.5 7l-1.4 2.3a12 12 0 0 0 6.6 6.6l2.3-1.4 2.5 2.5-1.6 2.2a2.5 2.5 0 0 1-2.7.9C9.8 18.4 5.6 14.2 3.9 8.8a2.5 2.5 0 0 1 .9-2.7L7 4.5Z" {...common} />;
       case 'bell':
         return <><Path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8.5h18C21 16 18 16 18 9Z" {...common} /><Path d="M9.8 20a2.5 2.5 0 0 0 4.4 0" {...common} /></>;
+      case 'bell-off':
+        return <><Path d="M6.5 7A6 6 0 0 1 18 9c0 7 3 7 3 8.5H8M5.5 17.5H3C3 16 6 16 6 9M9.8 20a2.5 2.5 0 0 0 4.4 0M3 3l18 18" {...common} /></>;
       case 'alert-circle':
         return <><Circle cx="12" cy="12" r="8.5" {...common} /><Path d="M12 8v5M12 16.5v.1" {...common} /></>;
       case 'chevron-up':
