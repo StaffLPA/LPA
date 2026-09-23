@@ -1,4 +1,310 @@
- 'LPA Events' ? colors.accentForeground : eventTeam === team ? '#fff' : colors.foreground }]}>{team}</Text></Pressable>)}</ScrollView><View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={styles.panelHeader}><View><Text style={[styles.panelTitle, { color: colors.foreground }]}>{editingEvent ? 'Edit event' : 'Add an event'}</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>{editingEvent ? 'Changes publish immediately.' : 'Visible to the selected LPA team.'}</Text></View>{editingEvent ? <Pressable onPress={resetEventForm}><Text style={[styles.cancel, { color: colors.primary }]}>Cancel</Text></Pressable> : null}</View><EventForm key={`${eventFormRevision}-${editingEvent?.id ?? 'new'}`} title={eventTitle} setTitle={setEventTitle} date={eventDate} setDate={setEventDate} time={eventTime} setTime={setEventTime} endTime={eventEndTime} setEndTime={setEventEndTime} location={eventLocation} setLocation={eventLocation} team={eventFormTeam} setTeam={setEventFormTeam} repeatUntil={editingEvent?.repeatUntil} onSubmit={saveEvent} loading={savingEvents || createEvent.isPending || createRepeatedEvents.isPending} edit={Boolean(editingEvent)} colors={colors} /></View>{calendar.isLoading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 34 }} /> : <View style={styles.eventList}>{events.map((event) => { const eventColor = getCalendarTeamColor(event.team); return <View key={event.id} style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, backgroundColor: eventColor }} /><View style={[styles.eventDate, { backgroundColor: `${eventColor}18` }]}><Text style={[styles.eventDay, { color: eventColor }]}>{displayDate(event.date)}</Text></View><View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{event.title}</Text><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{event.time} · {event.location}</Text><Text style={[styles.eventTeam, { color: eventColor }]}>{event.team}</Text>{event.repeatUntil ? <Text style={[styles.repeatSeriesMeta, { color: colors.mutedForeground }]}>Daily repeat · through {displayDate(event.repeatUntil)}</Text> : null}</View><View style={styles.eventActions}><Pressable testID={`edit-event-${event.id}`} onPress={() => openEdit(event)}><Feather name="edit-2" size={16} color={eventColor} /></Pressable><Pressable testID={`delete-event-${event.id}`} onPress={() => deleteEvent.mutate({ id: event.id }, { onError: (error) => Alert.alert('Could not delete event', error.message) })}><Feather name="trash-2" size={16} color={colors.destructive} /></Pressable></View></View>; })}</View>}</> : null}
+// @ts-nocheck
+import * as ImagePicker from 'expo-image-picker';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { LpaIcon as Feather } from '@/components/LpaIcon';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  useCreateCalendarEvent,
+  useCreateRepeatedCalendarEvents,
+  useCreateChat,
+  useCreateInvite,
+  useDeleteCalendarEvent,
+  useDeleteGuardianLink,
+  useCreateGuardianLink,
+  useListCalendarEvents,
+  useListGuardianLinks,
+  useListUsers,
+  useResendInvite,
+  useRevokeInvite,
+  useUpdateUserRole, customFetch,
+  useCreateTagOption, useRenameTagOption, useDeleteTagOption, useUpdateUserRoleTag,
+} from '@workspace/api-client-react';
+import { useApp, useLiveSync } from '@/context/AppContext';
+import { useColors } from '@/hooks/useColors';
+import { CALENDAR_TEAM_COLORS, CALENDAR_TEAMS, LPA_TEAMS, getCalendarTeamColor, teamEventAliases } from '@/constants/teams';
+import { AdminAnnouncementsPanel } from '@/components/AdminAnnouncementsPanel';
+import { useTagCatalog } from '@/hooks/useTagCatalog';
+import { tagLabel, canonicalTeam, teamMatches, getTeamColor, type TagCatalog } from '@/constants/tagCatalog';
+
+type Section = 'Overview' | 'Roster' | 'Calendar' | 'Group Chats' | 'Schedule Images' | 'Family Links' | 'Announcements' | 'Tagging';
+type Role = 'Admin' | 'Staff-Coach' | 'Parent-Athlete' | 'Athlete';
+type UserRow = { id: string; fullName: string; email?: string | null; phone?: string | null; role: Role; roleTag?: string | null; status: string; teams: string[]; gradYear?: string | null; profilePhotoUri?: string | null };
+type EventRow = { id: string; title: string; date: string; time: string; location: string; team: string; repeatSeriesId?: string | null; repeatUntil?: string | null };
+type GuardianLink = { id: string; athlete: Pick<UserRow, 'id' | 'fullName' | 'teams' | 'gradYear' | 'profilePhotoUri'>; guardian: Pick<UserRow, 'id' | 'fullName' | 'profilePhotoUri'>; createdAt: string };
+const roles: Role[] = ['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete'];
+let teams: string[] = [...CALENDAR_TEAMS];
+const legacyEventTeam = (catalog: TagCatalog, value: string) => {
+  const canonical = canonicalTeam(catalog, value);
+  return canonical === 'LPA 14U' ? '14u' : canonical === 'LPA 15U' ? '15u' : canonical === 'LPA JV' ? 'Junior Varsity' : canonical === 'LPA Varsity' ? 'Varsity' : canonical === 'LPA' ? 'LPA Events' : value;
+};
+const roleLabel = (role: string) => role === 'Parent-Athlete' ? 'Parent/Guardian' : role;
+const displayDate = (iso: string) => {
+  const [year, month, day] = iso.split('-');
+  return year && month && day ? `${month}-${day}-${year}` : iso;
+};
+const apiDate = (display: string) => {
+  const match = display.trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (match) return `${match[3]}-${match[1]}-${match[2]}`;
+  const iso = display.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  return iso ? iso[1] : display.trim();
+};
+const validApiDate = (date: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
+};
+
+export default function AdminDashboardScreen() {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { role: activeRole, user, isReady } = useApp();
+
+  useEffect(() => {
+    if (isReady && !user) router.replace({ pathname: '/launch', params: { returnTo: '/admin-dashboard' } });
+  }, [isReady, router, user]);
+
+  if (!isReady || !user) return <View style={[styles.denied, { backgroundColor: colors.background, justifyContent: 'center' }]}><ActivityIndicator color={colors.primary} /></View>;
+
+  if (activeRole !== 'Admin' && activeRole !== 'Staff-Coach') return <View style={[styles.denied, { backgroundColor: colors.background, paddingTop: (Platform.OS === 'web' ? Math.max(insets.top, 67) : insets.top) + 24 }]}><View style={[styles.deniedIcon, { backgroundColor: `${colors.primary}20` }]}><Feather name="lock" size={25} color={colors.primary} /></View><Text style={[styles.deniedTitle, { color: colors.foreground }]}>Admin access required</Text><Text style={[styles.deniedCopy, { color: colors.mutedForeground }]}>Admin and Staff-Coach users can open the management dashboard. Parent/Guardian and Athlete users cannot.</Text><Pressable onPress={() => router.back()} style={[styles.backButton, { backgroundColor: colors.primary }]}><Text style={styles.backButtonText}>Go back</Text></Pressable></View>;
+
+  return <AdminDashboardContent />;
+}
+
+function AdminDashboardContent() {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { signOut, user: currentUser } = useApp();
+  const { isSyncing, lastSyncedAt, syncError, syncSharedData } = useLiveSync();
+  const tagCatalogQuery = useTagCatalog();
+  const tagCatalog = tagCatalogQuery.data as TagCatalog;
+  teams = ['All Teams', ...tagCatalog.teams.map((option) => option.label)];
+  const [section, setSection] = useState<Section>('Overview');
+  const [search, setSearch] = useState('');
+  const [showInvite, setShowInvite] = useState(false);
+  const [roleMenuId, setRoleMenuId] = useState<string | null>(null);
+  const [teamMenuId, setTeamMenuId] = useState<string | null>(null);
+  const [gradYearMenuId, setGradYearMenuId] = useState<string | null>(null);
+  const [eventTeam, setEventTeam] = useState('All Teams');
+  const [editingEvent, setEditingEvent] = useState<EventRow | null>(null);
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventDate, setEventDate] = useState('');
+  const [eventTime, setEventTime] = useState('');
+  const [eventEndTime, setEventEndTime] = useState('');
+  const [eventLocation, setEventLocation] = useState('');
+  const [eventFormTeam, setEventFormTeam] = useState('LPA Events');
+  const [eventFormRevision, setEventFormRevision] = useState(0);
+  const [savingEvents, setSavingEvents] = useState(false);
+  const [invite, setInvite] = useState({ fullName: '', email: '', phone: '', role: 'Parent-Athlete' as Role, roleTag: '', team: '', gradYear: '' });
+  const [groupName, setGroupName] = useState('');
+  const [groupParticipants, setGroupParticipants] = useState<string[]>([]);
+  const [groupTeamFilter, setGroupTeamFilter] = useState('All Teams');
+  const [uploadingUserPhoto, setUploadingUserPhoto] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [uploadingScheduleImage, setUploadingScheduleImage] = useState<string | null>(null);
+  const [scheduleImages, setScheduleImages] = useState<Record<string, { uri: string; width?: number; height?: number }>>({});
+  const [familySearch, setFamilySearch] = useState('');
+  const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
+  const [selectedGuardianId, setSelectedGuardianId] = useState<string | null>(null);
+  const [tagError, setTagError] = useState('');
+  const users = useListUsers(undefined, { query: { queryKey: ['/api/admin/users', 'live'] } });
+  const guardianLinks = useListGuardianLinks({ query: { queryKey: ['/api/admin/guardian-links', 'live'], enabled: currentUser?.role === 'Admin' } });
+  const calendar = useListCalendarEvents(eventTeam === 'All Teams' ? undefined : { team: legacyEventTeam(tagCatalog, eventTeam) }, { query: { queryKey: ['/api/admin/calendar-events', eventTeam] } });
+  const refreshAdminData = () => {
+    void queryClient.invalidateQueries({ queryKey: ['/api/users', 'roster'] });
+    void syncSharedData();
+  };
+  const invalidateTagCatalog = () => {
+    setTagError('');
+    void queryClient.invalidateQueries({ queryKey: ['/api/tag-catalog'] });
+    void tagCatalogQuery.refetch();
+    refreshAdminData();
+  };
+  const tagApiUnavailable = Boolean(tagCatalogQuery.isError && tagCatalogQuery.error && 'status' in tagCatalogQuery.error && tagCatalogQuery.error.status === 404);
+  const tagMutationError = (error: Error) => setTagError(
+    'status' in error && error.status === 404 && /<!doctype html|Cannot (POST|PATCH|DELETE)/i.test(error.message)
+      ? 'Tag editing is not available on this server yet. Publish the updated API server, then try again.'
+      : error.message,
+  );
+  const createTag = useCreateTagOption({ mutation: { onSuccess: invalidateTagCatalog, onError: tagMutationError } });
+  const renameTag = useRenameTagOption({ mutation: { onSuccess: invalidateTagCatalog, onError: tagMutationError } });
+  const deleteTag = useDeleteTagOption({ mutation: { onSuccess: invalidateTagCatalog, onError: tagMutationError } });
+  const updateRoleTag = useUpdateUserRoleTag({ mutation: { onSuccess: refreshAdminData, onError: (error) => Alert.alert('Could not update role label', error.message) } });
+  const createInvite = useCreateInvite({ mutation: { onSuccess: () => { refreshAdminData(); setShowInvite(false); setInvite({ fullName: '', email: '', phone: '', role: 'Parent-Athlete', roleTag: '', team: '', gradYear: '' }); } } });
+  const resendInvite = useResendInvite({ mutation: { onSuccess: refreshAdminData } });
+  const revokeInvite = useRevokeInvite({ mutation: { onSuccess: refreshAdminData } });
+  const updateRole = useUpdateUserRole({ mutation: { onSuccess: () => { refreshAdminData(); setRoleMenuId(null); } } });
+  const updateTeam = async (id: string, team: string) => {
+    try {
+      await customFetch(`/api/admin/users/${id}/team`, { method: 'PATCH', body: JSON.stringify({ teams: [team] }) });
+      setTeamMenuId(null); refreshAdminData();
+    } catch (error) { Alert.alert('Could not update team', error instanceof Error ? error.message : 'Please try again.'); }
+  };
+  const updateGradYear = async (id: string, gradYear: string) => {
+    try {
+      await customFetch(`/api/admin/users/${id}/grad-year`, { method: 'PATCH', body: JSON.stringify({ gradYear }) });
+      setGradYearMenuId(null); refreshAdminData();
+    } catch (error) { Alert.alert('Could not update graduation year', error instanceof Error ? error.message : 'Please try again.'); }
+  };
+  const invalidateCalendars = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: calendar.queryKey }),
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/calendar-events'] }),
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar-events'] }),
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar.ics'] }),
+    ]);
+    await calendar.refetch();
+  };
+  const createEvent = useCreateCalendarEvent({ mutation: { onSuccess: invalidateCalendars } });
+  const createRepeatedEvents = useCreateRepeatedCalendarEvents({ mutation: { onSuccess: invalidateCalendars } });
+  const deleteEvent = useDeleteCalendarEvent({ mutation: { onSuccess: invalidateCalendars } });
+  const createGroupChat = useCreateChat({ mutation: { onSuccess: (conversation) => { setGroupName(''); setGroupParticipants([]); void queryClient.invalidateQueries({ queryKey: ['/api/chats'] }); router.push(('/chat/' + conversation.id) as never); }, onError: (error) => Alert.alert('Could not create group chat', error.message) } });
+  const createGuardianLink = useCreateGuardianLink({ mutation: { onSuccess: () => { setSelectedAthleteId(null); setSelectedGuardianId(null); void queryClient.invalidateQueries({ queryKey: guardianLinks.queryKey }); } } });
+  const deleteGuardianLink = useDeleteGuardianLink({ mutation: { onSuccess: () => void queryClient.invalidateQueries({ queryKey: guardianLinks.queryKey }) } });
+  const loadScheduleImages = async () => {
+    try { setScheduleImages(await customFetch('/api/schedule-images', { responseType: 'json' })); }
+    catch { Alert.alert('Could not load schedule images', 'Please try again.'); }
+  };
+  useEffect(() => { if (section === 'Schedule Images') void loadScheduleImages(); }, [section]);
+  const uploadScheduleImage = async (kind: 'weekly-schedule' | 'lunch-program') => {
+    try {
+      const selection = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.9 });
+      const asset = selection.canceled ? null : selection.assets[0];
+      if (!asset) return;
+      const imageData = await (await fetch(asset.uri)).blob();
+      const contentType = asset.mimeType && /^image\/(?:jpeg|png|webp)$/.test(asset.mimeType) ? asset.mimeType : 'image/jpeg';
+      setUploadingScheduleImage(kind);
+      const upload = await customFetch('/api/admin/schedule-images/upload-url', { method: 'POST', responseType: 'json', body: JSON.stringify({ kind, contentType, size: asset.fileSize ?? imageData.size, width: asset.width, height: asset.height }) });
+      const uploaded = await fetch(upload.uploadURL, { method: 'PUT', headers: { 'content-type': contentType }, body: imageData });
+      if (!uploaded.ok) throw new Error('The image upload failed.');
+      await customFetch('/api/admin/schedule-images', { method: 'PATCH', responseType: 'json', body: JSON.stringify({ kind, objectPath: upload.objectPath, width: asset.width, height: asset.height }) });
+      await loadScheduleImages();
+    } catch (error) { Alert.alert('Could not upload image', error instanceof Error ? error.message : 'Please try again.'); }
+    finally { setUploadingScheduleImage(null); }
+  };
+  const uploadUserPhoto = async (target: UserRow) => {
+    try {
+      const selection = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 });
+      const asset = selection.canceled ? null : selection.assets[0];
+      if (!asset) return;
+      const imageData = await (await fetch(asset.uri)).blob();
+      const contentType = asset.mimeType && /^image\/(?:jpeg|png|webp)$/.test(asset.mimeType) ? asset.mimeType : 'image/jpeg';
+      setUploadingUserPhoto(target.id);
+      const upload = await customFetch(`/api/admin/users/${target.id}/profile-photo/upload-url`, { method: 'POST', responseType: 'json', body: JSON.stringify({ contentType, size: asset.fileSize ?? imageData.size }) });
+      const uploaded = await fetch(upload.uploadURL, { method: 'PUT', headers: { 'content-type': contentType }, body: imageData });
+      if (!uploaded.ok) throw new Error('The photo upload failed.');
+      await customFetch(`/api/admin/users/${target.id}/profile-photo`, { method: 'PATCH', responseType: 'json', body: JSON.stringify({ objectPath: upload.objectPath }) });
+      refreshAdminData();
+    } catch (error) { Alert.alert('Could not update photo', error instanceof Error ? error.message : 'Please try again.'); }
+    finally { setUploadingUserPhoto(null); }
+  };
+  const deleteProfile = async (target: UserRow) => {
+    setDeletingUserId(target.id);
+    try {
+      await customFetch(`/api/admin/users/${target.id}`, { method: 'DELETE' });
+      queryClient.setQueryData(users.queryKey, (current: UserRow[] | undefined) => current?.filter((user) => user.id !== target.id));
+      refreshAdminData();
+    } catch (error) {
+      Alert.alert('Could not delete profile', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+  const confirmDeleteProfile = (target: UserRow) => {
+    const title = `Delete ${target.fullName}'s profile?`;
+    const message = 'This permanently removes their LPA profile and access. Their direct chats are removed; shared group-chat and calendar history stays available to the remaining members.';
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) void deleteProfile(target);
+      return;
+    }
+    Alert.alert(title, message, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete profile', style: 'destructive', onPress: () => void deleteProfile(target) }]);
+  };
+
+  const rows = useMemo(() => ((users.data ?? []) as UserRow[]).filter((user) => (
+    `${user.fullName} ${user.email ?? ''} ${user.role} ${user.teams.join(' ')} ${user.gradYear ?? ''}`.toLowerCase().includes(search.toLowerCase())
+  )), [users.data, search]);
+  const events = (calendar.data ?? []) as EventRow[];
+  const activeUsers = rows.filter((user) => user.status === 'active').length;
+  const invitedUsers = rows.filter((user) => user.status === 'invited').length;
+  const adminUsers = rows.filter((user) => user.role === 'Admin').length;
+  const activeGroupUsers = ((users.data ?? []) as UserRow[]).filter((person) => person.status === 'active');
+  const familyCandidates = ((users.data ?? []) as UserRow[]).filter((person) => person.status === 'active' && (person.role === 'Athlete' || person.role === 'Parent-Athlete') && person.fullName.toLowerCase().includes(familySearch.trim().toLowerCase()));
+  const athleteCandidates = familyCandidates.filter((person) => person.role === 'Athlete');
+  const guardianCandidates = familyCandidates.filter((person) => person.role === 'Parent-Athlete');
+  const groupFilterAliases = groupTeamFilter === 'All Teams' ? [] : tagCatalog.teams.find((option) => option.label === groupTeamFilter || option.id === groupTeamFilter)?.aliases ?? [groupTeamFilter];
+  const filteredGroupUsers = activeGroupUsers.filter((person) => groupTeamFilter === 'All Teams' || person.teams.some((team) => teamMatches(tagCatalog, team, groupTeamFilter)));
+  const handleInvite = () => createInvite.mutate({ data: { fullName: invite.fullName, email: invite.email || undefined, phone: invite.phone || undefined, role: invite.role, roleTag: invite.roleTag || null, teams: invite.team ? [invite.team] : [], gradYear: invite.gradYear || undefined } }, { onError: (error) => Alert.alert('Invite not sent', error.message) });
+  const saveEvent = async (repeatDaily = false, repeatUntil = '', applyToRemainingRepeatEvents = false) => {
+    if (!eventTitle.trim() || !eventDate.trim() || !eventTime.trim()) return;
+    const date = apiDate(eventDate);
+    if (!validApiDate(date)) {
+      Alert.alert('Enter a valid date', 'Use MM-DD-YYYY, for example 08-20-2026.');
+      return;
+    }
+    const endDate = repeatDaily ? apiDate(repeatUntil) : date;
+    if (repeatDaily && (!validApiDate(endDate) || endDate < date)) {
+      Alert.alert('Enter a valid repeat date', 'Choose an Until Date on or after the event date.');
+      return;
+    }
+    if (repeatDaily && (Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${date}T00:00:00.000Z`)) / 86_400_000 > 366) {
+      Alert.alert('Repeat range is too long', 'Daily repeating events can span up to one year.');
+      return;
+    }
+    const data = { title: eventTitle, date, time: eventEndTime.trim() ? `${eventTime.trim()} - ${eventEndTime.trim()}` : eventTime.trim(), location: eventLocation || 'LPA Campus', team: eventFormTeam };
+    setSavingEvents(true);
+    try {
+      if (editingEvent) {
+        const updated = await customFetch<EventRow>(`/api/admin/calendar-events/${encodeURIComponent(editingEvent.id)}`, {
+          method: 'PATCH',
+          responseType: 'json',
+          body: JSON.stringify(applyToRemainingRepeatEvents ? { ...data, applyToRemainingRepeatEvents: true } : data),
+        });
+        queryClient.setQueryData<EventRow[]>(calendar.queryKey, (current) => current?.map((event) => event.id === updated.id ? updated : event));
+        await invalidateCalendars();
+      } else {
+        if (repeatDaily) await createRepeatedEvents.mutateAsync({ data: { ...data, repeatUntil: endDate } });
+        else await createEvent.mutateAsync({ data });
+      }
+      resetEventForm();
+    } catch (error) {
+      Alert.alert(editingEvent ? 'Could not update event' : 'Could not add event', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSavingEvents(false);
+    }
+  };
+  const createGroup = () => {
+    if (!groupName.trim() || !groupParticipants.length || createGroupChat.isPending) return;
+    createGroupChat.mutate({ data: { type: 'group', name: groupName.trim(), userIds: groupParticipants } });
+  };
+  const resetEventForm = () => { setEditingEvent(null); setEventTitle(''); setEventDate(''); setEventTime(''); setEventEndTime(''); setEventLocation(''); setEventFormTeam('LPA Events'); setEventFormRevision((revision) => revision + 1); };
+  const openEdit = (event: EventRow) => { const [start, end] = event.time.split(/\s-\s/, 2); setEditingEvent(event); setEventTitle(event.title); setEventDate(displayDate(event.date)); setEventTime(start); setEventEndTime(end ?? ''); setEventLocation(event.location); setEventFormTeam(event.team); setSection('Calendar'); };
+  const completeLogOut = () => {
+    void Promise.resolve(signOut()).finally(() => router.replace('/launch'));
+  };
+  const logOut = () => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Log out of LPA? You will need to sign in again to access the app.')) completeLogOut();
+      return;
+    }
+    Alert.alert('Log out?', 'You will need to sign in again to access LPA.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: completeLogOut }]);
+  };
+
+  return <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScrollView contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === 'web' ? Math.max(insets.top, 67) : insets.top) + 18, paddingBottom: Math.max(insets.bottom, 34) + 36 }]} showsVerticalScrollIndicator={false}>
+      <View style={styles.header}><View style={styles.headerLeft}><Pressable testID="admin-dashboard-back" accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="arrow-left" size={17} color={colors.primary} /></Pressable><View style={{ flex: 1 }}><Text style={[styles.kicker, { color: colors.primary }]}>LEGENDARY PREP ACADEMY</Text><Text style={[styles.title, { color: colors.foreground }]}>Admin dashboard</Text><Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Manage your LPA community from one place.</Text><Pressable testID="retry-admin-live-sync" disabled={isSyncing} onPress={refreshAdminData} style={styles.syncStatus}><View style={[styles.syncDot, { backgroundColor: syncError ? colors.destructive : isSyncing || users.isFetching || calendar.isFetching ? colors.primary : colors.accent }]} /><Text style={[styles.syncText, { color: colors.mutedForeground }]}>{syncError ? 'Live sync needs attention · tap to retry' : isSyncing || users.isFetching || calendar.isFetching ? 'Syncing live data…' : lastSyncedAt ? `Live · synced ${lastSyncedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Live sync ready'}</Text></Pressable></View></View><View style={styles.headerActions}><Pressable testID="refresh-admin-dashboard" accessibilityRole="button" onPress={refreshAdminData} style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="refresh-cw" size={17} color={colors.primary} /></Pressable><Pressable testID="dashboard-sign-out" accessibilityRole="button" accessibilityLabel="Log out" onPress={logOut} style={[Platform.OS === 'web' ? styles.logoutButton : styles.iconButton, { backgroundColor: Platform.OS === 'web' ? `${colors.destructive}12` : colors.card, borderColor: Platform.OS === 'web' ? `${colors.destructive}40` : colors.border }]}><Feather name="log-out" size={16} color={colors.destructive} />{Platform.OS === 'web' ? <Text style={[styles.logoutText, { color: colors.destructive }]}>Log out</Text> : null}</Pressable></View></View>
+
+       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.nav, { backgroundColor: colors.muted }]} contentContainerStyle={styles.navContent}>{(['Overview', 'Announcements', 'Roster', 'Calendar', 'Group Chats', 'Schedule Images', 'Family Links', 'Tagging'] as Section[]).map((item) => <Pressable key={item} testID={`admin-section-${item.toLowerCase().replaceAll(' ', '-')}`} onPress={() => setSection(item)} style={[styles.navButton, section === item && { backgroundColor: colors.card }]}><Text style={[styles.navText, { color: section === item ? colors.foreground : colors.mutedForeground }]}>{item}</Text></Pressable>)}</ScrollView>
+
+      {section === 'Overview' ? <><View style={styles.statGrid}><Stat label="Active members" value={activeUsers} icon="users" colors={colors} /><Stat label="Pending invites" value={invitedUsers} icon="send" colors={colors} /><Stat label="Administrators" value={adminUsers} icon="shield" colors={colors} /></View><View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={styles.panelHeader}><View><Text style={[styles.panelTitle, { color: colors.foreground }]}>Invite a person</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>Email or SMS invitations are valid for seven days.</Text></View><Pressable testID="toggle-dashboard-invite" onPress={() => setShowInvite((open) => !open)} style={[styles.actionIcon, { backgroundColor: colors.primary }]}><Feather name={showInvite ? 'minus' : 'user-plus'} size={17} color="#fff" /></Pressable></View>{showInvite ? <InviteForm invite={invite} setInvite={setInvite} onSubmit={handleInvite} loading={createInvite.isPending} colors={colors} /> : <Pressable onPress={() => setShowInvite(true)} style={[styles.callout, { backgroundColor: colors.secondary }]}><Feather name="send" size={17} color={colors.primary} /><Text style={[styles.calloutText, { color: colors.foreground }]}>Send a new invitation</Text><Feather name="arrow-up-right" size={16} color={colors.primary} /></Pressable>}</View><View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.panelTitle, { color: colors.foreground }]}>Quick actions</Text><View style={styles.quickActions}><QuickAction label="Manage roster" icon="users" onPress={() => setSection('Roster')} colors={colors} /><QuickAction label="Add event" icon="calendar" onPress={() => { resetEventForm(); setSection('Calendar'); }} colors={colors} /><QuickAction label="Create group chat" icon="message-square" onPress={() => { setGroupName(''); setGroupParticipants([]); setSection('Group Chats'); }} colors={colors} /></View></View></> : null}
+
+      {section === 'Roster' ? <><View style={styles.sectionHeader}><View><Text style={[styles.sectionTitle, { color: colors.foreground }]}>User roster</Text><Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>{rows.length} people · manage roles, teams, graduation years, photos, and profiles</Text></View><Pressable testID="open-dashboard-invite" onPress={() => { setShowInvite(true); setSection('Overview'); }} style={[styles.smallButton, { backgroundColor: colors.primary }]}><Feather name="user-plus" size={16} color="#fff" /><Text style={styles.smallButtonText}>Invite</Text></Pressable></View><View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput testID="dashboard-roster-search" value={search} onChangeText={setSearch} placeholder="Search name, email, role, team, or grad year" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>{users.isLoading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 45 }} /> : <View style={styles.roster}>{rows.map((user) => <RosterCard key={user.id} user={user} colors={colors} roleMenuOpen={roleMenuId === user.id} teamMenuOpen={teamMenuId === user.id} gradYearMenuOpen={gradYearMenuId === user.id} uploadingPhoto={uploadingUserPhoto === user.id} deletingProfile={deletingUserId === user.id} canDeleteProfile={currentUser?.role === 'Admin' && user.id !== currentUser.id} onPhotoChange={() => void uploadUserPhoto(user)} onToggleRole={() => { setRoleMenuId(roleMenuId === user.id ? null : user.id); setTeamMenuId(null); setGradYearMenuId(null); }} onToggleTeam={() => { setTeamMenuId(teamMenuId === user.id ? null : user.id); setRoleMenuId(null); setGradYearMenuId(null); }} onToggleGradYear={() => { setGradYearMenuId(gradYearMenuId === user.id ? null : user.id); setRoleMenuId(null); setTeamMenuId(null); }} onRoleChange={(role) => updateRole.mutate({ id: user.id, data: { role } }, { onError: (error) => Alert.alert('Could not update role', error.message) })} onTeamChange={(team) => void updateTeam(user.id, team)} onGradYearChange={(gradYear) => void updateGradYear(user.id, gradYear)} onResend={() => resendInvite.mutate({ id: user.id }, { onError: (error) => Alert.alert('Could not resend invite', error.message) })} onRevoke={() => revokeInvite.mutate({ id: user.id }, { onError: (error) => Alert.alert('Could not revoke invite', error.message) })} onDeleteProfile={() => confirmDeleteProfile(user)} />)}</View>}</> : null}
+
+      {section === 'Calendar' ? <><View style={styles.sectionHeader}><View><Text style={[styles.sectionTitle, { color: colors.foreground }]}>Calendar events</Text><Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>Create and manage shared LPA events.</Text></View></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.teamFilters}>{teams.map((team) => <Pressable key={team} onPress={() => setEventTeam(team)} style={[styles.teamPill, { backgroundColor: eventTeam === team ? CALENDAR_TEAM_COLORS[team] : colors.card, borderColor: eventTeam === team ? CALENDAR_TEAM_COLORS[team] : colors.border }]}><View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: CALENDAR_TEAM_COLORS[team] }} /><Text style={[styles.teamText, { color: eventTeam === team && team === 'LPA Events' ? colors.accentForeground : eventTeam === team ? '#fff' : colors.foreground }]}>{team}</Text></Pressable>)}</ScrollView><View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={styles.panelHeader}><View><Text style={[styles.panelTitle, { color: colors.foreground }]}>{editingEvent ? 'Edit event' : 'Add an event'}</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>{editingEvent ? 'Changes publish immediately.' : 'Visible to the selected LPA team.'}</Text></View>{editingEvent ? <Pressable onPress={resetEventForm}><Text style={[styles.cancel, { color: colors.primary }]}>Cancel</Text></Pressable> : null}</View><EventForm key={`${eventFormRevision}-${editingEvent?.id ?? 'new'}`} title={eventTitle} setTitle={setEventTitle} date={eventDate} setDate={setEventDate} time={eventTime} setTime={setEventTime} endTime={eventEndTime} setEndTime={setEventEndTime} location={eventLocation} setLocation={eventLocation} team={eventFormTeam} setTeam={setEventFormTeam} repeatUntil={editingEvent?.repeatUntil} onSubmit={saveEvent} loading={savingEvents || createEvent.isPending || createRepeatedEvents.isPending} edit={Boolean(editingEvent)} colors={colors} /></View>{calendar.isLoading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 34 }} /> : <View style={styles.eventList}>{events.map((event) => { const eventColor = getCalendarTeamColor(event.team); return <View key={event.id} style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, backgroundColor: eventColor }} /><View style={[styles.eventDate, { backgroundColor: `${eventColor}18` }]}><Text style={[styles.eventDay, { color: eventColor }]}>{displayDate(event.date)}</Text></View><View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{event.title}</Text><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{event.time} · {event.location}</Text><Text style={[styles.eventTeam, { color: eventColor }]}>{event.team}</Text>{event.repeatUntil ? <Text style={[styles.repeatSeriesMeta, { color: colors.mutedForeground }]}>Daily repeat · through {displayDate(event.repeatUntil)}</Text> : null}</View><View style={styles.eventActions}><Pressable testID={`edit-event-${event.id}`} onPress={() => openEdit(event)}><Feather name="edit-2" size={16} color={eventColor} /></Pressable><Pressable testID={`delete-event-${event.id}`} onPress={() => deleteEvent.mutate({ id: event.id }, { onError: (error) => Alert.alert('Could not delete event', error.message) })}><Feather name="trash-2" size={16} color={colors.destructive} /></Pressable></View></View>; })}</View>}</> : null}
       {section === 'Schedule Images' ? <ScheduleImagesPanel colors={colors} images={scheduleImages} uploading={uploadingScheduleImage} onUpload={(kind) => void uploadScheduleImage(kind)} /> : null}
        {section === 'Family Links' ? <FamilyLinksPanel
          colors={colors}
