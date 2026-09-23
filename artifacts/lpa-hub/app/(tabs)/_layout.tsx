@@ -26,7 +26,7 @@ export default function TabLayout() {
   const isDark = useColorScheme() === 'dark';
   const isWeb = Platform.OS === 'web';
   const usesNativeBlur = Platform.OS === 'ios';
-  const chats = useListChats({ query: { queryKey: ['chats'] } });
+  const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: 10_000 } });
   const unreadCount = (chats.data ?? []).reduce((total, chat) => total + chat.unreadCount, 0);
   const screenOptions = useMemo(() => ({
     headerShown: false,
