@@ -7,6 +7,8 @@ import { useApp } from '@/context/AppContext';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { customFetch } from '@workspace/api-client-react';
+import { useTagCatalog } from '@/hooks/useTagCatalog';
+import { tagLabel } from '@/constants/tagCatalog';
 
 const contacts = [
   { name: 'Mark Karaviotis', role: 'Head Coach', email: 'mark@legendaryprepacademy.com', phone: '602-905-9164', initials: 'MK', tint: '#AB562B', photo: require('../../assets/staff-mark-karaviotis-face.jpg') },
@@ -21,9 +23,7 @@ const contacts = [
 ];
 
 type Contact = (typeof contacts)[number];
-type RosterMember = { id: string; fullName: string; role: string; status: string; teams: string[]; gradYear?: string | null; profilePhotoUri?: string | null };
-const graduationYears = ['2027', '2028', '2029', '2030', '2031', '2032', '2033', 'Post Grad'];
-const hasAssignedGradYear = (gradYear: string | null | undefined) => graduationYears.includes(gradYear ?? '');
+type RosterMember = { id: string; fullName: string; role: string; roleTag?: string | null; status: string; teams: string[]; gradYear?: string | null; profilePhotoUri?: string | null };
 const rosterDirectoryUrl = '/api/users?view=roster-grad-years-v1';
 
 function ContactCard({ contact, colors }: { contact: Contact; colors: ReturnType<typeof useColors> }) {
@@ -38,21 +38,20 @@ function ContactCard({ contact, colors }: { contact: Contact; colors: ReturnType
   </View>;
 }
 
-function RosterCard({ member, colors }: { member: RosterMember; colors: ReturnType<typeof useColors> }) {
+function RosterCard({ member, colors, catalog }: { member: RosterMember; colors: ReturnType<typeof useColors>; catalog?: any }) {
   const initials = member.fullName.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   return <View style={[styles.contact, { backgroundColor: colors.card, borderColor: colors.border }]}>
     {member.profilePhotoUri ? <Image source={{ uri: member.profilePhotoUri }} accessibilityLabel={`${member.fullName} profile photo`} resizeMode="cover" style={styles.contactPhoto} /> : <View style={[styles.contactAvatar, { backgroundColor: `${colors.primary}20` }]}><Text style={[styles.contactInitials, { color: colors.primary }]}>{initials}</Text></View>}
-    <View style={{ flex: 1 }}><Text style={[styles.contactName, { color: colors.foreground }]}>{member.fullName}</Text><Text style={[styles.contactRole, { color: colors.mutedForeground }]}>{member.role}</Text></View><Text style={[styles.status, { color: member.status === 'invited' ? colors.primary : colors.accent }]}>{member.status === 'invited' ? 'New' : 'Active'}</Text>
+     <View style={{ flex: 1 }}><Text style={[styles.contactName, { color: colors.foreground }]}>{member.fullName}</Text><Text style={[styles.contactRole, { color: colors.mutedForeground }]}>{member.roleTag ?? member.role}</Text></View><Text style={[styles.status, { color: member.status === 'invited' ? colors.primary : colors.accent }]}>{member.status === 'invited' ? 'New' : 'Active'}</Text>
   </View>;
 }
 
-function GradYearDropdown({ value, onChange, colors }: { value: string; onChange: (value: string) => void; colors: ReturnType<typeof useColors> }) {
+function GradYearDropdown({ value, onChange, colors, options, catalog }: { value: string; onChange: (value: string) => void; colors: ReturnType<typeof useColors>; options: string[]; catalog: any }) {
   const [open, setOpen] = useState(false);
-  const options = ['All Grad Years', ...graduationYears];
   return <View style={{ marginHorizontal: 18, marginBottom: 14 }}>
     <Text style={[styles.gradYearLabel, { color: colors.mutedForeground }]}>Grad Year</Text>
     <Pressable testID="roster-grad-year-dropdown" accessibilityRole="button" accessibilityLabel="Filter by Grad Year" accessibilityState={{ expanded: open }} onPress={() => setOpen(true)} style={[styles.gradYearSelect, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.gradYearSelectText, { color: colors.foreground }]}>{value}</Text>
+      <Text style={[styles.gradYearSelectText, { color: colors.foreground }]}>{value === 'All Grad Years' ? value : tagLabel(catalog, 'gradYears', value)}</Text>
       <Feather name="chevron-down" size={17} color={colors.mutedForeground} />
     </Pressable>
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -60,7 +59,7 @@ function GradYearDropdown({ value, onChange, colors }: { value: string; onChange
         <Pressable style={[styles.gradYearMenu, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(event) => event.stopPropagation()}>
           <Text style={[styles.gradYearMenuTitle, { color: colors.foreground }]}>Grad Year</Text>
           {options.map((option) => <Pressable key={option} testID={`roster-filter-${option}`} accessibilityRole="button" accessibilityState={{ selected: value === option }} onPress={() => { onChange(option); setOpen(false); }} style={[styles.gradYearOption, { borderBottomColor: colors.border }, value === option && { backgroundColor: `${colors.primary}18` }]}>
-            <Text style={[styles.gradYearOptionText, { color: value === option ? colors.primary : colors.foreground }]}>{option}</Text>
+             <Text style={[styles.gradYearOptionText, { color: value === option ? colors.primary : colors.foreground }]}>{option === 'All Grad Years' ? option : tagLabel(catalog, 'gradYears', option)}</Text>
             {value === option ? <Feather name="check" size={16} color={colors.primary} /> : null}
           </Pressable>)}
         </Pressable>
@@ -73,6 +72,10 @@ export default function MoreScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { role, user, signOut } = useApp();
+  const catalogQuery = useTagCatalog();
+  const catalog = catalogQuery.data;
+  const graduationYears = useMemo(() => (catalog?.gradYears ?? []).map((year: any) => year.id), [catalog?.gradYears]);
+  const graduationYearOptions = useMemo(() => ['All Grad Years', ...graduationYears], [graduationYears]);
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [rosterGradYear, setRosterGradYear] = useState('All Grad Years');
@@ -88,7 +91,7 @@ export default function MoreScreen() {
     }),
   });
   const filteredRoster = useMemo(() => (rosterQuery.data ?? []).filter((member) => (
-    hasAssignedGradYear(member.gradYear)
+     Boolean(member.gradYear)
     && (rosterGradYear === 'All Grad Years' || member.gradYear === rosterGradYear)
     && `${member.fullName} ${member.role} ${member.status} ${member.gradYear ?? ''}`.toLowerCase().includes(normalizedQuery)
   )), [rosterQuery.data, rosterGradYear, normalizedQuery]);
@@ -108,7 +111,7 @@ export default function MoreScreen() {
         <>
           <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput value={query} onChangeText={setQuery} placeholder="Search staff, partners, and rosters" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Rosters</Text>
-           <GradYearDropdown value={rosterGradYear} onChange={(gradYear) => { setRosterGradYear(gradYear); setRosterVisibleCount(60); }} colors={colors} />
+            <GradYearDropdown value={rosterGradYear} options={graduationYearOptions} catalog={catalog} onChange={(gradYear) => { setRosterGradYear(gradYear); setRosterVisibleCount(60); }} colors={colors} />
            {rosterQuery.isLoading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 18 }} /> : rosterQuery.isError ? <Text style={[styles.rosterEmpty, { color: colors.mutedForeground }]}>Rosters could not load. Please try again.</Text> : filteredRoster.length ? <><View style={styles.contactList}>{visibleRoster.map((member) => <RosterCard key={member.id} member={member} colors={colors} />)}</View>{visibleRoster.length < filteredRoster.length ? <Pressable testID="show-more-roster-members" onPress={() => setRosterVisibleCount((count) => count + 60)} style={[styles.showMore, { borderColor: colors.border, backgroundColor: colors.card }]}><Text style={[styles.showMoreText, { color: colors.primary }]}>Show 60 more · {filteredRoster.length - visibleRoster.length} remaining</Text></Pressable> : null}</> : <Text style={[styles.rosterEmpty, { color: colors.mutedForeground }]}>No roster members match {rosterGradYear}.</Text>}
           <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 25 }]}>Staff directory</Text>
           <View style={styles.contactList}>{filtered.filter((contact) => !contact.partner).map((contact) => <ContactCard key={contact.name} contact={contact} colors={colors} />)}</View>
