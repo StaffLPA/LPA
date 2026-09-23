@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.legendaryprepacademy.lpa",
-      "versionCode": 3
+      "versionCode": 4
     },
     "web": {
       "favicon": "./assets/images/lpa-outlaws-mark.png"
