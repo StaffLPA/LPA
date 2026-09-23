@@ -6,17 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { useListSharedCalendarEvents, useListAnnouncements, getListAnnouncementsQueryKey } from '@workspace/api-client-react';
-import { eventBelongsToTeams } from '@/constants/teams';
+import { useTagCatalog } from '@/hooks/useTagCatalog';
+import { canonicalTeam, getTeamColor, teamMatches } from '@/constants/tagCatalog';
 import { LpaIcon, type LpaIconName } from '@/components/LpaIcon';
 import { AnnouncementCard } from '@/components/AnnouncementCard';
 
-const teamColors: Record<string, string> = {
-  Varsity: '#F1604D',
-  'Junior Varsity': '#5B8C85',
-  '14u': '#8E78B8',
-  '15u': '#4D8DB8',
-  'LPA Events': '#F5C85B',
-};
 const eventTimestamp = (date: string, time: string) => {
   const day = new Date(`${date}T12:00:00`);
   const match = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -40,6 +34,7 @@ export default function HomeScreen() {
   const announcementsLayoutRef = useRef<number | null>(null);
 
   const { role, user } = useApp();
+  const catalog = useTagCatalog().data;
   const calendar = useListSharedCalendarEvents(undefined, {
     query: { queryKey: ['home-calendar-events'] },
   });
@@ -61,10 +56,10 @@ export default function HomeScreen() {
     const now = Date.now();
     return (calendar.data ?? [])
       .map((event) => ({ ...event, timestamp: eventTimestamp(event.date, event.time) }))
-      .filter((event) => event.timestamp >= now && (!user?.teams?.length || eventBelongsToTeams(event.team, user.teams)))
+      .filter((event) => event.timestamp >= now && (!user?.teams?.length || canonicalTeam(catalog, event.team) === 'LPA' || user.teams.some((team) => teamMatches(catalog, team, event.team))))
       .sort((a, b) => a.timestamp - b.timestamp)
       .slice(0, 3);
-  }, [calendar.data, user?.teams]);
+  }, [calendar.data, user?.teams, catalog]);
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView ref={scrollViewRef} contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
@@ -114,7 +109,7 @@ export default function HomeScreen() {
         <View style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {calendar.isLoading ? <View style={styles.emptyEvents}><ActivityIndicator color={colors.primary} /><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>Syncing calendar…</Text></View> : upcomingEvents.length ? upcomingEvents.map((event, index) => {
             const eventDate = new Date(`${event.date}T12:00:00`);
-            const eventColor = teamColors[event.team] ?? colors.primary;
+            const eventColor = getTeamColor(catalog, event.team);
             return <View key={event.id} style={[styles.event, index < upcomingEvents.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
               <View style={[styles.dateBlock, { backgroundColor: `${eventColor}18` }]}><Text style={[styles.dateDay, { color: eventColor }]}>{eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</Text><Text style={[styles.dateNumber, { color: colors.foreground }]}>{eventDate.getDate()}</Text></View>
                <View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{event.title}</Text><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{eventDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}  ·  {event.time}  ·  {event.location}</Text></View>
