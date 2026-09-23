@@ -7,7 +7,8 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useListLinkedAthleteCalendarEvents, useListLinkedAthletes } from '@workspace/api-client-react';
-import { getCalendarTeamColor } from '@/constants/teams';
+import { useTagCatalog } from '@/hooks/useTagCatalog';
+import { getTeamColor, tagLabel } from '@/constants/tagCatalog';
 
 const calendarDate = (value: unknown) => {
   if (value instanceof Date) {
@@ -50,6 +51,9 @@ export default function FamilyScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { role, isReady, user } = useApp();
+  const catalogQuery = useTagCatalog();
+  const catalog = catalogQuery.data;
+  const getCalendarTeamColor = (team: string) => getTeamColor(catalog, team);
   const athletes = useListLinkedAthletes({ query: { enabled: role === 'Parent-Athlete' } });
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
   const selectedAthlete = useMemo(() => (athletes.data ?? []).find((athlete) => athlete.id === selectedAthleteId) ?? athletes.data?.[0] ?? null, [athletes.data, selectedAthleteId]);
@@ -98,7 +102,7 @@ export default function FamilyScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.athletePills}>{athletes.data?.map((athlete) => <Pressable testID={`linked-athlete-${athlete.id}`} key={athlete.id} onPress={() => setSelectedAthleteId(athlete.id)} style={[styles.athletePill, { backgroundColor: selectedAthlete.id === athlete.id ? colors.primary : colors.card, borderColor: selectedAthlete.id === athlete.id ? colors.primary : colors.border }]}><Text style={[styles.athletePillText, { color: selectedAthlete.id === athlete.id ? '#fff' : colors.foreground }]}>{athlete.firstName || athlete.fullName}</Text></Pressable>)}</ScrollView>
           <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {selectedAthlete.profilePhotoUri ? <Image source={{ uri: selectedAthlete.profilePhotoUri }} style={styles.profilePhoto} /> : <View style={[styles.profilePhoto, styles.initials, { backgroundColor: `${colors.primary}18` }]}><Text style={[styles.initialsText, { color: colors.primary }]}>{initials}</Text></View>}
-            <View style={{ flex: 1 }}><Text style={[styles.name, { color: colors.foreground }]}>{selectedAthlete.fullName}</Text><Text style={[styles.meta, { color: colors.mutedForeground }]}>{selectedAthlete.gradYear ? `Grad year · ${selectedAthlete.gradYear}` : 'Athlete'}</Text><View style={styles.teamRow}>{selectedAthlete.teams.map((team) => <View key={team} style={[styles.teamBadge, { backgroundColor: `${colors.primary}18` }]}><Text style={[styles.teamText, { color: colors.primary }]}>{team}</Text></View>)}</View></View>
+            <View style={{ flex: 1 }}><Text style={[styles.name, { color: colors.foreground }]}>{selectedAthlete.fullName}</Text><Text style={[styles.meta, { color: colors.mutedForeground }]}>{selectedAthlete.gradYear ? `Grad year · ${tagLabel(catalog, 'gradYear', selectedAthlete.gradYear)}` : 'Athlete'}</Text><View style={styles.teamRow}>{selectedAthlete.teams.map((team) => <View key={team} style={[styles.teamBadge, { backgroundColor: `${colors.primary}18` }]}><Text style={[styles.teamText, { color: colors.primary }]}>{tagLabel(catalog, 'team', team)}</Text></View>)}</View></View>
           </View>
           <View style={styles.sectionHeader}><View><Text style={[styles.sectionTitle, { color: colors.foreground }]}>Team schedule</Text><Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>Events for {selectedAthlete.firstName || selectedAthlete.fullName}’s teams and LPA-wide events.</Text></View><Pressable testID="refresh-linked-athlete-schedule" onPress={() => calendar.refetch()}><Feather name="refresh-cw" size={17} color={colors.primary} /></Pressable></View>
           <View style={[styles.scheduleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>{calendar.isLoading ? <View style={styles.scheduleEmpty}><ActivityIndicator color={colors.primary} /><Text style={[styles.emptyCopy, { color: colors.mutedForeground }]}>Loading team schedule…</Text></View> : scheduleEvents.length ? scheduleEvents.map((event, index) => { const eventColor = getCalendarTeamColor(event.team); return <View key={`${event.title}-${event.time}-${event.location}-${event.startDate.toISOString()}`} style={[styles.event, { borderLeftColor: eventColor, borderLeftWidth: 4 }, index < scheduleEvents.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: 1 }]}><View style={[styles.dateBadge, { backgroundColor: `${eventColor}18` }]}><Text style={[styles.day, { color: eventColor }]}>{event.startDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</Text><Text style={[styles.date, { color: colors.foreground }]}>{event.startDate.getDate()}</Text></View><View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{event.title}</Text><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{scheduleDateRange(event.startDate, event.endDate)} · {event.time} · {event.location}</Text></View></View>; }) : <View style={styles.scheduleEmpty}><Feather name="calendar" size={24} color={colors.mutedForeground} /><Text style={[styles.emptyCopy, { color: colors.mutedForeground }]}>{calendar.isError ? 'Schedule could not load. Try again.' : 'No team or LPA-wide events scheduled.'}</Text></View>}</View>
