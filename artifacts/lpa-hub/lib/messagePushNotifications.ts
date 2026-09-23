@@ -6,10 +6,10 @@ import { Platform } from 'react-native';
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowBanner: false,
-      shouldShowList: false,
-      shouldPlaySound: false,
-      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
     }),
   });
 }
@@ -19,14 +19,10 @@ export type RegisteredPushToken = { expoPushToken: string; platform: 'ios' | 'an
 export async function requestMessagePushToken(): Promise<RegisteredPushToken | null> {
   if (Platform.OS === 'web' || !Device.isDevice || (Platform.OS !== 'ios' && Platform.OS !== 'android')) return null;
 
-  const existing = await Notifications.getPermissionsAsync();
-  const permission = existing.granted ? existing : await Notifications.requestPermissionsAsync();
-  if (!permission.granted) return null;
-
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('messages', {
-      name: 'Messages',
-      description: 'Alerts for new LPA direct and group messages.',
+      name: 'LPA updates',
+      description: 'Alerts for LPA announcements, direct messages, and group messages.',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       sound: 'default',
@@ -35,9 +31,18 @@ export async function requestMessagePushToken(): Promise<RegisteredPushToken | n
     });
   }
 
+  const existing = await Notifications.getPermissionsAsync();
+  const permission = existing.granted ? existing : await Notifications.requestPermissionsAsync();
+  if (!permission.granted) return null;
+
   const projectId = Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
   const token = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
   return { expoPushToken: token.data, platform: Platform.OS };
+}
+
+export async function setApplicationBadgeCount(count: number): Promise<void> {
+  if (Platform.OS === 'web') return;
+  await Notifications.setBadgeCountAsync(Math.max(0, Math.trunc(count)));
 }
 
 export function addPushResponseListener(listener: (data: { conversationId?: string, messageId?: string, announcementId?: string }) => void) {
