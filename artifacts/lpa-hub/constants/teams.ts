@@ -13,28 +13,35 @@ export const CALENDAR_TEAM_COLORS: Record<CalendarTeam, string> = {
   "LPA Events": "#F5C85B",
 };
 
-export function getCalendarTeamColor(team: string) {
-  if (team === "All Teams") return CALENDAR_TEAM_COLORS["All Teams"];
-  if (team === "LPA" || team === "LPA Events") return CALENDAR_TEAM_COLORS["LPA Events"];
-  if (team === "LPA Varsity" || team === "Varsity") return CALENDAR_TEAM_COLORS.Varsity;
-  if (team === "LPA JV" || team === "Junior Varsity") return CALENDAR_TEAM_COLORS["Junior Varsity"];
-  if (team === "LPA 14U" || team === "14u") return CALENDAR_TEAM_COLORS["14u"];
-  if (team === "LPA 15U" || team === "15u") return CALENDAR_TEAM_COLORS["15u"];
-  return CALENDAR_TEAM_COLORS["All Teams"];
-}
-
 export const teamEventAliases: Record<LpaTeam, string[]> = {
   "LPA 14U": ["LPA 14U", "14u"],
   "LPA 15U": ["LPA 15U", "15u"],
-  "LPA JV": ["LPA JV", "Junior Varsity"],
+  "LPA JV": ["LPA JV", "JV", "Junior Varsity"],
   "LPA Varsity": ["LPA Varsity", "Varsity"],
   LPA: ["LPA", "LPA Events"],
 };
 
+const normalizedTeam = (team: string) => team.normalize("NFKC").trim().toLocaleLowerCase();
+
+export function getCalendarTeamColor(team: string) {
+  if (team === "All Teams") return CALENDAR_TEAM_COLORS["All Teams"];
+  const canonical = (Object.keys(teamEventAliases) as LpaTeam[]).find((key) =>
+    teamEventAliases[key].some((alias) => normalizedTeam(alias) === normalizedTeam(team))
+  );
+  if (canonical === "LPA 14U") return CALENDAR_TEAM_COLORS["14u"];
+  if (canonical === "LPA 15U") return CALENDAR_TEAM_COLORS["15u"];
+  if (canonical === "LPA JV") return CALENDAR_TEAM_COLORS["Junior Varsity"];
+  if (canonical === "LPA Varsity") return CALENDAR_TEAM_COLORS.Varsity;
+  if (canonical === "LPA") return CALENDAR_TEAM_COLORS["LPA Events"];
+  return CALENDAR_TEAM_COLORS["All Teams"];
+}
+
 export function eventBelongsToTeams(eventTeam: string, teams: string[]) {
-  if (eventTeam === "LPA Events") return true;
+  if (teamEventAliases.LPA.some((alias) => normalizedTeam(alias) === normalizedTeam(eventTeam))) return true;
   return teams.some((team) => {
-    const canonical = (Object.keys(teamEventAliases) as LpaTeam[]).find((key) => teamEventAliases[key].includes(team));
-    return (canonical ? teamEventAliases[canonical] : [team]).includes(eventTeam);
+    const canonical = (Object.keys(teamEventAliases) as LpaTeam[]).find((key) =>
+      teamEventAliases[key].some((alias) => normalizedTeam(alias) === normalizedTeam(team))
+    );
+    return (canonical ? teamEventAliases[canonical] : [team]).some((alias) => normalizedTeam(alias) === normalizedTeam(eventTeam));
   });
 }
