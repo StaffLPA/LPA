@@ -1,4 +1,40 @@
-ing; text: string } | null;
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type NativeSyntheticEvent, type TextInputSelectionChangeEventData } from 'react-native';
+import { LpaIcon as Feather } from '@/components/LpaIcon';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { customFetch, useAddChatMember, useAddChatMessageReaction, useCreateChat, useDeleteChat, useDeleteChatMessage, useEditChatMessage, useListChats, useListChatMessages, useListUsers, useMarkChatRead, useRemoveChatMember, useRemoveChatMessageReaction, useSendChatMessage, type MessageReaction } from '@workspace/api-client-react';
+import { useColors } from '@/hooks/useColors';
+import { useApp } from '@/context/AppContext';
+import { MessagePhotoViewer } from '@/components/MessagePhotoViewer';
+import { MessageReactions } from '@/components/MessageReactions';
+import { useChatMute } from '@/lib/useChatMute';
+import { useTagCatalog } from '@/hooks/useTagCatalog';
+import { tagLabel } from '@/constants/tagCatalog';
+import { LPA_TEAMS, teamEventAliases } from '@/constants/teams';
+
+function loadErrorMessage(error: unknown) {
+  const status = typeof error === 'object' && error !== null && 'status' in error ? Number(error.status) : 0;
+  if (status === 401) return 'Your session expired. Please sign in again.';
+  if (status === 403) return 'You are not a member of this conversation.';
+  return 'Messages could not load. Check your connection and try again.';
+}
+
+type MessageAttachment = { id: string; fileName: string; contentType: string; size: number };
+type MessageMention = { userId: string; displayName: string; start: number; end: number };
+type ChatMessage = {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderProfilePhotoUri: string | null;
+  text: string;
+  attachments?: MessageAttachment[];
+  reactions: MessageReaction[];
+  replyTo: { id: string; senderId: string; senderName: string; text: string } | null;
   mentions: MessageMention[];
   edited: boolean;
   editedAt: string | null;
