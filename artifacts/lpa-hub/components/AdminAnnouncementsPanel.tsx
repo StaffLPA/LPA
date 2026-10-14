@@ -13,10 +13,12 @@ import {
   getListAnnouncementsQueryKey
 } from '@workspace/api-client-react';
 import { RichTextEditor, type RichTextEditorRef } from './RichTextEditor';
+import { tagLabel, type TagCatalog } from '@/constants/tagCatalog';
 
-const AUDIENCES: AnnouncementAudienceTag[] = ['Staff-Coach', 'Parent', 'Student'];
+const audienceForRole = (role: string) => role === 'Parent-Athlete' ? 'Parent' : role === 'Athlete' ? 'Student' : role;
+const roleForAudience = (audience: string) => audience === 'Parent' ? 'Parent-Athlete' : audience === 'Student' ? 'Athlete' : audience;
 
-export function AdminAnnouncementsPanel({ colors }: { colors: any }) {
+export function AdminAnnouncementsPanel({ colors, catalog }: { colors: any; catalog: TagCatalog }) {
   const queryClient = useQueryClient();
   const announcementsQuery = useListAdminAnnouncements({
     query: { queryKey: getListAdminAnnouncementsQueryKey() }
@@ -58,6 +60,7 @@ export function AdminAnnouncementsPanel({ colors }: { colors: any }) {
   const [title, setTitle] = useState('');
   const [durationDays, setDurationDays] = useState<string>('');
   const [audienceTags, setAudienceTags] = useState<AnnouncementAudienceTag[]>([]);
+  const [teamTags, setTeamTags] = useState<string[]>([]);
   const richText = useRef<RichTextEditorRef>(null);
   
   const [formKey, setFormKey] = useState(0);
@@ -67,6 +70,7 @@ export function AdminAnnouncementsPanel({ colors }: { colors: any }) {
     setTitle('');
     setDurationDays('');
     setAudienceTags([]);
+    setTeamTags([]);
     richText.current?.setContentHTML('');
     setFormKey((k) => k + 1);
   };
@@ -76,6 +80,7 @@ export function AdminAnnouncementsPanel({ colors }: { colors: any }) {
     setTitle(a.title);
     setDurationDays(a.durationDays ? String(a.durationDays) : '');
     setAudienceTags(a.audienceTags);
+    setTeamTags(a.teamTags);
     setFormKey((k) => k + 1);
     if (Platform.OS !== 'web') {
       setTimeout(() => {
@@ -120,7 +125,8 @@ export function AdminAnnouncementsPanel({ colors }: { colors: any }) {
       title: title.trim(),
       body: html.trim(),
       durationDays: durationDays.trim() ? parseInt(durationDays, 10) : null,
-      audienceTags
+      audienceTags,
+      teamTags,
     };
 
     if (editingId) {
@@ -166,12 +172,17 @@ export function AdminAnnouncementsPanel({ colors }: { colors: any }) {
           style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
         />
 
+        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>ROLE TAG</Text>
         <View style={styles.audienceGrid}>
-          {AUDIENCES.map((tag) => {
+          {catalog.roles.map((role) => {
+            const tag = audienceForRole(role.id);
             const selected = audienceTags.includes(tag);
             return (
               <Pressable
-                key={tag}
+                testID={`announcement-role-${role.id}`}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selected }}
+                key={role.id}
                 onPress={() => {
                   setAudienceTags(prev => 
                     selected ? prev.filter(t => t !== tag) : [...prev, tag]
@@ -186,8 +197,31 @@ export function AdminAnnouncementsPanel({ colors }: { colors: any }) {
                 ]}
               >
                 <Text style={[styles.audienceText, { color: selected ? '#fff' : colors.foreground }]}>
-                  {tag}
+                  {role.label}
                 </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>TEAM TAG · OPTIONAL</Text>
+        <Text style={[styles.fieldHelp, { color: colors.mutedForeground }]}>Leave all teams unselected to send to every team in the chosen roles.</Text>
+        <View style={styles.audienceGrid}>
+          {catalog.teams.map((team) => {
+            const selected = teamTags.includes(team.id);
+            return (
+              <Pressable
+                testID={`announcement-team-${team.id}`}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selected }}
+                key={team.id}
+                onPress={() => setTeamTags((current) => selected ? current.filter((id) => id !== team.id) : [...current, team.id])}
+                style={[
+                  styles.audiencePill,
+                  { backgroundColor: selected ? colors.primary : colors.background, borderColor: selected ? colors.primary : colors.border },
+                ]}
+              >
+                <Text style={[styles.audienceText, { color: selected ? '#fff' : colors.foreground }]}>{team.label}</Text>
               </Pressable>
             );
           })}
@@ -197,6 +231,7 @@ export function AdminAnnouncementsPanel({ colors }: { colors: any }) {
           <RichTextEditor
              formKey={formKey}
              editorRef={richText}
+             hideToolbar
              initialContent={editingId ? announcements.find(a => a.id === editingId)?.body : undefined}
           />
         </View>
@@ -238,7 +273,8 @@ export function AdminAnnouncementsPanel({ colors }: { colors: any }) {
                 </View>
               </View>
               <Text style={[styles.cardMeta, { color: colors.mutedForeground }]}>
-                {new Date(a.publishedAt).toLocaleDateString()} · {a.audienceTags.join(', ')} ·{' '}
+                {new Date(a.publishedAt).toLocaleDateString()} · {a.audienceTags.map((tag) => tagLabel(catalog, 'roles', roleForAudience(tag))).join(', ')}
+                {a.teamTags.length ? ` · ${a.teamTags.map((team) => tagLabel(catalog, 'team', team)).join(', ')}` : ' · All teams'} ·{' '}
                 {a.status === 'expired' 
                   ? 'Expired' 
                   : a.expiresAt 
@@ -297,6 +333,18 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 14,
+  },
+  fieldLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  fieldHelp: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginTop: -3,
+    marginBottom: 9,
   },
   audiencePill: {
     paddingHorizontal: 14,
