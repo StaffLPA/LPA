@@ -4,6 +4,7 @@ import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
+import { Redirect } from 'expo-router';
 
 const forms = [
   { title: 'Absence/tardy form', copy: 'Let the team know when plans change.', icon: 'clock' as const, tint: '#AB562B', url: 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=41OaSypLA0yoKGPBLTVM_zR74t7B3VJCujiML5HMn9RUOEkyT045MklRRzRHOExJOFhRTDRCQlZRSi4u&route=shorturl' },
@@ -11,18 +12,21 @@ const forms = [
   { title: 'Voluntary Withdrawal Form', copy: 'Start a confidential conversation.', icon: 'edit-3' as const, tint: '#C88A62', url: 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=41OaSypLA0yoKGPBLTVM_zR74t7B3VJCujiML5HMn9RUN1RLUzNFSUlZUFpRS0FYRDBXSVVFOUVBTy4u&route=shorturl' },
 ];
 const resources = [
+  { title: 'Clarity Helpful Links', copy: 'Helpful links and resources for using Clarity.', icon: 'external-link' as const, url: 'https://legendaryprep-my.sharepoint.com/:b:/g/personal/staff_legendaryprepacademy_com/IQDC-yqu47rPS7DnnFnYhVWkAXYpn6oC7sBTB7RsYi-SdKg' },
   { title: 'Policy Handbook', copy: 'Important guidelines for every family', icon: 'book-open' as const, url: 'https://legendaryprep-my.sharepoint.com/:b:/g/personal/staff_legendaryprepacademy_com/IQC5JjUfIdx-S45erfC44vBDATpaTpK5pZ1wJA_2U6CCz3k' },
   { title: 'Protect the culture', copy: 'Our shared commitment to one another', icon: 'heart' as const, url: 'https://legendaryprep-my.sharepoint.com/:b:/g/personal/staff_legendaryprepacademy_com/IQDWil7XQYXoSYQ49K1g4jeJAUNMbpJ3dxpwyyZpPfDN_eQ' },
   { title: 'EdOptions LMA: CIM', copy: 'Open the learning platform', icon: 'external-link' as const, url: 'https://cimlearn.com/login?next=%2Fclasses' },
+  { title: 'LPA Fan Gear', copy: 'Shop Legendary Prep Academy fan gear.', icon: 'external-link' as const, url: 'https://legendaryprepacademy.com/fan-gear' },
 ];
 
 export default function ParentHubScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { submissions, addSubmission } = useApp();
+  const { user, submissions, addSubmission } = useApp();
   const [activeForm, setActiveForm] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const submit = () => { if (!activeForm) return; addSubmission(activeForm); setActiveForm(null); setNote(''); };
+  if (!user || user.role === 'Athlete') return <Redirect href="/(tabs)" />;
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 115 }} showsVerticalScrollIndicator={false}>
       <View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.primary }]}>FAMILY RESOURCES</Text><Text style={[styles.title, { color: colors.foreground }]}>Parent Hub</Text></View><View style={[styles.headerIcon, { backgroundColor: `${colors.accent}35` }]}><Feather name="bookmark" size={18} color={colors.accentForeground} /></View></View>
