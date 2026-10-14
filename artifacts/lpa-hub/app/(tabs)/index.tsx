@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useEffect } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { CachedImage as Image } from '@/components/CachedImage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,17 +55,23 @@ export default function HomeScreen() {
   const firstName = user?.firstName?.trim() || user?.fullName.trim().split(/\s+/)[0] || 'there';
   const upcomingEvents = useMemo(() => {
     const now = Date.now();
+    const seen = new Set<string>();
     return (calendar.data ?? [])
       .map((event) => ({ ...event, timestamp: eventTimestamp(event.date, event.time) }))
-      .filter((event) => event.timestamp >= now && (!user?.teams?.length || canonicalTeam(catalog, event.team) === 'LPA' || user.teams.some((team) => teamMatches(catalog, team, event.team))))
+      .filter((event) => event.timestamp >= now && (role === 'Admin' || role === 'Staff-Coach' || canonicalTeam(catalog, event.team) === 'LPA' || user?.teams?.some((team) => teamMatches(catalog, team, event.team))))
+      .filter((event) => {
+        if (seen.has(event.id)) return false;
+        seen.add(event.id);
+        return true;
+      })
       .sort((a, b) => a.timestamp - b.timestamp)
       .slice(0, 3);
-  }, [calendar.data, user?.teams, catalog]);
+  }, [calendar.data, user?.teams, catalog, role]);
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView ref={scrollViewRef} contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1, marginRight: 10 }}>
             <Text style={[styles.eyebrow, { color: colors.primary }]}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase()}</Text>
             <Text style={[styles.title, { color: colors.foreground }]}>Good morning, {firstName}</Text>
           </View>
@@ -101,7 +108,7 @@ export default function HomeScreen() {
         <View style={styles.quickGrid}>
            <QuickAction icon="message-circle" label="Messages" tint="#AB562B" onPress={() => router.push('/(tabs)/messages')} colors={colors} />
           <QuickAction icon="calendar" label="Calendar" tint="#9BC7BD" onPress={() => router.push('/(tabs)/calendar')} colors={colors} />
-           <QuickAction icon="file-text" label="Parent Hub" tint="#D7B56D" onPress={() => router.push('/(tabs)/parenthub')} colors={colors} />
+           {role !== 'Athlete' ? <QuickAction icon="file-text" label="Parent Hub" tint="#D7B56D" onPress={() => router.push('/(tabs)/parenthub')} colors={colors} /> : null}
           <QuickAction icon="users" label="Contacts" tint="#C88A62" onPress={() => router.push('/(tabs)/more')} colors={colors} />
         </View>
 
@@ -112,7 +119,7 @@ export default function HomeScreen() {
             const eventColor = getTeamColor(catalog, event.team);
             return <View key={event.id} style={[styles.event, index < upcomingEvents.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
               <View style={[styles.dateBlock, { backgroundColor: `${eventColor}18` }]}><Text style={[styles.dateDay, { color: eventColor }]}>{eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</Text><Text style={[styles.dateNumber, { color: colors.foreground }]}>{eventDate.getDate()}</Text></View>
-               <View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{event.title}</Text><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{eventDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}  ·  {event.time}  ·  {event.location}</Text></View>
+                <View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{event.title}</Text><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{eventDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}  ·  {event.time}  ·  {event.location}</Text><View style={[styles.eventTeam, { backgroundColor: `${eventColor}18` }]}><Text style={[styles.eventTeamText, { color: eventColor }]}>{event.team}</Text></View></View>
             </View>;
            }) : <View style={styles.emptyEvents}><LpaIcon name="calendar" size={20} color={colors.mutedForeground} /><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{calendar.isError ? 'Calendar could not sync.' : 'No upcoming events.'}</Text></View>}
         </View>
@@ -156,5 +163,7 @@ const styles = StyleSheet.create({
   dateNumber: { fontFamily: 'Inter_700Bold', fontSize: 22, lineHeight: 24 },
   eventTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 4 },
   eventMeta: { fontFamily: 'Inter_400Regular', fontSize: 11 },
+  eventTeam: { alignSelf: 'flex-start', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3, marginTop: 7 },
+  eventTeamText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
   emptyEvents: { minHeight: 92, alignItems: 'center', justifyContent: 'center', gap: 8 },
 });
