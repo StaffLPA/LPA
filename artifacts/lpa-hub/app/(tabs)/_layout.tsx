@@ -5,6 +5,7 @@ import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import { useListChats } from '@workspace/api-client-react';
 import { LpaIcon, type LpaIconName } from '@/components/LpaIcon';
+import { useApp } from '@/context/AppContext';
 
 type TabIconProps = { color: ColorValue; focused: boolean };
 
@@ -22,6 +23,7 @@ const tabIcons = {
 };
 
 export default function TabLayout() {
+  const { user } = useApp();
   const colors = useColors();
   const isDark = useColorScheme() === 'dark';
   const isWeb = Platform.OS === 'web';
@@ -63,7 +65,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: tabIcons.home }} />
       <Tabs.Screen name="messages" options={messageOptions} />
       <Tabs.Screen name="calendar" options={{ title: 'Calendar', tabBarIcon: tabIcons.calendar }} />
-      <Tabs.Screen name="parenthub" options={{ title: 'Parent Hub', tabBarIcon: tabIcons.parentHub }} />
+      <Tabs.Screen name="parenthub" options={{ title: 'Parent Hub', tabBarIcon: tabIcons.parentHub, href: user?.role === 'Athlete' ? null : undefined }} />
       <Tabs.Screen name="schedule" options={{ title: 'Schedule', tabBarIcon: tabIcons.schedule }} />
       <Tabs.Screen name="more" options={{ title: 'More', tabBarIcon: tabIcons.more }} />
     </Tabs>
