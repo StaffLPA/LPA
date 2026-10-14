@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { getListChatMessageReactionUsersQueryKey, useListChatMessageReactionUsers, type MessageReaction } from '@workspace/api-client-react';
@@ -38,6 +38,7 @@ export function MessageReactions({
   onDismiss?: () => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  useEffect(() => { if (!visible) setPickerOpen(false); }, [visible]);
   const [selectedEmoji, setSelectedEmoji] = useState<MessageReaction['emoji'] | null>(null);
   const queryClient = useQueryClient();
   const reactionUsers = useListChatMessageReactionUsers(conversationId, messageId, selectedEmoji ?? '👍', {
@@ -82,7 +83,7 @@ export function MessageReactions({
         </View>
       ) : null}
       {visible ? (
-        <View style={[styles.row, styles.pickerRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View testID={`reaction-menu-${messageId}`} onTouchStart={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} style={[styles.row, styles.pickerRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {pickerEmojis.map((emoji) => (
             <Pressable
               key={emoji}
