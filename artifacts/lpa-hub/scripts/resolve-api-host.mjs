@@ -24,7 +24,11 @@ export function resolveApiBaseUrl({
 if (import.meta.url === `file://${process.argv[1]}`) {
   console.log(
     resolveApiBaseUrl({
-      apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+      // Preview must reach this workspace's API, not the older published server.
+      // Release resolution keeps its existing explicit/production fallback.
+      apiBaseUrl: process.argv.includes('--development')
+        ? process.env.REPLIT_DEV_DOMAIN
+        : process.env.EXPO_PUBLIC_API_BASE_URL,
       deploymentDomain: process.env.REPLIT_INTERNAL_APP_DOMAIN,
       devDomain: process.env.REPLIT_DEV_DOMAIN,
       configuredDomains: process.env.REPLIT_DOMAINS,
