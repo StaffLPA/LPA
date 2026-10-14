@@ -1,3 +1,4 @@
+import { afterLoginDestination } from '@/lib/formNavigation';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -6,6 +7,7 @@ import { useCompleteInvite, useLookupInvite, useRequestPasswordReset, useResetPa
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { signInErrorMessage } from '@/context/session-lock-errors.mjs';
 
 type Match = { id: string; fullName: string; role: string } | null;
 const inviteStateMessage = {
@@ -18,7 +20,7 @@ const inviteStateMessage = {
 
 export default function LaunchScreen() {
   const colors = useColors(), insets = useSafeAreaInsets(), router = useRouter(), lookup = useLookupInvite(), completeInvite = useCompleteInvite(), signInRequest = useSignIn(), passwordResetRequest = useRequestPasswordReset(), resetPasswordRequest = useResetPassword(), { user, isReady, completeAuthentication } = useApp(), params = useLocalSearchParams<{ returnTo?: string; identifier?: string }>();
-  const destination = params.returnTo === '/admin-dashboard' ? '/admin-dashboard' : '/(tabs)';
+  const destination = afterLoginDestination(params.returnTo) as '/(tabs)' | '/admin-dashboard' | '/forms' | `/forms/${string}`;
   const [identifier, setIdentifier] = useState(params.identifier ?? ''), [password, setPassword] = useState('');
   const [fullName, setFullName] = useState(''), [match, setMatch] = useState<Match>(null), [signInMode, setSignInMode] = useState(destination === '/admin-dashboard'), [message, setMessage] = useState('');
   const [authMode, setAuthMode] = useState<'standard' | 'forgot' | 'reset'>('standard');
@@ -47,7 +49,7 @@ export default function LaunchScreen() {
         await completeAuthentication(result.user, result.sessionToken);
         router.replace(destination);
       },
-      onError: (error) => setMessage(error.message || 'Could not sign in. Please try again.'),
+      onError: (error) => setMessage(signInErrorMessage(error)),
     });
   };
   const complete = () => {
