@@ -1,7 +1,8 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { CachedImage as Image } from '@/components/CachedImage';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +24,7 @@ export default function AccountScreen() {
   const [gender, setGender] = useState(user?.gender ?? '');
   const [photoUri, setPhotoUri] = useState(user?.profilePhotoUri ?? user?.photoUri ?? null);
   const [photoPath, setPhotoPath] = useState(user?.profilePhotoPath ?? null);
+  const [photoOriginalUri, setPhotoOriginalUri] = useState(user?.profilePhotoOriginalUri ?? null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -56,6 +58,7 @@ export default function AccountScreen() {
       const response = await fetch(upload.uploadURL, { method: 'PUT', headers: { 'content-type': contentType }, body: imageData });
       if (!response.ok) throw new Error('Could not upload that photo. Please try again.');
       setPhotoUri(asset.uri);
+      setPhotoOriginalUri(null);
       setPhotoPath(upload.objectPath);
       setMessage('Photo ready. Save your profile to use it everywhere.');
     } catch (error) {
@@ -70,18 +73,29 @@ export default function AccountScreen() {
       const data = await customFetch<StoredUser>('/api/auth/profile', { method: 'PATCH', responseType: 'json', body: JSON.stringify({ firstName, lastName, email, phone, address, birthday, gender, profilePhotoUri: photoPath }) });
       updateUser(data);
       setPhotoUri(data.profilePhotoUri ?? null);
+      setPhotoOriginalUri(data.profilePhotoOriginalUri ?? null);
       setPhotoPath(data.profilePhotoPath ?? null);
       setMessage('Profile updated.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not save your profile.'); } finally { setSaving(false); }
   };
   const logOut = () => setShowLogoutConfirm(true);
   const confirmLogOut = () => { setShowLogoutConfirm(false); signOut(); router.replace('/launch'); };
+  const viewOriginalPhoto = async () => {
+    try {
+      const current = await customFetch<StoredUser>('/api/auth/me', { responseType: 'json' });
+      if (!current.profilePhotoOriginalUri) throw new Error('No original photo available.');
+      await Linking.openURL(current.profilePhotoOriginalUri);
+    } catch {
+      Alert.alert('Could not open photo', 'Please check your connection and try again.');
+    }
+  };
 
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 14, paddingBottom: insets.bottom + 35 }} keyboardShouldPersistTaps="handled">
       <View style={styles.header}><Pressable onPress={() => router.back()}><Feather name="arrow-left" size={22} color={colors.foreground} /></Pressable><Text style={[styles.headerTitle, { color: colors.foreground }]}>My account</Text><View style={{ width: 22 }} /></View>
       <Text style={[styles.intro, { color: colors.mutedForeground }]}>Manage your profile and login details.</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Choose and adjust profile picture" onPress={() => void choosePhoto()} disabled={uploadingPhoto} style={styles.photoRow}><View style={[styles.photo, { backgroundColor: colors.primary }]}>{photoUri ? <Image source={{ uri: photoUri }} style={styles.photoImage} /> : <Text style={styles.photoText}>{`${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase() || 'LPA'}</Text>}</View><View style={{ flex: 1 }}><Text style={[styles.photoTitle, { color: colors.foreground }]}>Profile picture</Text><Text style={[styles.photoCopy, { color: colors.mutedForeground }]}>{uploadingPhoto ? 'Uploading photo…' : 'Choose, crop, and pinch to zoom'}</Text></View>{uploadingPhoto ? <ActivityIndicator color={colors.primary} /> : <Feather name="camera" size={18} color={colors.primary} />}</Pressable>
+      {photoOriginalUri ? <Pressable accessibilityRole="link" accessibilityLabel="View original profile photo" onPress={() => void viewOriginalPhoto()}><Text style={{ color: colors.primary, marginBottom: 12 }}>View full-size photo</Text></Pressable> : null}
       <Text style={[styles.section, { color: colors.foreground }]}>Personal information</Text>
       <Field label="FIRST NAME" value={firstName} onChangeText={setFirstName} colors={colors} />
       <Field label="LAST NAME" value={lastName} onChangeText={setLastName} colors={colors} />
