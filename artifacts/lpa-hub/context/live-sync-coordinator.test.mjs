@@ -7,6 +7,25 @@ import {
 
 const user = { id: 'staff-1', fullName: 'Coach One' };
 
+test('an in-flight refresh cannot restore a user after a forced account-lock sign-out', async () => {
+  let active = true;
+  let profileApplied = false;
+  let finish;
+  const profile = new Promise((resolve) => { finish = resolve; });
+  const sync = createSharedSyncCoordinator({
+    hasSession: () => active,
+    refreshProfile: () => profile,
+    refetchActiveQueries: async () => {},
+    onProfile: () => { profileApplied = true; },
+    onStateChange: () => {},
+  });
+  const inFlight = sync();
+  active = false;
+  finish(user);
+  await inFlight;
+  assert.equal(profileApplied, false);
+});
+
 test('revalidates active queries and clears a retryable error after a later success', async () => {
   let profileAttempts = 0;
   let activeQueryRefetches = 0;
