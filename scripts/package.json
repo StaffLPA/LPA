@@ -11,5 +11,8 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "tsx": "catalog:"
+  },
+  "dependencies": {
+    "sharp": "0.34.4"
   }
 }
