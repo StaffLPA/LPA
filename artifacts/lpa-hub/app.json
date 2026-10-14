@@ -2,23 +2,37 @@
   "expo": {
     "name": "LPA",
     "slug": "lpa",
-    "version": "1.0.0",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/lpa-outlaws-mark.png",
     "scheme": "lpa",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.legendaryprepacademy.lpa"
+      "bundleIdentifier": "app.lpa",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      },
+      "entitlements": {
+        "aps-environment": "production"
+      }
     },
     "android": {
       "package": "com.legendaryprepacademy.lpa",
-      "versionCode": 4
+      "versionCode": 5
     },
     "web": {
       "favicon": "./assets/images/lpa-outlaws-mark.png"
     },
     "plugins": [
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production",
+          "disableLocation": true,
+          "iPhoneDeploymentTarget": "16.4"
+        }
+      ],
       [
         "expo-router",
         {
