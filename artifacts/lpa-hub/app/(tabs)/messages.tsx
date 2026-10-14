@@ -1,86 +1,70 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { useListChats } from '@workspace/api-client-react';
+import { useDeleteChat, useListChats } from '@workspace/api-client-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { useChatMute } from '@/lib/useChatMute';
+import { getChatMuteMode, useChatMute, type ChatMuteMode } from '@/lib/useChatMute';
+import { visibleFormMessageText } from '@/lib/formMessageText';
+import { ChatDeletionConfirmation } from '@/components/ChatDeletionConfirmation';
+import { useLegacyChatDeletionMigration } from '@/lib/useLegacyChatDeletionMigration';
 
-type Chat = { id: string; name: string; type: string; isPinned: boolean; isMuted: boolean; createdAt: string; unreadCount: number; members: { fullName: string }[]; lastMessage: { id: string; senderId: string; text: string; createdAt: string } | null };
-type HiddenConversationMap = Record<string, number>;
+type Chat = { id: string; name: string; type: string; isPinned: boolean; isMuted: boolean; muteMode?: ChatMuteMode; createdAt: string; unreadCount: number; members: { fullName: string }[]; lastMessage: { id: string; senderId: string; text: string; createdAt: string } | null };
 
 export default function MessagesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useApp();
+  const queryClient = useQueryClient();
+  const deleteChat = useDeleteChat();
+  const legacy = useLegacyChatDeletionMigration(user?.id);
   const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: 10_000 } });
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('All');
-  const [hiddenConversations, setHiddenConversations] = useState<HiddenConversationMap>({});
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const [optionsId, setOptionsId] = useState<string | null>(null);
   const [muteError, setMuteError] = useState('');
-  const { toggleMute, isPending: mutePending } = useChatMute();
-  const hiddenConversationsKey = user?.id ? `lpa-hidden-conversations:${user.id}` : null;
-  useEffect(() => {
-    setHiddenConversations({});
-    if (!hiddenConversationsKey) return;
-    let mounted = true;
-    void AsyncStorage.getItem(hiddenConversationsKey).then((stored) => {
-      if (!mounted || !stored) return;
-      try {
-        const parsed: unknown = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          const migrated: HiddenConversationMap = {};
-          parsed.forEach((value) => {
-            if (typeof value === 'string') migrated[value] = Date.now();
-            else if (typeof value === 'object' && value !== null && 'id' in value && 'hiddenAt' in value && typeof value.id === 'string' && typeof value.hiddenAt === 'number') migrated[value.id] = value.hiddenAt;
-          });
-          setHiddenConversations(migrated);
-        }
-      } catch {
-        // Invalid local data should never block access to server conversations.
-      }
-    });
-    return () => { mounted = false; };
-  }, [hiddenConversationsKey]);
+   const { setMuteMode, isPending: mutePending } = useChatMute();
+  useEffect(() => { setDeleteTarget(null); setDeleteError(''); setOptionsId(null); }, [user?.id]);
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return ([...((chats.data ?? []) as Chat[])].filter((chat) => (
-      (() => {
-         if (chat.isPinned) return true;
-        const hiddenAt = hiddenConversations[chat.id];
-        if (hiddenAt === undefined) return true;
-        const latestMessageAt = chat.lastMessage ? Date.parse(chat.lastMessage.createdAt) : Number.NaN;
-        return Number.isFinite(latestMessageAt) && latestMessageAt > hiddenAt;
-      })()
+       !legacy.hiddenIds.includes(chat.id)
       &&
        (filter === 'Direct' ? chat.type === 'direct' : true)
       && (!normalizedQuery || chat.name.toLowerCase().includes(normalizedQuery) || chat.members.some((member) => member.fullName.toLowerCase().includes(normalizedQuery)))
       )).sort((a, b) => Number(b.isPinned) - Number(a.isPinned)
         || (Date.parse(b.lastMessage?.createdAt ?? b.createdAt) || 0) - (Date.parse(a.lastMessage?.createdAt ?? a.createdAt) || 0)
         || a.id.localeCompare(b.id)));
-  }, [chats.data, query, filter, hiddenConversations]);
-  const hideConversationForMe = useCallback((conversationId: string) => {
-    setHiddenConversations((current) => {
-      const next = { ...current, [conversationId]: Date.now() };
-      if (hiddenConversationsKey) void AsyncStorage.setItem(hiddenConversationsKey, JSON.stringify(next));
-      return next;
-    });
-  }, [hiddenConversationsKey]);
+  }, [chats.data, query, filter, legacy.hiddenIds]);
   const confirmHideConversation = useCallback((conversationId: string) => {
-    const complete = () => hideConversationForMe(conversationId);
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm('Delete for me?\n\nThis conversation will be removed only from your view.')) complete();
-      return;
-    }
-    Alert.alert('Delete for me?', 'This conversation will be removed only from your view. Other participants will still see the conversation and its messages.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', style: 'destructive', onPress: complete }]);
-  }, [hideConversationForMe]);
+    setOptionsId(null);
+    setDeleteError('');
+    setDeleteTarget(conversationId);
+  }, []);
+  const deleteConversation = () => {
+    if (!deleteTarget || deleteChat.isPending) return;
+    const conversationId = deleteTarget;
+    setDeleteError('');
+    deleteChat.mutate({ conversationId }, {
+      onSuccess: async () => {
+        await queryClient.cancelQueries({ queryKey: ['chats'] });
+        await queryClient.cancelQueries({ queryKey: ['chat-messages', conversationId] });
+        queryClient.setQueryData<Chat[]>(['chats'], (current = []) => current.filter((chat) => chat.id !== conversationId));
+        queryClient.removeQueries({ queryKey: ['chat-messages', conversationId] });
+        setDeleteTarget(null);
+        void queryClient.invalidateQueries({ queryKey: ['chats'] });
+      },
+      onError: () => setDeleteError('Conversation not deleted. Check your connection and try again.'),
+    });
+  };
   const openConversation = useCallback((conversationId: string) => router.push(('/chat/' + conversationId) as never), [router]);
    const renderConversation = useCallback(({ item }: { item: Chat }) => <ConversationRow item={item} colors={colors} onOpen={openConversation} onDelete={confirmHideConversation} onOptions={setOptionsId} />, [colors, confirmHideConversation, openConversation]);
   const conversationKey = useCallback((item: Chat) => item.id, []);
@@ -92,16 +76,23 @@ export default function MessagesScreen() {
        <View style={styles.filters}>{['All', 'Direct'].map((item) => <Pressable key={item} onPress={() => setFilter(item)} style={[styles.filter, { backgroundColor: filter === item ? colors.foreground : colors.card, borderColor: colors.border }]}><Text style={[styles.filterText, { color: filter === item ? colors.background : colors.mutedForeground }]}>{item}</Text></Pressable>)}</View>
     </View>
        {muteError ? <Pressable onPress={() => setMuteError('')} accessibilityRole="alert"><Text style={[styles.muteError, { color: colors.destructive }]}>{muteError}</Text></Pressable> : null}
-       {chats.isLoading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : chats.isError ? <State title="Unable to load conversations" copy="Check your connection and try again." colors={colors} onRetry={() => void chats.refetch()} /> : <FlatList data={filtered} keyExtractor={conversationKey} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 30, paddingTop: 10 }} renderItem={renderConversation} removeClippedSubviews={Platform.OS === 'android'} initialNumToRender={10} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50} getItemLayout={(_, index) => ({ length: 76, offset: 76 * index, index })} ListEmptyComponent={<State title="No conversations yet" copy="Start a private direct message with an active LPA member." colors={colors} />} />}
-       <Modal visible={Boolean(optionsId && selectedChat)} transparent animationType="slide" onRequestClose={() => setOptionsId(null)}>
-         <View style={styles.optionsOverlay}>
+       {legacy.error ? <Pressable testID="retry-legacy-deletions" onPress={legacy.retry} accessibilityRole="button"><Text style={[styles.muteError, { color: colors.destructive }]}>{legacy.error} Tap to retry.</Text></Pressable> : null}
+       {chats.isLoading || legacy.loading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : chats.isError ? <State title="Unable to load conversations" copy="Check your connection and try again." colors={colors} onRetry={() => void chats.refetch()} /> : <FlatList data={filtered} keyExtractor={conversationKey} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 30, paddingTop: 10 }} renderItem={renderConversation} removeClippedSubviews={Platform.OS === 'android'} initialNumToRender={10} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50} getItemLayout={(_, index) => ({ length: 76, offset: 76 * index, index })} ListEmptyComponent={<State title="No conversations yet" copy="Start a private direct message with an active LPA member." colors={colors} />} />}
+       <Modal visible={Boolean((optionsId && selectedChat) || deleteTarget)} transparent animationType="slide" onRequestClose={() => { if (deleteTarget) { if (!deleteChat.isPending) setDeleteTarget(null); } else setOptionsId(null); }}>
+         {deleteTarget ? <ChatDeletionConfirmation embedded kind="conversation" visible pending={deleteChat.isPending} error={deleteError} onConfirm={deleteConversation} onCancel={() => setDeleteTarget(null)} /> : <View style={styles.optionsOverlay}>
            <Pressable style={StyleSheet.absoluteFill} onPress={() => setOptionsId(null)} accessibilityLabel="Close chat options" />
            <View style={[styles.optionsSheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 16) }]}>
              <Text style={[styles.optionsTitle, { color: colors.foreground }]}>{selectedChat?.name}</Text>
-             {selectedChat?.type === 'group' ? <Pressable testID={`toggle-mute-list-${selectedChat.id}`} accessibilityRole="button" disabled={mutePending} onPress={() => { toggleMute(selectedChat, () => setMuteError('Could not update mute setting. Please try again.')); setOptionsId(null); }} style={styles.optionsAction}><Feather name={selectedChat.isMuted ? 'bell' : 'bell-off'} size={19} color={colors.primary} /><Text style={[styles.optionsText, { color: colors.foreground }]}>{selectedChat.isMuted ? 'Unmute' : 'Mute'} notifications</Text></Pressable> : null}
-             <Pressable testID="close-chat-options" onPress={() => setOptionsId(null)} style={styles.optionsAction}><Text style={[styles.optionsText, { color: colors.mutedForeground }]}>Cancel</Text></Pressable>
+              {selectedChat?.type === 'group' ? ([
+                ['unmuted', 'Unmuted', 'bell'],
+                ['all', 'Mute all', 'bell-off'],
+                ['mentions', 'Mute except mentions', 'at-sign'],
+              ] as [ChatMuteMode, string, 'bell' | 'bell-off' | 'at-sign'][]).map(([mode, label, icon]) =>
+                <Pressable key={mode} testID={`mute-option-${mode}-${selectedChat.id}`} accessibilityRole="radio" accessibilityState={{ selected: getChatMuteMode(selectedChat) === mode, disabled: mutePending }} disabled={mutePending} onPress={() => { if (getChatMuteMode(selectedChat) !== mode) setMuteMode(selectedChat, mode, () => setMuteError('Could not update mute setting. Please try again.')); setOptionsId(null); }} style={styles.optionsAction}><Feather name={icon} size={19} color={colors.primary} /><Text style={[styles.optionsText, { color: colors.foreground, flex: 1 }]}>{label}</Text>{getChatMuteMode(selectedChat) === mode ? <Feather name="check" size={18} color={colors.primary} /> : null}</Pressable>) : null}
+              <Pressable testID="delete-conversation-option" onPress={() => selectedChat && confirmHideConversation(selectedChat.id)} style={styles.optionsAction}><Feather name="trash-2" size={19} color={colors.destructive} /><Text style={[styles.optionsText, { color: colors.destructive }]}>Delete for me</Text></Pressable>
+              <Pressable testID="close-chat-options" onPress={() => setOptionsId(null)} style={styles.optionsAction}><Text style={[styles.optionsText, { color: colors.mutedForeground }]}>Cancel</Text></Pressable>
            </View>
-         </View>
+         </View>}
        </Modal>
   </View>;
 }
@@ -116,13 +107,20 @@ const ConversationRow = React.memo(function ConversationRow({ item, colors, onOp
   const SwipeableRow = Platform.OS === 'web' ? Swipeable : ReanimatedSwipeable;
   return <SwipeableRow
     testID={`swipe-delete-conversation-${item.id}`}
-    renderRightActions={item.isPinned ? undefined : () => <Pressable testID={`delete-for-me-conversation-${item.id}`} accessibilityRole="button" onPress={() => onDelete(item.id)} style={[styles.swipeAction, { backgroundColor: colors.destructive }]}><Feather name="trash-2" size={15} color="#fff" /><Text style={styles.swipeActionText}>Delete for me</Text></Pressable>}
+    renderRightActions={() => <Pressable testID={`delete-for-me-conversation-${item.id}`} accessibilityRole="button" onPress={() => onDelete(item.id)} style={[styles.swipeAction, { backgroundColor: colors.destructive }]}><Feather name="trash-2" size={15} color="#fff" /><Text style={styles.swipeActionText}>Delete for me</Text></Pressable>}
     overshootRight={false}
     rightThreshold={80}
     friction={2}
     containerStyle={styles.swipeContainer}
   >
-    <Pressable onPress={() => onOpen(item.id)} onLongPress={item.type === 'group' ? () => onOptions(item.id) : undefined} testID={`chat-row-${item.id}`} style={({ pressed }) => [styles.conversation, { borderBottomColor: colors.border, backgroundColor: colors.background, opacity: pressed ? 0.7 : 1 }]}><View style={[styles.initials, { backgroundColor: `${colors.primary}20` }]}><Text style={[styles.initialsText, { color: colors.primary }]}>{item.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</Text></View><View style={{ flex: 1 }}><View style={styles.row}><Text style={[styles.sender, { color: colors.foreground }, item.unreadCount > 0 && styles.unreadText]}>{item.name}</Text><View style={styles.meta}><Text style={[styles.time, { color: colors.mutedForeground }]}>{item.type === 'direct' ? 'direct' : item.type}</Text>{item.isPinned ? <Feather name="bookmark" size={13} color={colors.primary} /> : null}{item.isMuted ? <Feather name="bell-off" size={13} color={colors.mutedForeground} /> : null}{item.unreadCount > 0 ? <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}><Text style={styles.unreadBadgeText}>{item.unreadCount > 99 ? '99+' : item.unreadCount}</Text></View> : null}</View></View><Text numberOfLines={1} style={[styles.preview, { color: item.unreadCount > 0 ? colors.foreground : colors.mutedForeground }, item.unreadCount > 0 && styles.unreadText]}>{item.lastMessage?.text ?? 'No messages yet'}</Text></View><Feather name="chevron-right" size={17} color={colors.mutedForeground} /></Pressable>
+    <Pressable onPress={() => onOpen(item.id)} onLongPress={() => onOptions(item.id)} testID={`chat-row-${item.id}`} accessibilityLabel={`${item.name}${getChatMuteMode(item) === 'all' ? ', muted' : getChatMuteMode(item) === 'mentions' ? ', only mention notifications' : ''}`} style={({ pressed }) => [styles.conversation, { borderBottomColor: colors.border, backgroundColor: colors.background, opacity: pressed ? 0.7 : 1 }]}>
+      <View style={[styles.initials, { backgroundColor: `${colors.primary}20` }]}><Text style={[styles.initialsText, { color: colors.primary }]}>{item.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</Text></View>
+      <View style={{ flex: 1 }}>
+        <View style={styles.row}><Text style={[styles.sender, { color: colors.foreground }, item.unreadCount > 0 && styles.unreadText]}>{item.name}</Text><View style={styles.meta}><Text style={[styles.time, { color: colors.mutedForeground }]}>{item.type === 'direct' ? 'direct' : item.type}</Text>{item.isPinned ? <Feather name="bookmark" size={13} color={colors.primary} /> : null}{getChatMuteMode(item) === 'all' ? <Feather name="bell-off" size={13} color={colors.mutedForeground} /> : getChatMuteMode(item) === 'mentions' ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}><Feather name="at-sign" size={13} color={colors.primary} /><Text style={[styles.time, { color: colors.primary }]}>mentions</Text></View> : null}{item.unreadCount > 0 ? <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}><Text style={styles.unreadBadgeText}>{item.unreadCount > 99 ? '99+' : item.unreadCount}</Text></View> : null}</View></View>
+        <Text numberOfLines={1} style={[styles.preview, { color: item.unreadCount > 0 ? colors.foreground : colors.mutedForeground }, item.unreadCount > 0 && styles.unreadText]}>{visibleFormMessageText(item.lastMessage?.text ?? 'No messages yet')}</Text>
+      </View>
+      <Feather name="chevron-right" size={17} color={colors.mutedForeground} />
+    </Pressable>
   </SwipeableRow>;
 });
 
