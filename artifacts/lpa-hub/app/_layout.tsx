@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,7 +12,8 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { Stack, useLocalSearchParams, useRouter, useSegments } from 'expo-router';
+import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
+import { safeFormPath } from '@/lib/formNavigation';
 import * as SplashScreen from 'expo-splash-screen';
 import { AppProvider, useApp, useLiveSync } from '@/context/AppContext';
 import { setBaseUrl } from '@workspace/api-client-react';
@@ -41,7 +42,7 @@ const queryClient = new QueryClient({
 function RootLayoutNav() {
   const router = useRouter();
   const segments = useSegments();
-  const launchParams = useLocalSearchParams<{ returnTo?: string }>();
+  const pathname = usePathname();
   const { user, isReady } = useApp();
 
   useEffect(() => {
@@ -52,15 +53,18 @@ function RootLayoutNav() {
 
     if (!user && !onLaunch) {
       router.replace(
-        onAdminDashboard
+        safeFormPath(pathname)
+          ? { pathname: '/launch', params: { returnTo: pathname } }
+          : onAdminDashboard
           ? { pathname: '/launch', params: { returnTo: '/admin-dashboard' } }
           : '/launch',
       );
       return;
     }
 
-    if (user && onLaunch) router.replace(launchParams.returnTo === '/admin-dashboard' ? '/admin-dashboard' : '/(tabs)');
-  }, [isReady, launchParams.returnTo, router, segments, user]);
+    // Launch owns the authenticated redirect using its actual route params.
+    // Reading child returnTo params from this root layout races that redirect.
+  }, [isReady, pathname, router, segments, user]);
 
   return (
     <Stack initialRouteName="launch" screenOptions={{ headerBackTitle: 'Back' }}>
@@ -68,7 +72,16 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="admin-users" options={{ headerShown: false }} />
       <Stack.Screen name="admin-dashboard" options={{ headerShown: false }} />
+      <Stack.Screen name="daily-rollcall/index" options={{ headerShown: false }} />
+      <Stack.Screen name="daily-rollcall/[category]" options={{ headerShown: false }} />
       <Stack.Screen name="family" options={{ headerShown: false }} />
+      <Stack.Screen name="forms/index" options={{ headerShown: false }} />
+      <Stack.Screen name="forms/settings" options={{ headerShown: false }} />
+      <Stack.Screen name="forms/[id]" options={{ headerShown: false, presentation: 'modal' }} />
+      <Stack.Screen name="metrics/index" options={{ headerShown: false }} />
+      <Stack.Screen name="metrics/reports" options={{ headerShown: false }} />
+      <Stack.Screen name="metrics/athlete/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="metrics/report/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="new-chat" options={{ headerShown: false }} />
       <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="account" options={{ headerShown: false }} />
@@ -104,12 +117,12 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    if (Platform.OS === 'web' || fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
 
-  if (!fontsLoaded && !fontError) return null;
+  if (Platform.OS !== 'web' && !fontsLoaded && !fontError) return null;
 
   return (
     <SafeAreaProvider>
