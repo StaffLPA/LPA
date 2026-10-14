@@ -6,17 +6,14 @@ import { useFocusEffect } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useGetCalendarFeed } from '@workspace/api-client-react';
 import { useTagCatalog } from '@/hooks/useTagCatalog';
-import { canonicalTeam, getTeamColor, tagLabel, type TagCatalog } from '@/constants/tagCatalog';
+import { canonicalTeam, getTeamColor, tagLabel } from '@/constants/tagCatalog';
+import { CalendarEventDetails } from '@/components/CalendarEventDetails';
+import { dateFromKey, dateRangeLabel, mergeEvents, parseIcsEvents, timeRangeLabel, type CalendarEvent } from '@/lib/calendarEvents';
 
 type ViewMode = 'Week' | 'Month';
-type CalendarEvent = { id: string; date: string; endDate?: string; time: string; endTime?: string; title: string; location: string; tag: string; team: string; tint: string };
 
 const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const localDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-const dateFromKey = (date: string) => {
-  const [year, month, day] = date.split('-').map(Number);
-  return new Date(year, month - 1, day, 12);
-};
 const weekDatesFor = (date: string) => {
   const start = dateFromKey(date);
   start.setDate(start.getDate() - start.getDay());
@@ -38,60 +35,6 @@ const eventTimestamp = (date: string, time: string) => {
   }
   return day.getTime();
 };
-const dateRangeLabel = (startDate: string, endDate = startDate) => {
-  const start = dateFromKey(startDate);
-  const end = dateFromKey(endDate);
-  if (startDate === endDate) return start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const startLabel = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const endLabel = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  return `${startLabel} – ${endLabel}`;
-};
-const timeRangeLabel = (event: CalendarEvent) => event.endTime && event.endTime !== 'Time TBD' && event.endTime !== event.time
-  ? `${event.time} – ${event.endTime}`
-  : event.time;
-const formatIcsTime = (value: string | undefined) => {
-  const match = value?.match(/T(\d{2})(\d{2})/);
-  if (!match) return 'Time TBD';
-  const hours = Number(match[1]);
-  const minutes = match[2];
-  return `${hours % 12 || 12}:${minutes} ${hours >= 12 ? 'PM' : 'AM'}`;
-};
-const unescapeIcs = (value: string) => value.replace(/\\n/g, '\n').replace(/\\([,;\\])/g, '$1');
-function parseIcsEvents(feed: string | undefined, catalog: TagCatalog, fallbackTeam = ''): CalendarEvent[] {
-  if (!feed) return [];
-  const events: CalendarEvent[] = [];
-  let values: Record<string, string> | null = null;
-  for (const line of feed.replace(/\r\n[ \t]/g, '').split(/\r?\n/)) {
-    if (line === 'BEGIN:VEVENT') { values = {}; continue; }
-    if (line === 'END:VEVENT' && values) {
-      const startsAt = values.DTSTART;
-      const date = startsAt?.match(/^(\d{4})(\d{2})(\d{2})/)?.slice(1).join('-');
-      const endDate = values.DTEND?.match(/^(\d{4})(\d{2})(\d{2})/)?.slice(1).join('-');
-      const rawTeam = values['X-LPA-TEAM'] ?? values.CATEGORIES ?? fallbackTeam;
-      const team = canonicalTeam(catalog, unescapeIcs(rawTeam));
-      if (date && values.UID && values.SUMMARY) events.push({
-        id: values.UID.replace(/@lpahub$/, ''),
-        date,
-        endDate: endDate && endDate !== date ? endDate : undefined,
-        time: formatIcsTime(startsAt),
-        endTime: formatIcsTime(values.DTEND),
-        title: unescapeIcs(values.SUMMARY),
-        location: unescapeIcs(values.LOCATION ?? 'LPA Campus'),
-        tag: tagLabel(catalog, 'teams', team),
-        team,
-        tint: getTeamColor(catalog, team),
-      });
-      values = null;
-      continue;
-    }
-    if (!values) continue;
-    const separator = line.indexOf(':');
-    if (separator < 0) continue;
-    const key = line.slice(0, separator).split(';', 1)[0];
-    values[key] = line.slice(separator + 1);
-  }
-  return events;
-}
 
 export default function CalendarScreen() {
   const colors = useColors();
@@ -99,7 +42,9 @@ export default function CalendarScreen() {
   const today = new Date();
   const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState(localDateKey(today));
+  const [monthDayFilter, setMonthDayFilter] = useState<string | null>(null);
   const [weekDayFilter, setWeekDayFilter] = useState<string | null>(null);
+  const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
   const [view, setView] = useState<ViewMode>('Week');
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
   const [showTeamMenu, setShowTeamMenu] = useState(false);
@@ -123,7 +68,8 @@ export default function CalendarScreen() {
   const fifteenFeed = useGetCalendarFeed({ team: '15u' }, feedOptions('15u'));
   const lpaFeed = useGetCalendarFeed({ team: 'lpa-events' }, feedOptions('lpa-events'));
   const events = useMemo(() => {
-    const merged = new Map<string, CalendarEvent>();
+    const resolver = { canonicalTeam: (team: string) => canonicalTeam(catalog, team), tagLabel: (team: string) => tagLabel(catalog, 'teams', team), teamColor: (team: string) => getTeamColor(catalog, team) };
+    const lists: CalendarEvent[][] = [];
     for (const [feed, team] of [
       [varsityFeed.data, 'LPA Varsity'],
       [juniorVarsityFeed.data, 'LPA JV'],
@@ -132,9 +78,9 @@ export default function CalendarScreen() {
       [lpaFeed.data, 'LPA'],
       [calendarFeed.data, ''],
     ] as const) {
-      for (const event of parseIcsEvents(feed, catalog, team)) merged.set(event.id, event);
+      lists.push(parseIcsEvents(feed, resolver, team));
     }
-    return [...merged.values()];
+    return mergeEvents(lists);
   }, [calendarFeed.data, varsityFeed.data, juniorVarsityFeed.data, fourteenFeed.data, fifteenFeed.data, lpaFeed.data, catalog]);
   const feedsUnavailable = calendarFeed.isError && varsityFeed.isError && juniorVarsityFeed.isError && fourteenFeed.isError && fifteenFeed.isError && lpaFeed.isError;
   const monthLabel = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -143,7 +89,14 @@ export default function CalendarScreen() {
   const leading = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay();
   const cells = Array.from({ length: Math.ceil((leading + days) / 7) * 7 }, (_, index) => index - leading + 1);
   const filteredEvents = useMemo(() => selectedTeam === 'all' ? events : events.filter((event) => canonicalTeam(catalog, event.team) === selectedTeam), [events, selectedTeam, catalog]);
-  const selectedEvents = useMemo(() => filteredEvents.filter((event) => event.date === selectedDate), [filteredEvents, selectedDate]);
+  const monthStart = `${monthKey}-01`;
+  const monthEnd = `${monthKey}-${String(days).padStart(2, '0')}`;
+  const monthEvents = useMemo(() => {
+    const eventsInMonth = filteredEvents.filter((event) => event.date <= monthEnd && (event.endDate ?? event.date) >= monthStart);
+    return eventsInMonth
+      .filter((event) => !monthDayFilter || (event.date <= monthDayFilter && (event.endDate ?? event.date) >= monthDayFilter))
+      .sort((a, b) => eventTimestamp(a.date, a.time) - eventTimestamp(b.date, b.time));
+  }, [filteredEvents, monthDayFilter, monthEnd, monthStart]);
   const selectedWeek = useMemo(() => weekDatesFor(selectedDate), [selectedDate]);
   const weekEvents = useMemo(() => {
     const [weekStart, weekEnd] = [selectedWeek[0], selectedWeek[selectedWeek.length - 1]];
@@ -164,10 +117,13 @@ export default function CalendarScreen() {
     const next = new Date(monthDate.getFullYear(), monthDate.getMonth() + amount, 1);
     setMonthDate(next);
     setSelectedDate(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`);
+    setMonthDayFilter(null);
     setWeekDayFilter(null);
   };
   const chooseDay = (day: number) => {
-    setSelectedDate(`${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    const date = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    setSelectedDate(date);
+    setMonthDayFilter((current) => current === date ? null : date);
     setWeekDayFilter(null);
   };
   const chooseDate = (date: string) => {
@@ -192,25 +148,22 @@ export default function CalendarScreen() {
       <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
          <View style={styles.monthRow}><Text style={[styles.month, { color: colors.foreground }]}>{monthLabel}</Text><View style={styles.arrows}><Pressable testID={view === 'Week' ? 'previous-week' : 'previous-month'} accessibilityLabel={view === 'Week' ? 'Previous week' : 'Previous month'} onPress={() => view === 'Week' ? moveWeek(-1) : moveMonth(-1)} hitSlop={10}><Feather name="chevron-left" size={19} color={colors.foreground} /></Pressable><Pressable testID={view === 'Week' ? 'next-week' : 'next-month'} accessibilityLabel={view === 'Week' ? 'Next week' : 'Next month'} onPress={() => view === 'Week' ? moveWeek(1) : moveMonth(1)} hitSlop={10}><Feather name="chevron-right" size={19} color={colors.foreground} /></Pressable></View></View>
         <View style={styles.weekRow}>{weekdays.map((day, index) => <Text key={`${day}-${index}`} style={[styles.weekday, { color: colors.mutedForeground }]}>{day}</Text>)}</View>
-           {view === 'Month' ? <View style={styles.monthGrid}>{cells.map((day, index) => { const date = day > 0 && day <= days ? `${monthKey}-${String(day).padStart(2, '0')}` : ''; const eventColors = date ? eventColorsForDate(filteredEvents, date) : []; return <Pressable key={`${monthKey}-${index}`} disabled={!date} onPress={() => chooseDay(day)} style={styles.monthCell}><View style={[styles.monthDate, date === selectedDate && { backgroundColor: colors.primary }]}><Text style={[styles.monthDateText, { color: date === selectedDate ? '#fff' : date ? colors.foreground : colors.muted }]}>{date ? day : ''}</Text></View><ColorDots colors={eventColors} /></Pressable>; })}</View> : <View style={styles.weekRow}>{selectedWeek.map((date) => { const day = dateFromKey(date).getDate(); const isFiltered = weekDayFilter === date; return <Pressable key={date} testID={`calendar-week-day-${date}`} accessibilityRole="button" accessibilityLabel={dateFromKey(date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} accessibilityState={{ selected: isFiltered }} onPress={() => chooseWeekDay(date)} style={styles.dayCell}><View style={[styles.dateCircle, isFiltered && { backgroundColor: colors.primary }]}><Text style={[styles.dateText, { color: isFiltered ? '#fff' : colors.foreground }]}>{day}</Text></View><ColorDots colors={eventColorsForDate(filteredEvents, date)} /></Pressable>; })}</View>}
+            {view === 'Month' ? <View style={styles.monthGrid}>{cells.map((day, index) => { const date = day > 0 && day <= days ? `${monthKey}-${String(day).padStart(2, '0')}` : ''; const isSelected = date !== '' && date === monthDayFilter; const eventColors = date ? eventColorsForDate(filteredEvents, date) : []; return <Pressable key={`${monthKey}-${index}`} testID={date ? `calendar-month-day-${date}` : undefined} accessibilityRole={date ? 'button' : undefined} accessibilityLabel={date ? dateFromKey(date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : undefined} accessibilityHint={date ? isSelected ? 'Shows all events for this month' : 'Shows events for this date' : undefined} accessibilityState={{ selected: isSelected }} disabled={!date} onPress={() => chooseDay(day)} style={styles.monthCell}><View style={[styles.monthDate, isSelected && { backgroundColor: colors.primary }]}><Text style={[styles.monthDateText, { color: isSelected ? '#fff' : date ? colors.foreground : colors.muted }]}>{date ? day : ''}</Text></View><ColorDots colors={eventColors} /></Pressable>; })}</View> : <View style={styles.weekRow}>{selectedWeek.map((date) => { const day = dateFromKey(date).getDate(); const isFiltered = weekDayFilter === date; return <Pressable key={date} testID={`calendar-week-day-${date}`} accessibilityRole="button" accessibilityLabel={dateFromKey(date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} accessibilityState={{ selected: isFiltered }} onPress={() => chooseWeekDay(date)} style={styles.dayCell}><View style={[styles.dateCircle, isFiltered && { backgroundColor: colors.primary }]}><Text style={[styles.dateText, { color: isFiltered ? '#fff' : colors.foreground }]}>{day}</Text></View><ColorDots colors={eventColorsForDate(filteredEvents, date)} /></Pressable>; })}</View>}
       </View>
-       <View style={[styles.segment, { backgroundColor: colors.muted }]}>{(['Week', 'Month'] as ViewMode[]).map((item) => <Pressable key={item} onPress={() => { setView(item); if (item === 'Week') setWeekDayFilter(null); }} style={[styles.segmentButton, view === item && { backgroundColor: colors.card }]}><Text style={[styles.segmentText, { color: view === item ? colors.foreground : colors.mutedForeground }]}>{item}</Text></Pressable>)}</View>
-       <View style={styles.sectionRow}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{view === 'Week' ? weekDayFilter ? selectedLabel : selectedWeekLabel : selectedLabel}</Text><Text style={[styles.count, { color: colors.mutedForeground }]}>{view === 'Week' ? `${visibleWeekEvents.length} events` : `${selectedEvents.length} events`}</Text></View>
-        {view === 'Week' ? <WeekEvents colors={colors} events={visibleWeekEvents} emptyMessage={feedsUnavailable ? 'Calendar could not sync' : weekDayFilter ? 'No events scheduled for this day' : 'No events scheduled this week'} /> : <View style={[styles.agendaCard, { backgroundColor: colors.card, borderColor: colors.border }]}>{selectedEvents.length ? selectedEvents.map((item) => <EventRow key={item.id} item={item} colors={colors} />) : <View style={styles.empty}><Feather name="calendar" size={25} color={colors.mutedForeground} /><Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{feedsUnavailable ? 'Calendar could not sync' : 'No events scheduled'}</Text></View>}</View>}
+       <View style={[styles.segment, { backgroundColor: colors.muted }]}>{(['Week', 'Month'] as ViewMode[]).map((item) => <Pressable key={item} testID={`calendar-view-${item.toLowerCase()}`} accessibilityRole="button" accessibilityState={{ selected: view === item }} onPress={() => { setView(item); if (item === 'Week') setWeekDayFilter(null); }} style={[styles.segmentButton, view === item && { backgroundColor: colors.card }]}><Text style={[styles.segmentText, { color: view === item ? colors.foreground : colors.mutedForeground }]}>{item}</Text></Pressable>)}</View>
+        <View style={styles.sectionRow}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{view === 'Week' ? weekDayFilter ? selectedLabel : selectedWeekLabel : monthDayFilter ? selectedLabel : monthLabel}</Text><Text style={[styles.count, { color: colors.mutedForeground }]}>{view === 'Week' ? `${visibleWeekEvents.length} events` : `${monthEvents.length} events`}</Text></View>
+          {view === 'Week' ? <CalendarEventList onSelect={setDetailEvent} colors={colors} events={visibleWeekEvents} emptyMessage={feedsUnavailable ? 'Calendar could not sync' : weekDayFilter ? 'No events scheduled for this day' : 'No events scheduled this week'} /> : <CalendarEventList onSelect={setDetailEvent} colors={colors} events={monthEvents} emptyMessage={feedsUnavailable ? 'Calendar could not sync' : monthDayFilter ? 'No events scheduled for this day' : 'No events scheduled this month'} />}
     </ScrollView>
+    <CalendarEventDetails event={detailEvent} onClose={() => setDetailEvent(null)} />
   </View>;
 }
 
-function EventRow({ item, colors }: { item: CalendarEvent; colors: ReturnType<typeof useColors> }) {
-  return <View style={styles.eventRow}><Text style={[styles.eventTime, { color: colors.mutedForeground }]}>{item.endTime && item.endTime !== 'Time TBD' ? `${item.time}\n– ${item.endTime}` : item.time}</Text><View style={[styles.eventBar, { backgroundColor: item.tint }]} /><View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{item.title}</Text><Text style={[styles.eventLocation, { color: colors.mutedForeground }]}><Feather name="map-pin" size={11} color={colors.mutedForeground} /> {item.location}</Text></View><Text style={[styles.tag, { color: item.tint, backgroundColor: `${item.tint}18` }]}>{item.tag}</Text></View>;
-}
-
-function WeekEvents({ colors, events, emptyMessage }: { colors: ReturnType<typeof useColors>; events: CalendarEvent[]; emptyMessage: string }) {
+function CalendarEventList({ colors, events, emptyMessage, onSelect }: { onSelect: (event: CalendarEvent) => void; colors: ReturnType<typeof useColors>; events: CalendarEvent[]; emptyMessage: string }) {
   return <View style={[styles.weekEventsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
     {events.length ? events.map((item, index) => {
       const eventDate = dateFromKey(item.date);
       const eventColor = item.tint;
-      return <View key={item.id} style={[styles.weekEvent, index < events.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+      return <Pressable key={item.id} testID={`calendar-event-${item.id}`} accessibilityRole="button" accessibilityLabel={`${item.title}, ${dateRangeLabel(item.date, item.endDate)}, ${timeRangeLabel(item)}. Open details`} onPress={() => onSelect(item)} style={[styles.weekEvent, index < events.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
         <View style={[styles.weekDateBlock, { backgroundColor: `${eventColor}18` }]}>
           <Text style={[styles.weekDateDay, { color: eventColor }]}>{eventDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</Text>
           <Text style={[styles.weekDateNumber, { color: colors.foreground }]}>{eventDate.getDate()}</Text>
@@ -219,7 +172,7 @@ function WeekEvents({ colors, events, emptyMessage }: { colors: ReturnType<typeo
           <Text style={[styles.weekEventTitle, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
           <Text style={[styles.weekEventMeta, { color: colors.mutedForeground }]} numberOfLines={2}>{dateRangeLabel(item.date, item.endDate)} · {timeRangeLabel(item)} · {item.location}</Text>
         </View>
-      </View>;
+      </Pressable>;
     }) : <View style={styles.empty}><Feather name="calendar" size={25} color={colors.mutedForeground} /><Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{emptyMessage}</Text></View>}
   </View>;
 }
@@ -229,5 +182,324 @@ function ColorDots({ colors }: { colors: string[] }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 }, header: { paddingHorizontal: 22, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }, eyebrow: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1.3, marginBottom: 6 }, title: { fontFamily: 'Inter_700Bold', fontSize: 29, letterSpacing: -0.8 }, add: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, filterWrap: { marginHorizontal: 18, marginBottom: 14, zIndex: 5 }, filterSelect: { minHeight: 45, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 }, filterMenu: { position: 'absolute', top: 51, left: 0, right: 0, borderWidth: 1, borderRadius: 14, paddingVertical: 5, zIndex: 10, elevation: 6 }, filterOption: { minHeight: 42, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 }, filterDot: { width: 8, height: 8, borderRadius: 4 }, filterText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, calendarCard: { marginHorizontal: 18, borderRadius: 19, borderWidth: 1, padding: 16 }, monthRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }, month: { fontFamily: 'Inter_700Bold', fontSize: 15 }, arrows: { flexDirection: 'row', gap: 18 }, weekRow: { flexDirection: 'row', justifyContent: 'space-between' }, weekday: { fontFamily: 'Inter_600SemiBold', fontSize: 10, width: 32, textAlign: 'center' }, dayCell: { alignItems: 'center', gap: 5, width: 32 }, dateCircle: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, dateText: { fontFamily: 'Inter_700Bold', fontSize: 13 }, monthGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }, monthCell: { width: '14.2857%', height: 49, alignItems: 'center', gap: 3 }, monthDate: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }, monthDateText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, dot: { width: 4, height: 4, borderRadius: 2 }, segment: { marginHorizontal: 18, marginTop: 18, borderRadius: 14, padding: 3, flexDirection: 'row' }, segmentButton: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 11 }, segmentText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, sectionRow: { marginHorizontal: 22, marginTop: 25, marginBottom: 11, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, sectionTitle: { fontFamily: 'Inter_700Bold', fontSize: 15 }, count: { fontFamily: 'Inter_400Regular', fontSize: 11 }, agendaCard: { marginHorizontal: 18, borderWidth: 1, borderRadius: 18, overflow: 'hidden' }, eventRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderBottomWidth: 1, borderBottomColor: '#D9DED9' }, eventTime: { fontFamily: 'Inter_500Medium', width: 58, fontSize: 10, lineHeight: 14 }, eventBar: { width: 3, height: 38, borderRadius: 2 }, eventTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 5 }, eventLocation: { fontFamily: 'Inter_400Regular', fontSize: 11 }, tag: { fontFamily: 'Inter_700Bold', fontSize: 8, letterSpacing: 0.5, paddingHorizontal: 7, paddingVertical: 5, borderRadius: 7 }, empty: { minHeight: 100, alignItems: 'center', justifyContent: 'center', gap: 8 }, emptyText: { fontFamily: 'Inter_500Medium', fontSize: 12 }, weekEventsCard: { marginHorizontal: 18, borderWidth: 1, borderRadius: 18, overflow: 'hidden' }, weekEvent: { flexDirection: 'row', alignItems: 'center', gap: 13, padding: 13 }, weekDateBlock: { width: 48, height: 53, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, weekDateDay: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 0.6 }, weekDateNumber: { fontFamily: 'Inter_700Bold', fontSize: 22, lineHeight: 24 }, weekEventTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 4 }, weekEventMeta: { fontFamily: 'Inter_400Regular', fontSize: 11 }, backdrop: { flex: 1, backgroundColor: '#00000088', justifyContent: 'flex-end' }, sheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 22, paddingBottom: 35 }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7 }, modalTitle: { fontFamily: 'Inter_700Bold', fontSize: 22 }, modalDate: { fontFamily: 'Inter_400Regular', fontSize: 12, marginBottom: 16 }, input: { height: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontFamily: 'Inter_400Regular', fontSize: 13, marginBottom: 9 }, timeInputs: { flexDirection: 'row', gap: 8 }, halfInput: { flex: 1 }, save: { height: 49, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 6 }, saveText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 13 },
+  container: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: 22,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  eyebrow: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    letterSpacing: 1.3,
+    marginBottom: 6,
+  },
+  title: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 29,
+    letterSpacing: -0.8,
+  },
+  add: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterWrap: {
+    marginHorizontal: 18,
+    marginBottom: 14,
+    zIndex: 5,
+  },
+  filterSelect: {
+    minHeight: 45,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  filterMenu: {
+    position: 'absolute',
+    top: 51,
+    left: 0,
+    right: 0,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 5,
+    zIndex: 10,
+    elevation: 6,
+  },
+  filterOption: {
+    minHeight: 42,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  filterDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  filterText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+  calendarCard: {
+    marginHorizontal: 18,
+    borderRadius: 19,
+    borderWidth: 1,
+    padding: 16,
+  },
+  monthRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  month: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+  },
+  arrows: {
+    flexDirection: 'row',
+    gap: 18,
+  },
+  weekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  weekday: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 10,
+    width: 32,
+    textAlign: 'center',
+  },
+  dayCell: {
+    alignItems: 'center',
+    gap: 5,
+    width: 32,
+  },
+  dateCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
+  monthGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 10,
+  },
+  monthCell: {
+    width: '14.2857%',
+    height: 49,
+    alignItems: 'center',
+    gap: 3,
+  },
+  monthDate: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthDateText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  segment: {
+    marginHorizontal: 18,
+    marginTop: 18,
+    borderRadius: 14,
+    padding: 3,
+    flexDirection: 'row',
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    borderRadius: 11,
+  },
+  segmentText: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12,
+  },
+  sectionRow: {
+    marginHorizontal: 22,
+    marginTop: 25,
+    marginBottom: 11,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 15,
+  },
+  count: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+  },
+  agendaCard: {
+    marginHorizontal: 18,
+    borderWidth: 1,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  eventRow: {
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    paddingHorizontal: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#D9DED9',
+  },
+  eventTime: {
+    fontFamily: 'Inter_500Medium',
+    width: 58,
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  eventBar: {
+    width: 3,
+    height: 38,
+    borderRadius: 2,
+  },
+  eventTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    marginBottom: 5,
+  },
+  eventLocation: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+  },
+  tag: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 8,
+    letterSpacing: 0.5,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    borderRadius: 7,
+  },
+  empty: {
+    minHeight: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  emptyText: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+  },
+  weekEventsCard: {
+    marginHorizontal: 18,
+    borderWidth: 1,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  weekEvent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    padding: 13,
+  },
+  weekDateBlock: {
+    width: 48,
+    height: 53,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekDateDay: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 9,
+    letterSpacing: 0.6,
+  },
+  weekDateNumber: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 22,
+    lineHeight: 24,
+  },
+  weekEventTitle: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  weekEventMeta: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 11,
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: '#00000088',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    padding: 22,
+    paddingBottom: 35,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 7,
+  },
+  modalTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 22,
+  },
+  modalDate: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    marginBottom: 16,
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 13,
+    fontFamily: 'Inter_400Regular',
+    fontSize: 13,
+    marginBottom: 9,
+  },
+  timeInputs: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  halfInput: {
+    flex: 1,
+  },
+  save: {
+    height: 49,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  saveText: {
+    color: '#fff',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
 });
