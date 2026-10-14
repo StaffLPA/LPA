@@ -1,21 +1,28 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type NativeSyntheticEvent, type TextInputSelectionChangeEventData } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeSyntheticEvent, type TextInputSelectionChangeEventData } from 'react-native';
+import { CachedImage } from '@/components/CachedImage';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { customFetch, useAddChatMember, useAddChatMessageReaction, useCreateChat, useDeleteChat, useDeleteChatMessage, useEditChatMessage, useListChats, useListChatMessages, useListUsers, useMarkChatRead, useRemoveChatMember, useRemoveChatMessageReaction, useSendChatMessage, type MessageReaction } from '@workspace/api-client-react';
+import { customFetch, useAddChatMember, useAddChatMessageReaction, useCreateChat, useDeleteChat, useDeleteChatMessage, useEditChatMessage, useListChats, useListChatMessages, useListDirectoryUsers, useMarkChatRead, useRemoveChatMember, useRemoveChatMessageReaction, useSendChatMessage, type MessageReaction } from '@workspace/api-client-react';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { MessagePhotoViewer } from '@/components/MessagePhotoViewer';
 import { MessageReactions } from '@/components/MessageReactions';
-import { useChatMute } from '@/lib/useChatMute';
+import { ChatDeletionConfirmation } from '@/components/ChatDeletionConfirmation';
+import { MessageDateSeparator } from '@/components/MessageDateSeparator';
+import { buildMessageHistoryRows } from '@/lib/chatMessageHistory';
+import { getChatMuteMode, useChatMute, type ChatMuteMode } from '@/lib/useChatMute';
+import { collapseMentionLastName, reconcileMentions } from '@/lib/mentionDraft';
 import { useTagCatalog } from '@/hooks/useTagCatalog';
 import { tagLabel } from '@/constants/tagCatalog';
 import { LPA_TEAMS, teamEventAliases } from '@/constants/teams';
+import { ChatAttachmentUploadCache } from '@/lib/chatAttachmentUploadCache';
+import { formRequestIdFromMessage, visibleFormMessageText } from '@/lib/formMessageText';
 
 function loadErrorMessage(error: unknown) {
   const status = typeof error === 'object' && error !== null && 'status' in error ? Number(error.status) : 0;
@@ -46,28 +53,6 @@ type SelectedAttachment = { uri: string; fileName: string; contentType: string; 
 type DirectoryPerson = { id: string; fullName: string; role: string; roleTag?: string | null; status: string; teams: string[]; profilePhotoUri?: string | null };
 type SelectedProfile = Pick<DirectoryPerson, 'id' | 'fullName' | 'role' | 'roleTag' | 'teams' | 'profilePhotoUri'>;
 
-function reconcileMentions(previousText: string, nextText: string, mentions: MessageMention[]) {
-  if (!mentions.length || previousText === nextText) return mentions;
-  let prefixLength = 0;
-  while (prefixLength < previousText.length && prefixLength < nextText.length && previousText[prefixLength] === nextText[prefixLength]) prefixLength += 1;
-  let previousSuffix = previousText.length;
-  let nextSuffix = nextText.length;
-  while (previousSuffix > prefixLength && nextSuffix > prefixLength && previousText[previousSuffix - 1] === nextText[nextSuffix - 1]) {
-    previousSuffix -= 1;
-    nextSuffix -= 1;
-  }
-  const delta = nextText.length - previousText.length;
-  return mentions.flatMap((mention) => {
-    const token = `@${mention.displayName}`;
-    if (mention.end <= prefixLength && nextText.slice(mention.start, mention.end) === token) return [mention];
-    if (mention.start >= previousSuffix) {
-      const shifted = { ...mention, start: mention.start + delta, end: mention.end + delta };
-      return nextText.slice(shifted.start, shifted.end) === token ? [shifted] : [];
-    }
-    return [];
-  });
-}
-
 function normalizeOutgoingMessage(text: string, mentions: MessageMention[]) {
   const startOffset = text.length - text.trimStart().length;
   const normalizedText = text.trim();
@@ -81,6 +66,23 @@ function normalizeOutgoingMessage(text: string, mentions: MessageMention[]) {
   };
 }
 
+function DraftMentionHighlight({ text, mentions, color, mentionColor }: {
+  text: string; mentions: MessageMention[]; color: string; mentionColor: string;
+}) {
+  let cursor = 0;
+  const parts: React.ReactNode[] = [];
+  for (const mention of [...mentions].sort((a, b) => a.start - b.start)) {
+    if (mention.start < cursor || text.slice(mention.start, mention.end) !== `@${mention.displayName}`) continue;
+    parts.push(text.slice(cursor, mention.start));
+    parts.push(<Text key={`${mention.userId}-${mention.start}`} style={{ color: mentionColor }}>{text.slice(mention.start, mention.end)}</Text>);
+    cursor = mention.end;
+  }
+  parts.push(text.slice(cursor));
+  return <View pointerEvents="none" importantForAccessibility="no-hide-descendants" style={draftMentionStyles.overlay}>
+    <Text numberOfLines={1} style={[draftMentionStyles.text, { color }]}>{parts}</Text>
+  </View>;
+}
+
 export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -90,9 +92,9 @@ export default function ChatScreen() {
   const catalogQuery = useTagCatalog();
   const catalog = catalogQuery.data;
   const { id } = useLocalSearchParams<{ id: string }>();
-  const chats = useListChats({ query: { queryKey: ['chats'] } });
+  const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: 10_000 } });
   const chat = (chats.data ?? []).find((item) => item.id === id);
-  const { toggleMute, isPending: mutePending } = useChatMute();
+  const { setMuteMode, isPending: mutePending } = useChatMute();
   const messages = useListChatMessages(id ?? '', { query: { queryKey: ['chat-messages', id ?? ''], refetchInterval: 10_000 } });
   useEffect(() => {
     if (!id || !user?.id) return;
@@ -132,7 +134,7 @@ export default function ChatScreen() {
       finishRetry?.();
     };
   }, [id, user?.id, queryClient]);
-  const people = useListUsers();
+  const people = useListDirectoryUsers();
   const createChat = useCreateChat();
   const sendMessage = useSendChatMessage();
   const editMessage = useEditChatMessage();
@@ -143,6 +145,9 @@ export default function ChatScreen() {
   const markChatRead = useMarkChatRead();
   const addReaction = useAddChatMessageReaction();
   const removeReaction = useRemoveChatMessageReaction();
+  const [activeReactionMessageId, setActiveReactionMessageId] = useState<string | null>(null);
+  useEffect(() => setActiveReactionMessageId(null), [id]);
+  const dismissReactionMenu = () => setActiveReactionMessageId(null);
   const [draft, setDraft] = useState('');
   const [draftMentions, setDraftMentions] = useState<MessageMention[]>([]);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
@@ -150,17 +155,24 @@ export default function ChatScreen() {
   const [showParticipants, setShowParticipants] = useState(false);
   const [participantQuery, setParticipantQuery] = useState('');
   const [actionError, setActionError] = useState('');
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; fullName: string } | null>(null);
+  const removalInFlight = useRef(false);
+  const [removeError, setRemoveError] = useState('');
+  useEffect(() => { setRemoveTarget(null); setRemoveError(''); }, [id, user?.id]);
   const [selectedAttachments, setSelectedAttachments] = useState<SelectedAttachment[]>([]);
+  const attachmentUploads = useRef(new ChatAttachmentUploadCache());
+  const attachmentSendPending = useRef(false);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
-  const [deleteClock, setDeleteClock] = useState(Date.now());
+  const [showDeleteConversation, setShowDeleteConversation] = useState(false);
+  const [conversationDeleteError, setConversationDeleteError] = useState('');
   const [deleteToast, setDeleteToast] = useState('');
   const [selectedProfile, setSelectedProfile] = useState<SelectedProfile | null>(null);
   const lastReadMessageId = useRef<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const canManage = Boolean(chat && chat.type !== 'direct' && (role === 'Admin' || chat.createdBy === user?.id));
-  const canDeleteChat = Boolean(chat && chat.type !== 'direct' && role === 'Admin');
+  const canManage = Boolean(chat && chat.type !== 'direct' && (role === 'Admin' || role === 'Staff-Coach' || chat.createdBy === user?.id));
+  const canDeleteChat = Boolean(chat);
   const availablePeople = useMemo(() => ((people.data ?? []) as DirectoryPerson[]).filter((person) => person.status === 'active' && !chat?.members.some((member) => member.id === person.id)), [chat?.members, people.data]);
   const filteredAvailablePeople = useMemo(() => {
     const search = participantQuery.trim().toLocaleLowerCase();
@@ -172,7 +184,7 @@ export default function ChatScreen() {
   }, [availablePeople, participantQuery, catalog]);
   const conversationPeople = useMemo(() => (chat?.members ?? []).map((member) => {
     const directoryPerson = (people.data as DirectoryPerson[] | undefined)?.find((person) => person.id === member.id);
-    return { ...member, role: directoryPerson?.role ?? member.role, roleTag: directoryPerson?.roleTag ?? (member as typeof member & { roleTag?: string }).roleTag, status: directoryPerson?.status ?? 'active', teams: directoryPerson?.teams ?? [], profilePhotoUri: directoryPerson?.profilePhotoUri };
+    return { ...member, role: directoryPerson?.role ?? member.role, roleTag: directoryPerson?.roleTag ?? (member as typeof member & { roleTag?: string }).roleTag, status: directoryPerson?.status ?? 'active', teams: directoryPerson?.teams ?? [], profilePhotoUri: directoryPerson?.profilePhotoUri ?? member.profilePhotoUri ?? null };
   }), [chat?.members, people.data]);
   const sortedConversationPeople = useMemo(() => [...conversationPeople].sort((a, b) => {
     const aPinned = a.role === 'Admin' || a.role === 'Staff-Coach';
@@ -231,22 +243,8 @@ export default function ChatScreen() {
       },
     });
   };
-  const visibleMessages = (messages.data ?? []) as ChatMessage[];
-  useEffect(() => {
-    if (!deleteTarget) return;
-    setDeleteClock(Date.now());
-    const timer = setInterval(() => setDeleteClock(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [deleteTarget]);
-  useEffect(() => {
-    if (!deleteToast) return;
-    const timer = setTimeout(() => setDeleteToast(''), 4500);
-    return () => clearTimeout(timer);
-  }, [deleteToast]);
-  const canDeleteForEveryone = Boolean(deleteTarget && deleteTarget.senderId === user?.id
-    && !deleteTarget.deletedForEveryone
-    && deleteClock - new Date(deleteTarget.createdAt).getTime() < 15 * 60_000);
-  const latestMessageId = (messages.data as ChatMessage[] | undefined)?.at(-1)?.id;
+  const messageHistoryRows = useMemo(() => buildMessageHistoryRows((messages.data ?? []) as ChatMessage[]).reverse(), [messages.data]);
+  const latestMessageId = messageHistoryRows[0]?.message.id;
   useEffect(() => {
     if (!id || !latestMessageId || lastReadMessageId.current === latestMessageId) return;
     lastReadMessageId.current = latestMessageId;
@@ -261,7 +259,7 @@ export default function ChatScreen() {
   const addAttachment = async (kind: 'image' | 'file') => {
     try {
       const result = kind === 'image'
-        ? await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8, base64: true })
+        ? await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8, base64: false })
         : await DocumentPicker.getDocumentAsync({ type: ['image/*', 'application/pdf', 'text/plain', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'], copyToCacheDirectory: true });
       if (result.canceled) return;
       const asset = kind === 'image' ? result.assets[0] : result.assets[0];
@@ -297,34 +295,40 @@ export default function ChatScreen() {
       });
       return;
     }
-    if ((!text && !selectedAttachments.length) || !id || sendMessage.isPending || uploading) return;
+    if ((!text && !selectedAttachments.length) || !id || sendMessage.isPending || uploading || attachmentSendPending.current) return;
     setSendError('');
     if (selectedAttachments.length) {
+      attachmentSendPending.current = true;
       setUploading(true);
       try {
         const attachments = await Promise.all(selectedAttachments.map(async (attachment) => {
-          const sourceUri = attachment.base64 ? `data:${attachment.contentType};base64,${attachment.base64}` : attachment.uri;
-          const body = attachment.file ?? await (await fetch(sourceUri)).blob();
-          if (Platform.OS === 'web') {
-            const upload = await customFetch<{ objectPath: string }>(`/api/chats/${id}/attachments/upload?fileName=${encodeURIComponent(attachment.fileName)}`, {
-              method: 'POST',
-              responseType: 'json',
-              suppressUnauthorizedHandler: true,
-              headers: { 'content-type': attachment.contentType },
-              body,
-            });
-            return { ...upload, fileName: attachment.fileName, contentType: attachment.contentType, size: attachment.size };
-          }
-          const upload = await customFetch<{ uploadURL: string; objectPath: string }>(`/api/chats/${id}/attachments/upload-url`, { method: 'POST', responseType: 'json', suppressUnauthorizedHandler: true, body: JSON.stringify({ fileName: attachment.fileName, contentType: attachment.contentType, size: attachment.size }) });
-          const put = await fetch(upload.uploadURL, { method: 'PUT', headers: { 'content-type': attachment.contentType }, body });
-          if (!put.ok) throw new Error(`Upload failed (${put.status}). Please try again.`);
+          const scope = `${user?.id}:${id}`;
+          const upload = await attachmentUploads.current.getOrUpload(attachment, scope, async () => {
+            const sourceUri = attachment.base64 ? `data:${attachment.contentType};base64,${attachment.base64}` : attachment.uri;
+            const body = attachment.file ?? await (await fetch(sourceUri)).blob();
+            if (Platform.OS === 'web') {
+              return await customFetch<{ objectPath: string }>(`/api/chats/${id}/attachments/upload?fileName=${encodeURIComponent(attachment.fileName)}`, {
+                method: 'POST', responseType: 'json', suppressUnauthorizedHandler: true,
+                headers: { 'content-type': attachment.contentType }, body,
+              });
+            }
+            const signedUpload = await customFetch<{ uploadURL: string; objectPath: string }>(`/api/chats/${id}/attachments/upload-url`, { method: 'POST', responseType: 'json', suppressUnauthorizedHandler: true, body: JSON.stringify({ fileName: attachment.fileName, contentType: attachment.contentType, size: attachment.size }) });
+            const put = await fetch(signedUpload.uploadURL, { method: 'PUT', headers: { 'content-type': attachment.contentType }, body });
+            if (!put.ok) throw new Error(`Upload failed (${put.status}). Please try again.`);
+            return { objectPath: signedUpload.objectPath };
+          });
           return { ...upload, fileName: attachment.fileName, contentType: attachment.contentType, size: attachment.size };
         }));
         const created = await customFetch<ChatMessage>(`/api/chats/${id}/messages`, { method: 'POST', responseType: 'json', suppressUnauthorizedHandler: true, body: JSON.stringify({ text, attachments, replyToMessageId: replyingTo?.id, mentions }) });
         queryClient.setQueryData(messages.queryKey, (current: unknown) => [...((current ?? []) as ChatMessage[]), created]);
         void queryClient.invalidateQueries({ queryKey: chats.queryKey });
         setDraft(''); setDraftMentions([]); setSelection({ start: 0, end: 0 }); setSelectedAttachments([]); setReplyingTo(null);
-      } catch (error) { setSendError(error instanceof Error ? error.message : 'Attachments could not be sent. Please try again.'); } finally { setUploading(false); }
+      } catch (error) {
+        if (typeof error === 'object' && error !== null && 'status' in error && Number(error.status) === 409) {
+          refreshConversation();
+          setSendError('An attachment was already sent. Check messages, then remove and reattach any files you still want to send.');
+        } else setSendError(error instanceof Error ? error.message : 'Attachments could not be sent. Please try again.');
+      } finally { attachmentSendPending.current = false; setUploading(false); }
       return;
     }
     sendMessage.mutate({ conversationId: id, data: { text, replyToMessageId: replyingTo?.id, mentions } }, {
@@ -340,8 +344,11 @@ export default function ChatScreen() {
     });
   };
   const updateDraft = (nextDraft: string) => {
-    setDraftMentions((current) => reconcileMentions(draft, nextDraft, current));
-    setDraft(nextDraft);
+    const collapsed = collapseMentionLastName(draft, nextDraft, draftMentions, selection,
+      (userId) => conversationPeople.find((person) => person.id === userId)?.fullName);
+    setDraftMentions(collapsed ? collapsed.mentions : reconcileMentions(draft, nextDraft, draftMentions));
+    setDraft(collapsed?.text ?? nextDraft);
+    if (collapsed) setSelection({ start: collapsed.cursor, end: collapsed.cursor });
   };
   const updateSelection = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => setSelection(event.nativeEvent.selection);
   const insertMention = (person: { id: string; fullName: string }) => {
@@ -371,76 +378,91 @@ export default function ChatScreen() {
     setSelection({ start: 0, end: 0 });
     setSendError('');
   };
-  const removeMessage = async (message: ChatMessage, scope: 'me' | 'everyone') => {
+  // A deletion on another device must also clear any open history and draft quote.
+  useEffect(() => {
+    const status = typeof messages.error === 'object' && messages.error !== null && 'status' in messages.error ? Number(messages.error.status) : 0;
+    if (!messages.isError || status !== 403 || !id) return;
+    queryClient.setQueryData(messages.queryKey, []);
+    queryClient.setQueryData(chats.queryKey, (current: unknown) => ((current ?? []) as Array<{ id: string }>).filter((item) => item.id !== id));
+    setReplyingTo(null);
+    cancelEdit();
+    router.replace('/(tabs)/messages');
+  }, [messages.isError, messages.error, id, queryClient, router]);
+  useEffect(() => {
+    if (!messages.isSuccess) return;
+    const visible = new Set((messages.data ?? []).map((message) => message.id));
+    if (replyingTo && !visible.has(replyingTo.id)) setReplyingTo(null);
+    if (editingMessage && !visible.has(editingMessage.id)) cancelEdit();
+  }, [messages.data, messages.isSuccess, replyingTo?.id, editingMessage?.id]);
+  const removeMessage = (message: ChatMessage) => {
     if (!id || deleteMessage.isPending) return;
-    setDeleteTarget(null);
     setDeleteToast('');
-    await queryClient.cancelQueries({ queryKey: messages.queryKey });
-    const previous = queryClient.getQueryData<ChatMessage[]>(messages.queryKey) ?? [];
-    const index = previous.findIndex((item) => item.id === message.id);
-    queryClient.setQueryData<ChatMessage[]>(messages.queryKey, (current = []) =>
-      scope === 'me' ? current.filter((item) => item.id !== message.id)
-        : current.map((item) => item.id === message.id ? {
-          ...item, text: '', mentions: [], attachments: [], reactions: [], replyTo: null,
-          deletedForEveryone: true, deletedAt: new Date().toISOString(),
-        } : item));
-    deleteMessage.mutate({ conversationId: id, messageId: message.id, data: { scope } }, {
-      onSuccess: () => {
+    deleteMessage.mutate({ conversationId: id, messageId: message.id, data: { scope: 'me' } }, {
+      onSuccess: async () => {
+        await queryClient.cancelQueries({ queryKey: messages.queryKey });
+        queryClient.setQueryData<ChatMessage[]>(messages.queryKey, (current = []) =>
+          current.filter((item) => item.id !== message.id).map((item) => item.replyTo?.id === message.id ? { ...item, replyTo: null } : item));
+        const remaining = queryClient.getQueryData<ChatMessage[]>(messages.queryKey) ?? [];
+        queryClient.setQueryData(chats.queryKey, (current: unknown) => ((current ?? []) as Array<{ id: string; lastMessage?: { id: string } | null }>).map((item) =>
+          item.id === id && item.lastMessage?.id === message.id ? { ...item, lastMessage: remaining.at(-1) ?? null } : item));
+        setDeleteTarget(null);
+        if (replyingTo?.id === message.id) setReplyingTo(null);
         if (editingMessage?.id === message.id) cancelEdit();
         refreshConversation();
       },
       onError: (error) => {
-        if (index >= 0) queryClient.setQueryData<ChatMessage[]>(messages.queryKey, (current = []) =>
-          scope === 'me'
-            ? current.some((item) => item.id === message.id) ? current : [
-              ...current.slice(0, Math.min(index, current.length)), previous[index], ...current.slice(Math.min(index, current.length)),
-            ]
-            : current.map((item) => item.id === message.id ? previous[index] : item));
-        const status = typeof error === 'object' && error !== null && 'status' in error ? Number(error.status) : 0;
-        setDeleteToast(status === 409 && scope === 'everyone'
-          ? 'The 15-minute window has passed. Your message was not deleted for everyone.'
-          : `Message not deleted. ${loadErrorMessage(error)}`);
-        void queryClient.invalidateQueries({ queryKey: messages.queryKey });
+        setDeleteToast(`Message not deleted. ${loadErrorMessage(error)}`);
       },
     });
   };
   const deleteConversation = () => {
-    if (!id) return;
+    if (!id || deleteChat.isPending) return;
+    setConversationDeleteError('');
     deleteChat.mutate({ conversationId: id }, {
-      onSuccess: () => {
+      onSuccess: async () => {
+        await queryClient.cancelQueries({ queryKey: chats.queryKey });
+        await queryClient.cancelQueries({ queryKey: messages.queryKey });
         queryClient.setQueryData(chats.queryKey, (current: unknown) => ((current ?? []) as Array<{ id: string }>).filter((item) => item.id !== id));
-        router.back();
+        queryClient.removeQueries({ queryKey: ['chat-messages', id] });
+        setShowDeleteConversation(false);
+        setReplyingTo(null);
+        cancelEdit();
+        void queryClient.invalidateQueries({ queryKey: chats.queryKey });
+        router.replace('/(tabs)/messages');
       },
-      onError: (error) => setActionError(loadErrorMessage(error)),
+      onError: (error) => setConversationDeleteError(`Conversation not deleted. ${loadErrorMessage(error)}`),
     });
   };
   const confirmDeleteChat = () => {
-    const title = 'Delete conversation?';
-    const message = 'This will remove the channel or group chat and its history for everyone.';
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) deleteConversation();
-      return;
-    }
-    Alert.alert(title, message, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: deleteConversation }]);
+    setConversationDeleteError('');
+    setShowDeleteConversation(true);
   };
   const removeParticipant = (member: { id: string; fullName: string }) => {
-    if (!id) return;
+    if (!id || !canManage || removalInFlight.current) return;
+    removalInFlight.current = true;
+    setActionError('');
+    setRemoveError('');
     removeMember.mutate({ conversationId: id, userId: member.id }, {
       onSuccess: () => {
         queryClient.setQueryData(chats.queryKey, (current: unknown) => ((current ?? []) as Array<{ id: string; members: Array<{ id: string }> }>).map((item) => item.id === id ? { ...item, members: item.members.filter((person) => person.id !== member.id) } : item));
+        void queryClient.invalidateQueries({ queryKey: chats.queryKey });
         void queryClient.invalidateQueries({ queryKey: messages.queryKey });
+        setRemoveTarget(null);
+        if (member.id === user?.id) router.replace('/(tabs)/messages');
       },
-      onError: (error) => setActionError(loadErrorMessage(error)),
+      onError: (error) => {
+        const details = error as { status?: number; data?: { message?: string }; message?: string };
+        setRemoveError(details.status === 401 ? 'Your session expired. Please sign in again.'
+          : details.data?.message ?? 'Could not remove this participant. Check your connection and try again.');
+      },
+      onSettled: () => { removalInFlight.current = false; },
     });
   };
   const confirmRemoveMember = (member: { id: string; fullName: string }) => {
-    const title = 'Remove participant?';
-    const message = `${member.fullName} will no longer be able to read or send messages in this conversation.`;
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) removeParticipant(member);
-      return;
-    }
-    Alert.alert(title, message, [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => removeParticipant(member) }]);
+    if (!canManage || removalInFlight.current) return;
+    setRemoveError('');
+    setActionError('');
+    setRemoveTarget(member);
   };
   const addParticipant = (userId: string) => {
     if (!id) return;
@@ -461,23 +483,36 @@ export default function ChatScreen() {
       onError: (error) => setActionError(loadErrorMessage(error)),
     });
   };
-  return <KeyboardAvoidingView style={[styles.container, { backgroundColor: colors.background }]} behavior="padding" keyboardVerticalOffset={0}>
+  const highlightDraftMentions = draftMentions.some((mention) => draft.slice(mention.start, mention.end) === `@${mention.displayName}`);
+  return <KeyboardAvoidingView onTouchStart={dismissReactionMenu} onPointerDown={dismissReactionMenu} style={[styles.container, { backgroundColor: colors.background }]} behavior="padding" keyboardVerticalOffset={0}>
     <View style={{ paddingTop: insets.top + 10 }}><View style={styles.header}><Pressable onPress={() => router.back()}><Feather name="arrow-left" size={22} color={colors.foreground} /></Pressable><Text numberOfLines={1} style={[styles.title, { color: colors.foreground }]}>{chat?.name ?? 'Conversation'}</Text><View style={styles.headerActions}>{chat?.type === 'group' || canManage ? <Pressable testID="manage-participants" accessibilityLabel="Group chat info" onPress={() => setShowParticipants((visible) => !visible)}><Feather name="users" size={21} color={colors.primary} /></Pressable> : null}{canDeleteChat ? <Pressable testID="delete-chat" disabled={deleteChat.isPending} onPress={confirmDeleteChat}><Feather name="trash-2" size={20} color={colors.destructive} /></Pressable> : null}{!canManage && chat?.type !== 'group' && !canDeleteChat ? <View style={{ width: 22 }} /> : null}</View></View></View>
     {showParticipants && chat ? <View style={[styles.participantPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.participantHeading}>
         {chat.type !== 'group' ? <Text style={[styles.participantTitle, { color: colors.foreground }]}>Participants · {chat.members.length}</Text> : null}
         <Pressable onPress={() => setShowParticipants(false)} accessibilityLabel="Close group info" style={{ marginLeft: 'auto' }}><Feather name="x" size={17} color={colors.mutedForeground} /></Pressable>
       </View>
-      {chat.type === 'group' ? <View style={styles.participantRow}>
-        <View style={{ flex: 1 }}><Text style={[styles.participantName, { color: colors.foreground }]}>Mute notifications</Text><Text style={{ color: colors.mutedForeground, fontSize: 11 }}>Messages will still appear in this chat.</Text></View>
-        <Switch testID="group-mute-toggle" accessibilityLabel="Mute group notifications" value={chat.isMuted} disabled={mutePending} onValueChange={() => toggleMute(chat, () => setActionError('Could not update mute setting. Please try again.'))} trackColor={{ true: colors.primary }} />
+       {chat.type === 'group' ? <View>
+         <Text style={[muteStyles.heading, { color: colors.foreground }]}>Group notifications</Text>
+         {([
+           ['unmuted', 'Unmuted', 'Notify me about every message'],
+           ['all', 'Mute all', 'No message or mention alerts'],
+           ['mentions', 'Mute except mentions', 'Only alerts when someone mentions you'],
+         ] as [ChatMuteMode, string, string][]).map(([mode, label, description]) => <Pressable
+           key={mode}
+           testID={`group-mute-${mode}`}
+           accessibilityRole="radio"
+           accessibilityState={{ selected: getChatMuteMode(chat) === mode, disabled: mutePending }}
+           disabled={mutePending}
+           onPress={() => { if (getChatMuteMode(chat) !== mode) setMuteMode(chat, mode, () => setActionError('Could not update mute setting. Please try again.')); }}
+           style={muteStyles.option}
+         ><Feather name={getChatMuteMode(chat) === mode ? 'check-circle' : 'circle'} size={18} color={getChatMuteMode(chat) === mode ? colors.primary : colors.mutedForeground} /><View style={muteStyles.optionText}><Text style={[muteStyles.label, { color: colors.foreground }]}>{label}</Text><Text style={[muteStyles.description, { color: colors.mutedForeground }]}>{description}</Text></View></Pressable>)}
        </View> : null}
        <ScrollView style={{ maxHeight: 260 }} contentContainerStyle={{ gap: 10 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
         {chat.type === 'group' ? <Text style={[styles.addLabel, { color: colors.primary, fontSize: 13 }]}>Members</Text> : null}
         {sortedConversationPeople.map((member) => <View key={member.id} style={styles.participantRow}>
           <Pressable testID={`group-member-${member.id}`} accessibilityRole="button" accessibilityLabel={`View ${member.fullName}'s profile`} onPress={() => openMentionProfile(member.id, member.fullName)} style={{ flex: 1, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <View style={[styles.mentionAvatar, { width: 36, height: 36, borderRadius: 18, backgroundColor: `${colors.primary}20` }]}>
-              {member.profilePhotoUri ? <Image source={{ uri: member.profilePhotoUri }} accessibilityLabel={`${member.fullName} profile picture`} resizeMode="cover" style={[styles.mentionAvatarImage, { width: 36, height: 36 }]} /> : <Text style={[styles.mentionAvatarText, { color: colors.primary }]}>{member.fullName.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</Text>}
+              {member.profilePhotoUri ? <CachedImage source={{ uri: member.profilePhotoUri }} accessibilityLabel={`${member.fullName} profile picture`} resizeMode="cover" style={[styles.mentionAvatarImage, { width: 36, height: 36 }]} /> : <Text style={[styles.mentionAvatarText, { color: colors.primary }]}>{member.fullName.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</Text>}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.participantName, { color: colors.foreground }]}>{member.fullName}</Text>
@@ -487,7 +522,7 @@ export default function ChatScreen() {
               </View>
             </View>
           </Pressable>
-          {canManage && member.id !== chat.createdBy ? <Pressable testID={`remove-member-${member.id}`} onPress={() => confirmRemoveMember(member)}><Text style={[styles.removeText, { color: colors.destructive }]}>Remove</Text></Pressable> : null}
+          {canManage && member.id !== chat.createdBy ? <Pressable testID={`remove-member-${member.id}`} accessibilityRole="button" accessibilityLabel={`Remove ${member.fullName}`} disabled={removeMember.isPending} onPress={() => confirmRemoveMember(member)}><Text style={[styles.removeText, { color: colors.destructive }]}>Remove</Text></Pressable> : null}
         </View>)}
         {canManage ? <>
           <Text style={[styles.addLabel, { color: colors.primary, fontSize: 13 }]}>ADD PARTICIPANT</Text>
@@ -509,7 +544,7 @@ export default function ChatScreen() {
           {filteredAvailablePeople.map((person) => <View key={person.id} style={styles.participantRow}>
             <View style={memberTagStyles.person}>
               <View style={[styles.mentionAvatar, memberTagStyles.avatar, { backgroundColor: `${colors.primary}20` }]}>
-                {person.profilePhotoUri ? <Image source={{ uri: person.profilePhotoUri }} accessibilityLabel={`${person.fullName} profile picture`} resizeMode="cover" style={memberTagStyles.avatarImage} /> : <Text style={[styles.mentionAvatarText, { color: colors.primary }]}>{person.fullName.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</Text>}
+                {person.profilePhotoUri ? <CachedImage source={{ uri: person.profilePhotoUri }} accessibilityLabel={`${person.fullName} profile picture`} resizeMode="cover" style={memberTagStyles.avatarImage} /> : <Text style={[styles.mentionAvatarText, { color: colors.primary }]}>{person.fullName.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</Text>}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.participantName, { color: colors.foreground }]}>{person.fullName}</Text>
@@ -526,29 +561,76 @@ export default function ChatScreen() {
         </> : null}
       </ScrollView>
     </View> : null}
-      {messages.isLoading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : messages.isError ? <View style={styles.center}><Text style={[styles.error, { color: colors.foreground }]}>Unable to load messages.</Text><Text style={{ color: colors.mutedForeground }}>{loadErrorMessage(messages.error)}</Text><Pressable onPress={() => void messages.refetch()} style={[styles.retry, { borderColor: colors.border }]}><Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text></Pressable></View> : <FlatList data={[...visibleMessages].reverse()} inverted keyExtractor={(item) => item.id} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 9 }} removeClippedSubviews initialNumToRender={16} maxToRenderPerBatch={10} windowSize={7} updateCellsBatchingPeriod={50} renderItem={({ item }) => <SwipeableMessage item={item} mine={item.senderId === user?.id} viewerId={user?.id} colors={colors} conversationId={id} onOpenProfile={() => openProfile(item)} onOpenMention={openMentionProfile} onReply={() => { setEditingMessage(null); setReplyingTo(item); }} onEdit={() => beginEdit(item)} onDelete={() => { if (!deleteMessage.isPending) setDeleteTarget(item); }} onReact={(emoji, reacted) => updateReaction(item.id, emoji, reacted)} reactionPending={addReaction.isPending || removeReaction.isPending || deleteMessage.isPending} />} ListEmptyComponent={<View style={styles.center}><Text style={[styles.error, { color: colors.foreground }]}>No messages yet</Text><Text style={{ color: colors.mutedForeground }}>Start the conversation.</Text></View>} />}
-       <View style={[styles.composer, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 10) }]}>{mentionSuggestions.length ? <View testID="mention-suggestions" style={[styles.mentionSuggestions, { backgroundColor: colors.card, borderColor: colors.border }]}>{mentionSuggestions.map((person) => <Pressable key={person.id} testID={`mention-suggestion-${person.id}`} onPress={() => insertMention(person)} style={styles.mentionSuggestion}><View style={[styles.mentionAvatar, { backgroundColor: `${colors.primary}20` }]}>{person.profilePhotoUri ? <Image source={{ uri: person.profilePhotoUri }} style={styles.mentionAvatarImage} /> : <Text style={[styles.mentionAvatarText, { color: colors.primary }]}>{person.fullName.charAt(0).toUpperCase()}</Text>}</View><View style={styles.mentionSuggestionText}><Text style={[styles.mentionName, { color: colors.foreground }]}>{person.fullName}</Text><Text style={[styles.mentionRole, { color: colors.mutedForeground }]}>{roleLabel(person.role)}</Text></View></Pressable>)}</View> : null}{editingMessage ? <View style={[styles.editComposer, { borderLeftColor: colors.primary, backgroundColor: `${colors.primary}10` }]}><View style={styles.replyComposerText}><Text style={[styles.replyComposerName, { color: colors.primary }]}>Editing message</Text><Text numberOfLines={1} style={[styles.replyComposerPreview, { color: colors.mutedForeground }]}>{editingMessage.text}</Text></View><Pressable testID="cancel-edit" accessibilityLabel="Cancel editing" onPress={cancelEdit} style={styles.cancelReply}><Feather name="x" size={17} color={colors.mutedForeground} /></Pressable></View> : replyingTo ? <View style={[styles.replyComposer, { borderLeftColor: colors.primary, backgroundColor: `${colors.primary}10` }]}><View style={styles.replyComposerText}><Text style={[styles.replyComposerName, { color: colors.primary }]}>Replying to {replyingTo.senderId === user?.id ? 'yourself' : replyingTo.senderName}</Text><Text numberOfLines={1} style={[styles.replyComposerPreview, { color: colors.mutedForeground }]}>{replyingTo.text || 'Attachment'}</Text></View><Pressable testID="cancel-reply" accessibilityLabel="Cancel reply" onPress={() => setReplyingTo(null)} style={styles.cancelReply}><Feather name="x" size={17} color={colors.mutedForeground} /></Pressable></View> : null}{selectedAttachments.length ? <View style={styles.attachmentQueue}>{selectedAttachments.map((attachment, index) => <Pressable key={`${attachment.uri}-${index}`} onPress={() => setSelectedAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} style={[styles.queuedAttachment, { backgroundColor: `${colors.primary}18` }]}><Feather name={attachment.contentType.startsWith('image/') ? 'image' : 'paperclip'} size={13} color={colors.primary} /><Text numberOfLines={1} style={[styles.queuedAttachmentText, { color: colors.primary }]}>{attachment.fileName}</Text><Feather name="x" size={13} color={colors.primary} /></Pressable>)}</View> : null}<View style={styles.composerRow}><Pressable testID="add-attachment" onPress={chooseAttachment} disabled={uploading || Boolean(editingMessage)} style={[styles.attach, { borderColor: colors.border, opacity: editingMessage ? 0.4 : 1 }]}><Feather name="paperclip" size={18} color={colors.primary} /></Pressable><TextInput testID="message-composer" value={draft} selection={selection} onChangeText={updateDraft} onSelectionChange={updateSelection} placeholder={editingMessage ? 'Edit your message...' : replyingTo ? 'Write a reply...' : 'Write a message...'} placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} onSubmitEditing={() => void send()} returnKeyType="send" /><Pressable testID="send-message" onPress={() => void send()} disabled={sendMessage.isPending || editMessage.isPending || uploading || (!draft.trim() && !selectedAttachments.length)} style={[styles.send, { backgroundColor: (draft.trim() || selectedAttachments.length) && !sendMessage.isPending && !editMessage.isPending && !uploading ? colors.primary : colors.muted }]}><Feather name={sendMessage.isPending || editMessage.isPending || uploading ? 'clock' : editingMessage ? 'check' : 'arrow-up'} size={18} color="#fff" /></Pressable></View></View>
-    {sendError ? <Pressable testID="retry-message" onPress={send} style={styles.failure}><Text style={[styles.failureText, { color: colors.primary }]}>{sendError} Tap to retry.</Text></Pressable> : null}
+      {messages.isLoading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : messages.isError ? <View style={styles.center}><Text style={[styles.error, { color: colors.foreground }]}>Unable to load messages.</Text><Text style={{ color: colors.mutedForeground }}>{loadErrorMessage(messages.error)}</Text><Pressable onPress={() => void messages.refetch()} style={[styles.retry, { borderColor: colors.border }]}><Text style={[styles.retryText, { color: colors.primary }]}>Try again</Text></Pressable></View> : <FlatList
+        data={messageHistoryRows}
+        extraData={activeReactionMessageId}
+        inverted
+        keyExtractor={(row) => row.message.id}
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ padding: 16, gap: 9 }}
+        removeClippedSubviews
+        initialNumToRender={16}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        renderItem={({ item: { message: item, dateSeparator } }) => <View>
+          {dateSeparator ? <MessageDateSeparator dateKey={dateSeparator.key} label={dateSeparator.label} color={colors.mutedForeground} /> : null}
+          <SwipeableMessage item={item} mine={item.senderId === user?.id} viewerId={user?.id} colors={colors} conversationId={id} reactionMenuOpen={activeReactionMessageId === item.id} onToggleReactionMenu={() => setActiveReactionMessageId((current) => current === item.id ? null : item.id)} onDismissReactionMenu={dismissReactionMenu} onOpenProfile={() => openProfile(item)} onOpenMention={openMentionProfile} onReply={() => { setEditingMessage(null); setReplyingTo(item); }} onEdit={() => beginEdit(item)} onDelete={() => { if (!deleteMessage.isPending) setDeleteTarget(item); }} onReact={(emoji, reacted) => updateReaction(item.id, emoji, reacted)} reactionPending={addReaction.isPending || removeReaction.isPending || deleteMessage.isPending} />
+        </View>}
+        ListEmptyComponent={<View style={styles.center}><Text style={[styles.error, { color: colors.foreground }]}>No messages yet</Text><Text style={{ color: colors.mutedForeground }}>Start the conversation.</Text></View>}
+      />}
+       <View style={[styles.composer, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 10) }]}>
+         {mentionSuggestions.length ? <View testID="mention-suggestions" style={[styles.mentionSuggestions, { backgroundColor: colors.card, borderColor: colors.border }]}>
+           {mentionSuggestions.map((person) => <Pressable key={person.id} testID={`mention-suggestion-${person.id}`} onPress={() => insertMention(person)} style={styles.mentionSuggestion}>
+             <View style={[styles.mentionAvatar, { backgroundColor: `${colors.primary}20` }]}>{person.profilePhotoUri ? <CachedImage source={{ uri: person.profilePhotoUri }} style={styles.mentionAvatarImage} /> : <Text style={[styles.mentionAvatarText, { color: colors.primary }]}>{person.fullName.charAt(0).toUpperCase()}</Text>}</View>
+             <View style={styles.mentionSuggestionText}><Text style={[styles.mentionName, { color: colors.foreground }]}>{person.fullName}</Text><Text style={[styles.mentionRole, { color: colors.mutedForeground }]}>{roleLabel(person.role)}</Text></View>
+           </Pressable>)}
+         </View> : null}
+         {editingMessage ? <View style={[styles.editComposer, { borderLeftColor: colors.primary, backgroundColor: `${colors.primary}10` }]}>
+           <View style={styles.replyComposerText}><Text style={[styles.replyComposerName, { color: colors.primary }]}>Editing message</Text><Text numberOfLines={1} style={[styles.replyComposerPreview, { color: colors.mutedForeground }]}>{editingMessage.text}</Text></View>
+           <Pressable testID="cancel-edit" accessibilityLabel="Cancel editing" onPress={cancelEdit} style={styles.cancelReply}><Feather name="x" size={17} color={colors.mutedForeground} /></Pressable>
+         </View> : replyingTo ? <View style={[styles.replyComposer, { borderLeftColor: colors.primary, backgroundColor: `${colors.primary}10` }]}>
+           <View style={styles.replyComposerText}><Text style={[styles.replyComposerName, { color: colors.primary }]}>Replying to {replyingTo.senderId === user?.id ? 'yourself' : replyingTo.senderName}</Text><Text numberOfLines={1} style={[styles.replyComposerPreview, { color: colors.mutedForeground }]}>{replyingTo.text || 'Attachment'}</Text></View>
+           <Pressable testID="cancel-reply" accessibilityLabel="Cancel reply" onPress={() => setReplyingTo(null)} style={styles.cancelReply}><Feather name="x" size={17} color={colors.mutedForeground} /></Pressable>
+         </View> : null}
+         {selectedAttachments.length ? <View style={styles.attachmentQueue}>{selectedAttachments.map((attachment, index) => <Pressable key={`${attachment.uri}-${index}`} onPress={() => setSelectedAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} style={[styles.queuedAttachment, { backgroundColor: `${colors.primary}18` }]}><Feather name={attachment.contentType.startsWith('image/') ? 'image' : 'paperclip'} size={13} color={colors.primary} /><Text numberOfLines={1} style={[styles.queuedAttachmentText, { color: colors.primary }]}>{attachment.fileName}</Text><Feather name="x" size={13} color={colors.primary} /></Pressable>)}</View> : null}
+         <View style={styles.composerRow}>
+           <Pressable testID="add-attachment" onPress={chooseAttachment} disabled={uploading || Boolean(editingMessage)} style={[styles.attach, { borderColor: colors.border, opacity: editingMessage ? 0.4 : 1 }]}><Feather name="paperclip" size={18} color={colors.primary} /></Pressable>
+           <View style={draftMentionStyles.composerInput}>
+             <TextInput testID="message-composer" value={draft} selection={selection} selectionColor={colors.primary} onChangeText={updateDraft} onSelectionChange={updateSelection} placeholder={editingMessage ? 'Edit your message...' : replyingTo ? 'Write a reply...' : 'Write a message...'} placeholderTextColor={colors.mutedForeground} style={[styles.input, draftMentionStyles.inputText, { color: highlightDraftMentions ? 'transparent' : colors.foreground, borderColor: colors.border }]} onSubmitEditing={() => void send()} returnKeyType="send" />
+             {highlightDraftMentions ? <DraftMentionHighlight text={draft} mentions={draftMentions} color={colors.foreground} mentionColor={colors.primary} /> : null}
+           </View>
+           <Pressable testID="send-message" onPress={() => void send()} disabled={sendMessage.isPending || editMessage.isPending || uploading || (!draft.trim() && !selectedAttachments.length)} style={[styles.send, { backgroundColor: (draft.trim() || selectedAttachments.length) && !sendMessage.isPending && !editMessage.isPending && !uploading ? colors.primary : colors.muted }]}><Feather name={sendMessage.isPending || editMessage.isPending || uploading ? 'clock' : editingMessage ? 'check' : 'arrow-up'} size={18} color="#fff" /></Pressable>
+         </View>
+       </View>
+     {sendError ? <Pressable testID="retry-message" onPress={send} style={styles.failure}><Text style={[styles.failureText, { color: colors.primary }]}>{sendError} Tap to retry.</Text></Pressable> : null}
     {actionError ? <Pressable onPress={() => setActionError('')} style={styles.actionFailure}><Text style={[styles.failureText, { color: colors.primary }]}>{actionError} Tap to dismiss.</Text></Pressable> : null}
-    <Modal visible={Boolean(deleteTarget)} transparent animationType="slide" onRequestClose={() => setDeleteTarget(null)}>
+    <Modal visible={Boolean(removeTarget)} transparent animationType="slide" onRequestClose={() => { if (!removalInFlight.current) setRemoveTarget(null); }}>
       <View style={styles.deleteOverlay}>
-        <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Cancel deletion" onPress={() => setDeleteTarget(null)} />
+        <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Cancel participant removal" disabled={removeMember.isPending} onPress={() => setRemoveTarget(null)} />
         <View style={[styles.deleteSheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <View style={styles.deleteGroup}>
-            <View style={styles.deleteHeading}><Text style={styles.deleteTitle}>Delete message?</Text><Text style={styles.deleteSubtitle}>Choose who can still see this message.</Text></View>
-            <Pressable testID="delete-for-me" accessibilityRole="button" onPress={() => deleteTarget && removeMessage(deleteTarget, 'me')} style={styles.deleteOption}><Text style={styles.deleteOptionText}>Delete for me</Text></Pressable>
-            {canDeleteForEveryone ? <Pressable testID="delete-for-everyone" accessibilityRole="button" onPress={() => deleteTarget && removeMessage(deleteTarget, 'everyone')} style={styles.deleteOption}><Text style={styles.deleteOptionText}>Delete for everyone</Text></Pressable> : null}
+            <View style={styles.deleteHeading}>
+              <Text style={styles.deleteTitle}>Remove participant?</Text>
+              <Text style={styles.deleteSubtitle}>{removeTarget?.fullName} will no longer be able to read or send messages in this conversation.</Text>
+              {removeError ? <Text testID="remove-participant-error" accessibilityRole="alert" style={[styles.deleteSubtitle, { color: colors.destructive }]}>{removeError}</Text> : null}
+            </View>
+            <Pressable testID="confirm-remove-participant" accessibilityRole="button" disabled={removeMember.isPending} onPress={() => removeTarget && removeParticipant(removeTarget)} style={styles.deleteOption}>
+              <Text style={styles.deleteOptionText}>{removeMember.isPending ? 'Removing…' : 'Remove participant'}</Text>
+            </Pressable>
           </View>
-          <Pressable testID="cancel-delete" accessibilityRole="button" onPress={() => setDeleteTarget(null)} style={styles.deleteCancel}><Text style={styles.deleteCancelText}>Cancel</Text></Pressable>
+          <Pressable testID="cancel-remove-participant" accessibilityRole="button" disabled={removeMember.isPending} onPress={() => setRemoveTarget(null)} style={styles.deleteCancel}><Text style={styles.deleteCancelText}>Cancel</Text></Pressable>
         </View>
       </View>
     </Modal>
-    {deleteToast ? <Pressable accessibilityRole="alert" onPress={() => setDeleteToast('')} style={styles.deleteToast}><Text style={styles.deleteToastText}>{deleteToast}</Text></Pressable> : null}
+    <ChatDeletionConfirmation kind="message" visible={Boolean(deleteTarget)} pending={deleteMessage.isPending} error={deleteToast} onConfirm={() => deleteTarget && removeMessage(deleteTarget)} onCancel={() => { setDeleteTarget(null); setDeleteToast(''); }} />
+    <ChatDeletionConfirmation kind="conversation" visible={showDeleteConversation} pending={deleteChat.isPending} error={conversationDeleteError} onConfirm={deleteConversation} onCancel={() => setShowDeleteConversation(false)} />
        <ProfileModal profile={selectedProfile} colors={colors} catalog={catalog} visible={Boolean(selectedProfile)} canMessage={selectedProfile?.id !== user?.id} loading={createChat.isPending} error={createChat.isError ? 'Could not open a direct message. Please try again.' : ''} onClose={closeProfile} onMessage={messageProfile} />
   </KeyboardAvoidingView>;
 }
 
-function SwipeableMessage({ item, mine, viewerId, colors, onOpenProfile, onOpenMention, onReply, onEdit, onDelete, conversationId, onReact, reactionPending }: {
+function SwipeableMessage({ item, mine, viewerId, colors, onOpenProfile, onOpenMention, onReply, onEdit, onDelete, conversationId, onReact, reactionPending, reactionMenuOpen, onToggleReactionMenu, onDismissReactionMenu }: {
   item: ChatMessage;
   mine: boolean;
   viewerId?: string;
@@ -561,26 +643,32 @@ function SwipeableMessage({ item, mine, viewerId, colors, onOpenProfile, onOpenM
   conversationId: string;
   onReact: (emoji: MessageReaction['emoji'], reacted: boolean) => void;
   reactionPending: boolean;
+  reactionMenuOpen: boolean;
+  onToggleReactionMenu: () => void;
+  onDismissReactionMenu: () => void;
 }) {
-  const [reactionMenuOpen, setReactionMenuOpen] = useState(false);
-  const openActions = () => setReactionMenuOpen(true);
+  const formRouter = useRouter();
+  const formRequestId = formRequestIdFromMessage(item.text);
   const bubble = <View style={styles.messageLayout}>
-    {!mine ? <Pressable testID={`open-profile-${item.senderId}`} accessibilityRole="button" accessibilityLabel={`Open ${item.senderName}'s profile`} onPress={onOpenProfile}>{item.senderProfilePhotoUri ? <Image source={{ uri: item.senderProfilePhotoUri }} accessibilityLabel={`${item.senderName} profile picture`} style={styles.messageAvatar} /> : <View style={[styles.messageAvatar, styles.messageAvatarFallback, { backgroundColor: `${colors.primary}20` }]}><Text style={[styles.messageAvatarText, { color: colors.primary }]}>{item.senderName.trim().charAt(0).toUpperCase()}</Text></View>}</Pressable> : null}
+    {!mine ? <Pressable testID={`open-profile-${item.senderId}`} accessibilityRole="button" accessibilityLabel={`Open ${item.senderName}'s profile`} onPress={onOpenProfile}>{item.senderProfilePhotoUri ? <CachedImage source={{ uri: item.senderProfilePhotoUri }} accessibilityLabel={`${item.senderName} profile picture`} style={styles.messageAvatar} /> : <View style={[styles.messageAvatar, styles.messageAvatarFallback, { backgroundColor: `${colors.primary}20` }]}><Text style={[styles.messageAvatarText, { color: colors.primary }]}>{item.senderName.trim().charAt(0).toUpperCase()}</Text></View>}</Pressable> : null}
     <View style={styles.messageGroup}>
     <Pressable
       testID={`long-press-message-${item.id}`}
       accessibilityRole="button"
       accessibilityLabel={`Message from ${mine ? 'you' : item.senderName}`}
-      onPress={openActions}
-      onLongPress={onDelete}
+      onTouchStart={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPress={onToggleReactionMenu}
+      onLongPress={() => { onDismissReactionMenu(); onDelete(); }}
       delayLongPress={350}
       style={[styles.bubble, { backgroundColor: mine ? colors.primary : colors.card }]}
     >
        <View style={styles.messageHeader}><Text style={[styles.sender, { color: mine ? '#fff' : colors.mutedForeground }]}>{mine ? 'You' : item.senderName}</Text><View style={styles.messageMeta}><Text style={[styles.timestamp, { color: mine ? '#ffffffb8' : colors.mutedForeground }]}>{formatMessageTime(item.createdAt)}</Text>{item.edited && !item.deletedForEveryone ? <Text style={[styles.edited, { color: mine ? '#ffffffb8' : colors.mutedForeground }]}>(edited)</Text> : null}</View></View>
-       {item.replyTo ? <View style={[styles.replyPreview, { borderLeftColor: mine ? '#ffffffaa' : colors.primary, backgroundColor: mine ? '#ffffff18' : `${colors.primary}0D` }]}><Text style={[styles.replyName, { color: mine ? '#fff' : colors.primary }]}>Replying to {item.replyTo.senderId === viewerId ? 'You' : item.replyTo.senderName}</Text><Text numberOfLines={2} style={[styles.replyText, { color: mine ? '#ffffffcc' : colors.mutedForeground }]}>{item.replyTo.text}</Text></View> : null}
-       {item.deletedForEveryone ? <Text style={[styles.deletedMessage, { color: mine ? '#ffffffcc' : colors.mutedForeground }]}>This message was deleted</Text> : item.text ? <MentionText text={item.text} mentions={item.mentions ?? []} mine={mine} colors={colors} onOpenMention={onOpenMention} /> : null}
+       {item.replyTo ? <View style={[styles.replyPreview, { borderLeftColor: mine ? '#ffffffaa' : colors.primary, backgroundColor: mine ? '#ffffff18' : `${colors.primary}0D` }]}><Text style={[styles.replyName, { color: mine ? '#fff' : colors.primary }]}>Replying to {item.replyTo.senderId === viewerId ? 'You' : item.replyTo.senderName}</Text><Text numberOfLines={2} style={[styles.replyText, { color: mine ? '#ffffffcc' : colors.mutedForeground }]}>{visibleFormMessageText(item.replyTo.text)}</Text></View> : null}
+       {item.deletedForEveryone ? <Text style={[styles.deletedMessage, { color: mine ? '#ffffffcc' : colors.mutedForeground }]}>This message was deleted</Text> : item.text ? <MentionText text={visibleFormMessageText(item.text)} mentions={item.mentions ?? []} mine={mine} colors={colors} onOpenMention={onOpenMention} /> : null}
       {item.attachments?.map((attachment) => <AttachmentCard key={attachment.id} attachment={attachment} conversationId={conversationId} mine={mine} colors={colors} />)}
     </Pressable>
+    {formRequestId && !item.deletedForEveryone ? <Pressable accessibilityRole="button" onPress={() => formRouter.push(`/forms/${formRequestId}`)}><Text style={{ color: mine ? colors.primaryForeground : colors.primary, fontFamily: 'Inter_600SemiBold', marginTop: 8 }}>View Request</Text></Pressable> : null}
     {!item.deletedForEveryone ? <MessageReactions
       reactions={item.reactions ?? []}
       colors={colors}
@@ -589,9 +677,15 @@ function SwipeableMessage({ item, mine, viewerId, colors, onOpenProfile, onOpenM
       disabled={reactionPending}
       visible={reactionMenuOpen}
       onReact={onReact}
-      onDismiss={() => setReactionMenuOpen(false)}
+      onDismiss={onDismissReactionMenu}
     /> : null}
-    {reactionMenuOpen ? <View style={styles.messageActions}>{!item.deletedForEveryone ? <><Pressable testID={`reply-message-${item.id}`} accessibilityRole="button" accessibilityLabel={`Reply to ${mine ? 'your message' : item.senderName}`} onPress={() => { setReactionMenuOpen(false); onReply(); }} style={[styles.replyAction, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="message-square" size={15} color={colors.primary} /><Text style={[styles.replyActionText, { color: colors.primary }]}>Reply</Text></Pressable>{mine && item.text ? <Pressable testID={`edit-message-${item.id}`} accessibilityRole="button" onPress={() => { setReactionMenuOpen(false); onEdit(); }} style={[styles.replyAction, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="edit-2" size={15} color={colors.primary} /><Text style={[styles.replyActionText, { color: colors.primary }]}>Edit</Text></Pressable> : null}</> : null}<Pressable testID={`delete-message-${item.id}`} accessibilityRole="button" onPress={() => { setReactionMenuOpen(false); onDelete(); }} style={[styles.replyAction, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="trash-2" size={15} color={colors.destructive} /><Text style={[styles.replyActionText, { color: colors.destructive }]}>Delete</Text></Pressable></View> : null}
+    {reactionMenuOpen ? <View style={styles.messageActions}>
+      {!item.deletedForEveryone ? <>
+        <Pressable testID={`reply-message-${item.id}`} accessibilityRole="button" accessibilityLabel={`Reply to ${mine ? 'your message' : item.senderName}`} onTouchStart={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onPress={() => { onDismissReactionMenu(); onReply(); }} style={[styles.replyAction, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="message-square" size={15} color={colors.primary} /><Text style={[styles.replyActionText, { color: colors.primary }]}>Reply</Text></Pressable>
+        {mine && item.text ? <Pressable testID={`edit-message-${item.id}`} accessibilityRole="button" onTouchStart={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onPress={() => { onDismissReactionMenu(); onEdit(); }} style={[styles.replyAction, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="edit-2" size={15} color={colors.primary} /><Text style={[styles.replyActionText, { color: colors.primary }]}>Edit</Text></Pressable> : null}
+      </> : null}
+      <Pressable testID={`delete-message-${item.id}`} accessibilityRole="button" onTouchStart={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onPress={() => { onDismissReactionMenu(); onDelete(); }} style={[styles.replyAction, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="trash-2" size={15} color={colors.destructive} /><Text style={[styles.replyActionText, { color: colors.destructive }]}>Delete</Text></Pressable>
+    </View> : null}
     </View>
   </View>;
   if (Platform.OS === 'web') return <View style={[styles.webMessageRow, { alignSelf: mine ? 'flex-end' : 'flex-start' }]}>{bubble}</View>;
@@ -605,12 +699,27 @@ function MentionText({ text, mentions, mine, colors, onOpenMention }: { text: st
   let cursor = 0;
   validMentions.forEach((mention) => {
     if (mention.start > cursor) parts.push(text.slice(cursor, mention.start));
-    parts.push(<Text key={`${mention.userId}-${mention.start}`} accessibilityRole="link" onPress={() => onOpenMention(mention.userId, mention.displayName)} style={[styles.mentionText, { color: mine ? '#fff' : colors.primary }]}>{text.slice(mention.start, mention.end)}</Text>);
+    parts.push(<Text key={`${mention.userId}-${mention.start}`} accessibilityRole="link" onPress={() => onOpenMention(mention.userId, mention.displayName)} style={{ color: mine ? '#fff' : colors.primary }}>{text.slice(mention.start, mention.end)}</Text>);
     cursor = mention.end;
   });
   if (cursor < text.length) parts.push(text.slice(cursor));
   return <Text style={[styles.message, { color: mine ? '#fff' : colors.foreground }]}>{parts}</Text>;
 }
+
+const draftMentionStyles = StyleSheet.create({
+  composerInput: { flex: 1, position: 'relative' },
+  inputText: { paddingVertical: 0, lineHeight: 18 },
+  overlay: { position: 'absolute', top: 0, bottom: 0, left: 14, right: 14, justifyContent: 'center' },
+  text: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18 },
+});
+
+const muteStyles = StyleSheet.create({
+  heading: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginBottom: 5 },
+  option: { minHeight: 54, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  optionText: { flex: 1, justifyContent: 'center', gap: 2 },
+  label: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 16 },
+  description: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15 },
+});
 
 const memberTagStyles = StyleSheet.create({
   tag: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
@@ -655,7 +764,7 @@ function ProfileModal({ profile, colors, catalog, visible, canMessage, loading, 
       <Pressable accessibilityLabel="Close profile" style={StyleSheet.absoluteFill} onPress={onClose} />
       <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Pressable testID="close-profile" accessibilityLabel="Close profile" onPress={onClose} style={styles.profileClose}><Feather name="x" size={18} color={colors.mutedForeground} /></Pressable>
-        {profile.profilePhotoUri ? <Image source={{ uri: profile.profilePhotoUri }} accessibilityLabel={`${profile.fullName} profile picture`} resizeMode="cover" style={styles.profileImage} /> : <View style={[styles.profileImage, styles.profileImageFallback, { backgroundColor: `${colors.primary}20` }]}><Text style={[styles.profileInitials, { color: colors.primary }]}>{initials}</Text></View>}
+        {profile.profilePhotoUri ? <CachedImage source={{ uri: profile.profilePhotoUri }} accessibilityLabel={`${profile.fullName} profile picture`} resizeMode="cover" style={styles.profileImage} /> : <View style={[styles.profileImage, styles.profileImageFallback, { backgroundColor: `${colors.primary}20` }]}><Text style={[styles.profileInitials, { color: colors.primary }]}>{initials}</Text></View>}
         <Text style={[styles.profileName, { color: colors.foreground }]}>{profile.fullName}</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 5, marginTop: 8 }}>
           {profile.role ? <View style={[memberTagStyles.tag, { backgroundColor: colors.secondary }]}><Text style={[memberTagStyles.text, { color: colors.primary }]}>{tagLabel(catalog, 'role', profile.roleTag ?? profile.role)}</Text></View> : null}
