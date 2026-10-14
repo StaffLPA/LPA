@@ -34,9 +34,10 @@ interface RichTextEditorProps {
   onChange?: (html: string) => void;
   editorRef?: React.MutableRefObject<RichTextEditorRef | null>;
   formKey?: number;
+  hideToolbar?: boolean;
 }
 
-export function RichTextEditor({ initialContent, onChange, editorRef, formKey }: RichTextEditorProps) {
+export function RichTextEditor({ initialContent, onChange, editorRef, formKey, hideToolbar = false }: RichTextEditorProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   
@@ -334,8 +335,8 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey }:
     const textIcon = (char: string) => <Text style={{ fontFamily: 'Inter_700Bold', color: colors.foreground }}>{char}</Text>;
     return (
       <View style={[styles.container, { borderColor: colors.border, backgroundColor: colors.background }]}>
-        <Modals />
-        <View style={[styles.webToolbar, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
+        {!hideToolbar ? <Modals /> : null}
+        {!hideToolbar ? <View style={[styles.webToolbar, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
           {webBtn(<Text style={{fontFamily: 'Inter_700Bold', color: colors.foreground}}>B</Text>, 'bold')}
           {webBtn(<Text style={{fontStyle:'italic', color: colors.foreground, fontWeight: 'bold'}}>I</Text>, 'italic')}
           {webBtn(<Text style={{textDecorationLine:'underline', color: colors.foreground, fontWeight: 'bold'}}>U</Text>, 'underline')}
@@ -384,7 +385,7 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey }:
           <Pressable testID="editor-btn-size" onPress={() => { saveWebSelection(); setSizeModal(true); }} style={styles.webBtn}>
              {textIcon('T')}
           </Pressable>
-        </View>
+        </View> : null}
         <div
           ref={webDivRef}
           contentEditable
@@ -400,8 +401,8 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey }:
 
   return (
     <View style={[styles.container, { borderColor: colors.border, backgroundColor: colors.background }]}>
-      <Modals />
-      <NativeRichToolbar
+      {!hideToolbar ? <Modals /> : null}
+      {!hideToolbar ? <NativeRichToolbar
         editor={nativeEditorRef}
         actions={[
           nativeActions.setBold, nativeActions.setItalic, nativeActions.setUnderline, nativeActions.setStrikethrough,
@@ -424,7 +425,7 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey }:
         iconTint={colors.foreground}
         selectedIconTint={colors.primary}
         style={[styles.nativeToolbar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
-      />
+      /> : null}
       <NativeRichEditor
         key={formKey}
         ref={nativeEditorRef}
