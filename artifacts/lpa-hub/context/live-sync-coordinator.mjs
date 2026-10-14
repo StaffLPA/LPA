@@ -15,6 +15,7 @@ export function createSharedSyncCoordinator({
     onStateChange({ isSyncing: true, syncError: null });
     try {
       const [freshUser] = await Promise.all([refreshProfile(), refetchActiveQueries()]);
+      if (!hasSession()) return;
       onProfile(freshUser);
       onStateChange({ lastSyncedAt: now() });
     } catch (error) {
