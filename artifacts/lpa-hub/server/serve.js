@@ -152,6 +152,14 @@ const server = http.createServer((req, res) => {
     pathname = pathname.slice(basePath.length) || '/';
   }
 
+  // Keep startup checks independent from the generated web bundle so the
+  // production service can report readiness as soon as it is listening.
+  if (pathname === '/status') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
+
   if (pathname === '/' || pathname === '/manifest') {
     const platform = req.headers['expo-platform'];
     if (platform === 'ios' || platform === 'android') {
