@@ -13,6 +13,7 @@
     "check:ios-release:remote": "sh scripts/check-ios-release.sh --remote",
     "test:ios-release-validator": "node --test scripts/validate-mobile-ios-release.test.mjs",
     "test:react-types": "node --test scripts/check-react-types.test.mjs",
+    "test:dependency-security": "node --test scripts/dependency-security.test.mjs",
     "typecheck": "pnpm run check:react-types && pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
