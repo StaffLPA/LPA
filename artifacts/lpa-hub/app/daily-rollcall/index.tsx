@@ -9,7 +9,7 @@ import { useApp } from '@/context/AppContext';
 const options = [
   { key: 'coach', title: 'Coach', copy: 'Daily attendance taken by coaches', icon: 'award' },
   { key: 'bus', title: 'Bus', copy: 'Daily attendance for bus riders', icon: 'map-pin' },
-  { key: 'academics', title: 'Academics dashboard', copy: 'Daily attendance for academics', icon: 'book-open' },
+  { key: 'academics', title: 'Academics', copy: 'Daily attendance for academics', icon: 'book-open' },
 ] as const;
 
 export default function DailyRollcallChooser() {
