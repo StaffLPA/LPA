@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseIcsEvents, mergeEvents, timeRangeLabel } from '../lib/calendarEvents.ts';
+import { filterCalendarEventsByTeamVisibility, parseIcsEvents, mergeEvents, timeRangeLabel } from '../lib/calendarEvents.ts';
 
 const resolver = { canonicalTeam: (team) => team, tagLabel: (team) => team, teamColor: () => '#AB562B' };
 const feed = (extra = '') => `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:test@lpahub\r\nDTSTART;TZID=America/Phoenix:20261001T103000\r\nDTEND;TZID=America/Phoenix:20261001T123000\r\nSUMMARY:LPA vs Bombers\r\nLOCATION:Royals 5\r\n${extra}\r\nEND:VEVENT\r\nEND:VCALENDAR`;
@@ -38,4 +38,14 @@ test('explicitly cleared details override stale copies from legacy feeds', () =>
   const [merged] = mergeEvents([[old], [cleared]]);
   assert.equal(merged.notes, null);
   assert.equal(merged.locationAddress, null);
+});
+
+test('hidden team tags and their events stay out of the calendar, including legacy aliases', () => {
+  const hiddenTeamAliases = new Set(['custom-hidden-team', 'Old hidden team']);
+  const visibleEvents = filterCalendarEventsByTeamVisibility([
+    { id: 'hidden-event', team: 'custom-hidden-team' },
+    { id: 'legacy-hidden-event', team: 'Old hidden team' },
+    { id: 'visible-event', team: 'LPA Varsity' },
+  ], (team) => hiddenTeamAliases.has(team));
+  assert.deepEqual(visibleEvents.map(({ id }) => id), ['visible-event']);
 });
