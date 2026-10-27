@@ -6,9 +6,9 @@ import { useFocusEffect } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useGetCalendarFeed } from '@workspace/api-client-react';
 import { useTagCatalog } from '@/hooks/useTagCatalog';
-import { canonicalTeam, getTeamColor, tagLabel } from '@/constants/tagCatalog';
+import { canonicalTeam, getTeamColor, isTeamHidden, tagLabel } from '@/constants/tagCatalog';
 import { CalendarEventDetails } from '@/components/CalendarEventDetails';
-import { dateFromKey, dateRangeLabel, mergeEvents, parseIcsEvents, timeRangeLabel, type CalendarEvent } from '@/lib/calendarEvents';
+import { dateFromKey, dateRangeLabel, filterCalendarEventsByTeamVisibility, mergeEvents, parseIcsEvents, timeRangeLabel, type CalendarEvent } from '@/lib/calendarEvents';
 
 type ViewMode = 'Week' | 'Month';
 
@@ -55,7 +55,10 @@ export default function CalendarScreen() {
   }, []));
   const catalogQuery = useTagCatalog();
   const catalog = catalogQuery.data;
-  const teamOptions = useMemo(() => [{ id: 'all', label: 'All Teams' }, ...((catalog?.teams ?? []) as Array<{ id: string; label: string }>)], [catalog?.teams]);
+  const teamOptions = useMemo(() => [{ id: 'all', label: 'All Teams' }, ...(catalog?.teams ?? []).filter((team) => team.hidden !== true)], [catalog?.teams]);
+  const visibleSelectedTeam = selectedTeam === 'all' || teamOptions.some((team) => team.id === canonicalTeam(catalog, selectedTeam))
+    ? selectedTeam
+    : 'all';
   const feedRequest = { cache: 'no-store' as RequestCache, credentials: 'include' as RequestCredentials, responseType: 'text' as const };
   const feedOptions = (team: string) => ({
     query: { queryKey: ['/api/calendar.ics', { team }], enabled: isCalendarFocused },
@@ -80,7 +83,7 @@ export default function CalendarScreen() {
     ] as const) {
       lists.push(parseIcsEvents(feed, resolver, team));
     }
-    return mergeEvents(lists);
+    return filterCalendarEventsByTeamVisibility(mergeEvents(lists), (team) => isTeamHidden(catalog, team));
   }, [calendarFeed.data, varsityFeed.data, juniorVarsityFeed.data, fourteenFeed.data, fifteenFeed.data, lpaFeed.data, catalog]);
   const feedsUnavailable = calendarFeed.isError && varsityFeed.isError && juniorVarsityFeed.isError && fourteenFeed.isError && fifteenFeed.isError && lpaFeed.isError;
   const monthLabel = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -88,7 +91,7 @@ export default function CalendarScreen() {
   const days = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
   const leading = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay();
   const cells = Array.from({ length: Math.ceil((leading + days) / 7) * 7 }, (_, index) => index - leading + 1);
-  const filteredEvents = useMemo(() => selectedTeam === 'all' ? events : events.filter((event) => canonicalTeam(catalog, event.team) === selectedTeam), [events, selectedTeam, catalog]);
+  const filteredEvents = useMemo(() => visibleSelectedTeam === 'all' ? events : events.filter((event) => canonicalTeam(catalog, event.team) === visibleSelectedTeam), [events, visibleSelectedTeam, catalog]);
   const monthStart = `${monthKey}-01`;
   const monthEnd = `${monthKey}-${String(days).padStart(2, '0')}`;
   const monthEvents = useMemo(() => {
@@ -144,7 +147,7 @@ export default function CalendarScreen() {
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 115 }} showsVerticalScrollIndicator={false}>
       <View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.primary }]}>{monthLabel.toUpperCase()}</Text><Text style={[styles.title, { color: colors.foreground }]}>Calendar</Text></View></View>
-       <View style={styles.filterWrap}><Pressable testID="calendar-team-filter" onPress={() => setShowTeamMenu((visible) => !visible)} style={[styles.filterSelect, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={[styles.filterDot, { backgroundColor: selectedTeam === 'all' ? colors.primary : getTeamColor(catalog, selectedTeam) }]} /><Text style={[styles.filterText, { color: colors.foreground }]}>{teamOptions.find((team) => team.id === selectedTeam)?.label ?? selectedTeam}</Text><Feather name={showTeamMenu ? 'chevron-up' : 'chevron-down'} size={17} color={colors.mutedForeground} /></Pressable>{showTeamMenu ? <View style={[styles.filterMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>{teamOptions.map((team) => <Pressable key={team.id} testID={`calendar-filter-${team.id}`} onPress={() => { setSelectedTeam(team.id); setShowTeamMenu(false); }} style={styles.filterOption}><View style={[styles.filterDot, { backgroundColor: team.id === 'all' ? colors.primary : getTeamColor(catalog, team.id) }]} /><Text style={[styles.filterText, { color: colors.foreground, flex: 1 }]}>{team.label}</Text>{selectedTeam === team.id ? <Feather name="check" size={16} color={colors.primary} /> : null}</Pressable>)}</View> : null}</View>
+        <View style={styles.filterWrap}><Pressable testID="calendar-team-filter" onPress={() => setShowTeamMenu((visible) => !visible)} style={[styles.filterSelect, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={[styles.filterDot, { backgroundColor: visibleSelectedTeam === 'all' ? colors.primary : getTeamColor(catalog, visibleSelectedTeam) }]} /><Text style={[styles.filterText, { color: colors.foreground }]}>{teamOptions.find((team) => team.id === visibleSelectedTeam)?.label ?? visibleSelectedTeam}</Text><Feather name={showTeamMenu ? 'chevron-up' : 'chevron-down'} size={17} color={colors.mutedForeground} /></Pressable>{showTeamMenu ? <View style={[styles.filterMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>{teamOptions.map((team) => <Pressable key={team.id} testID={`calendar-filter-${team.id}`} onPress={() => { setSelectedTeam(team.id); setShowTeamMenu(false); }} style={styles.filterOption}><View style={[styles.filterDot, { backgroundColor: team.id === 'all' ? colors.primary : getTeamColor(catalog, team.id) }]} /><Text style={[styles.filterText, { color: colors.foreground, flex: 1 }]}>{team.label}</Text>{visibleSelectedTeam === team.id ? <Feather name="check" size={16} color={colors.primary} /> : null}</Pressable>)}</View> : null}</View>
       <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
          <View style={styles.monthRow}><Text style={[styles.month, { color: colors.foreground }]}>{monthLabel}</Text><View style={styles.arrows}><Pressable testID={view === 'Week' ? 'previous-week' : 'previous-month'} accessibilityLabel={view === 'Week' ? 'Previous week' : 'Previous month'} onPress={() => view === 'Week' ? moveWeek(-1) : moveMonth(-1)} hitSlop={10}><Feather name="chevron-left" size={19} color={colors.foreground} /></Pressable><Pressable testID={view === 'Week' ? 'next-week' : 'next-month'} accessibilityLabel={view === 'Week' ? 'Next week' : 'Next month'} onPress={() => view === 'Week' ? moveWeek(1) : moveMonth(1)} hitSlop={10}><Feather name="chevron-right" size={19} color={colors.foreground} /></Pressable></View></View>
         <View style={styles.weekRow}>{weekdays.map((day, index) => <Text key={`${day}-${index}`} style={[styles.weekday, { color: colors.mutedForeground }]}>{day}</Text>)}</View>
@@ -154,7 +157,7 @@ export default function CalendarScreen() {
         <View style={styles.sectionRow}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{view === 'Week' ? weekDayFilter ? selectedLabel : selectedWeekLabel : monthDayFilter ? selectedLabel : monthLabel}</Text><Text style={[styles.count, { color: colors.mutedForeground }]}>{view === 'Week' ? `${visibleWeekEvents.length} events` : `${monthEvents.length} events`}</Text></View>
           {view === 'Week' ? <CalendarEventList onSelect={setDetailEvent} colors={colors} events={visibleWeekEvents} emptyMessage={feedsUnavailable ? 'Calendar could not sync' : weekDayFilter ? 'No events scheduled for this day' : 'No events scheduled this week'} /> : <CalendarEventList onSelect={setDetailEvent} colors={colors} events={monthEvents} emptyMessage={feedsUnavailable ? 'Calendar could not sync' : monthDayFilter ? 'No events scheduled for this day' : 'No events scheduled this month'} />}
     </ScrollView>
-    <CalendarEventDetails event={detailEvent} onClose={() => setDetailEvent(null)} />
+     <CalendarEventDetails event={detailEvent && events.some((event) => event.id === detailEvent.id) ? detailEvent : null} onClose={() => setDetailEvent(null)} />
   </View>;
 }
 
