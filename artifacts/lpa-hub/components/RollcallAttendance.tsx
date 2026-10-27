@@ -11,7 +11,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { ROLLCALL_LABELS, deliverRollcallExport, formatLongDate, isRollcallCategory, phoenixToday, shiftDate, validateRollcallDate, MIN_DATE } from '@/lib/rollcall';
 
-type Status = 'present' | 'absent' | 'pending';
+type Status = 'present' | 'absent' | 'tardy' | 'pending';
 type Draft = { baseRevision: number; statuses: Record<string, Status>; previous: Record<string, Status> };
 type Confirm = { title: string; body: string; confirmLabel: string; onConfirm: () => void; saveBeforeLeave?: boolean };
 const savedTime = (value: string) => new Intl.DateTimeFormat('en-US', {
@@ -36,6 +36,7 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
   const validCategory = isRollcallCategory(rawCategory);
   const category = validCategory ? rawCategory : 'coach';
   const manualSubmit = category === 'bus';
+  const canMarkTardy = category === 'coach' || category === 'academics';
   const autoRetryAt = useRef(0);
 
   const [today, setToday] = useState(phoenixToday);
@@ -269,9 +270,14 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
   const students = data?.students ?? [];
   const groupStudents = useMemo(() => students.filter((s) => group === 'All' || s.teams.includes(group)), [students, group]);
   const totals = useMemo(() => {
-    let present = 0; let absent = 0;
-    for (const s of groupStudents) { const v = draft?.statuses[s.id] ?? s.status; if (v === 'present') present += 1; else if (v === 'absent') absent += 1; }
-    return { total: groupStudents.length, present, absent, pending: groupStudents.length - present - absent };
+    let present = 0; let tardy = 0; let absent = 0;
+    for (const s of groupStudents) {
+      const v = draft?.statuses[s.id] ?? s.status;
+      if (v === 'present') present += 1;
+      else if (v === 'tardy') tardy += 1;
+      else if (v === 'absent') absent += 1;
+    }
+    return { total: groupStudents.length, present, tardy, absent, pending: groupStudents.length - present - tardy - absent };
   }, [groupStudents, draft]);
   const needle = search.trim().toLowerCase();
   const visible = useMemo(() => groupStudents.filter((s) => !needle || s.fullName.toLowerCase().includes(needle)), [groupStudents, needle]);
@@ -293,7 +299,7 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
   if (!authorized) return shell(<Text testID="rollcall-denied" style={[styles.copy, { color: colors.mutedForeground }]}>Daily Rollcall is available to Admin and Staff-Coach accounts only.</Text>);
   if (!validCategory) return shell(<Text style={[styles.copy, { color: colors.mutedForeground }]}>Unknown rollcall category. Choose Coach, Bus, or Academics.</Text>);
 
-  const statusColor = { present: colors.accent, absent: colors.destructive, pending: colors.mutedForeground } as const;
+  const statusColor = { present: colors.accent, tardy: colors.warning, absent: colors.destructive, pending: colors.mutedForeground } as const;
   const stat = (label: string, value: number, color: string) => <View style={[styles.stat, { backgroundColor: colors.card, borderColor: colors.border }]}>
     <Text style={[styles.statValue, { color }]}>{value}</Text><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{label}</Text>
   </View>;
@@ -304,14 +310,14 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 18, paddingBottom: insets.bottom + 60 }]}>
       {header}
-       <Text testID="rollcall-live-status" style={[styles.hint, { color: query.isError ? colors.warning : colors.success, marginBottom: 10 }]}>{query.isError ? 'Live sync interrupted · unsaved edits are retained; reconnect to retry' : 'Live · attendance refreshes automatically across devices'}</Text>
+        {query.isError ? <Text testID="rollcall-live-status" style={[styles.hint, { color: colors.warning, marginBottom: 10 }]}>Sync interrupted · unsaved edits are retained; reconnect to retry</Text> : null}
        <View style={[styles.actionRow, { marginBottom: 14 }]}>
          {(['coach', 'bus', 'academics'] as const).map((option) => <Pressable key={option} testID={`rollcall-switch-${option}`} disabled={saving} onPress={() => { if (option !== category) guard('Switch roll call?', () => router.replace(`/daily-rollcall/${option}`)); }} style={[styles.modalButton, { borderColor: option === category ? colors.primary : colors.border }]}><Text style={[styles.modalButtonText, { color: option === category ? colors.primary : colors.foreground }]}>{ROLLCALL_LABELS[option]}</Text></Pressable>)}
        </View>
       <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.label, { color: colors.mutedForeground }]}>DATE</Text>
         <Text testID="rollcall-date-long" style={[styles.dateLong, { color: colors.foreground }]}>{formatLongDate(date)}</Text>
-         <Text style={[styles.hint, { color: date === today ? colors.success : colors.warning }]}>{date === today ? 'Current Arizona attendance day' : canEdit ? 'Historical date · Admin corrections allowed' : 'Historical attendance is locked · Admin access required to edit'}</Text>
+          {date !== today ? <Text style={[styles.hint, { color: colors.warning }]}>{canEdit ? 'Historical date · Admin corrections allowed' : 'Historical attendance is locked · Admin access required to edit'}</Text> : null}
         <View style={styles.dateRow}>
           <Pressable testID="rollcall-prev-day" accessibilityRole="button" accessibilityLabel="Previous day" disabled={date <= MIN_DATE || saving} onPress={() => goToDate(shiftDate(date, -1))} style={[styles.iconButton, { borderColor: colors.border, opacity: date <= MIN_DATE ? 0.4 : 1 }]}><Feather name="chevron-left" size={18} color={colors.foreground} /></Pressable>
           <TextInput testID="rollcall-date-input" value={dateInput} onChangeText={(t) => { setDateInput(t); setDateError(null); }} onSubmitEditing={applyDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false} keyboardType="numbers-and-punctuation" maxLength={10} accessibilityLabel="Rollcall date" style={[styles.dateInput, { color: colors.foreground, borderColor: dateError ? colors.destructive : colors.border }]} />
@@ -340,7 +346,7 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
             </Pressable>)}
           </View>
           <Text testID="rollcall-group-count" style={[styles.hint, { color: colors.mutedForeground, marginBottom: 10 }]}>{group} · {groupStudents.length} students{group !== 'All' ? ` · ${students.length} across all groups` : ''}</Text>
-          <View style={styles.statRow}>{stat('Total', totals.total, colors.foreground)}{stat('Present', totals.present, statusColor.present)}{stat('Absent', totals.absent, statusColor.absent)}{stat('Pending', totals.pending, statusColor.pending)}</View>
+          <View style={styles.statRow}>{stat('Total', totals.total, colors.foreground)}{stat('Present', totals.present, statusColor.present)}{canMarkTardy ? stat('Tardy', totals.tardy, statusColor.tardy) : null}{stat('Absent', totals.absent, statusColor.absent)}{stat('Pending', totals.pending, statusColor.pending)}</View>
 
           {notice ? <View testID="rollcall-notice" accessibilityLiveRegion="polite" style={[styles.notice, { backgroundColor: notice.kind === 'ok' ? `${colors.accent}22` : `${colors.destructive}18`, borderColor: notice.kind === 'ok' ? colors.accent : colors.destructive }]}>
             <Text style={[styles.noticeText, { color: colors.foreground }]}>{notice.text}</Text>
@@ -378,7 +384,7 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
           {category === 'bus' ? <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 14 }]}>
             <Text style={[styles.rowName, { color: colors.foreground }]}>Attendance history</Text>
             {data.snapshots?.length ? [...data.snapshots].reverse().map((item) => <Pressable key={item.id} testID={`rollcall-snapshot-${item.revision}`} onPress={() => setHistoryId(historyId === item.id ? null : item.id)} style={{ paddingVertical: 10 }}><Text style={[styles.linkText, { color: colors.primary }]}>{savedTime(item.savedAt)} · Submission {item.revision}</Text><Text style={[styles.hint, { color: colors.mutedForeground }]}>Saved by {item.savedBy} · {item.students.filter((s) => s.status === 'present').length} present · {item.students.filter((s) => s.status === 'absent').length} absent</Text></Pressable>) : <Text style={[styles.hint, { color: colors.mutedForeground }]}>{data.updatedAt ? 'A previous saved record is preserved. New changed submissions will appear here separately.' : 'Tap Submit to record the first attendance snapshot.'}</Text>}
-            {snapshot ? <View testID="rollcall-snapshot-detail"><Text style={[styles.hint, { color: colors.mutedForeground }]}>Read-only snapshot · {savedTime(snapshot.savedAt)}</Text>{snapshot.students.map((s) => <Text key={s.id} style={[styles.copy, { color: colors.foreground, marginTop: 5 }]}>{s.fullName}: {s.status === 'pending' ? 'Pending/NA' : s.status === 'present' ? 'Present (Yes)' : 'Absent (No)'}</Text>)}</View> : null}
+            {snapshot ? <View testID="rollcall-snapshot-detail"><Text style={[styles.hint, { color: colors.mutedForeground }]}>Read-only snapshot · {savedTime(snapshot.savedAt)}</Text>{snapshot.students.map((s) => <Text key={s.id} style={[styles.copy, { color: colors.foreground, marginTop: 5 }]}>{s.fullName}: {s.status === 'pending' ? 'Pending/NA' : s.status === 'present' ? 'Present (Yes)' : s.status === 'tardy' ? 'Tardy' : 'Absent (No)'}</Text>)}</View> : null}
           </View> : null}
 
           {students.length === 0 ? <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 16 }]} testID="rollcall-empty">
@@ -398,6 +404,9 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
                   <Pressable testID={`rollcall-present-${s.id}`} accessibilityRole="button" accessibilityLabel={`${s.fullName} present`} accessibilityState={{ selected: current === 'present', disabled: saving || !canEdit }} disabled={saving || !canEdit} onPress={() => setStatus(s.id, s.status, current, 'present')} style={[styles.toggle, { borderColor: statusColor.present, backgroundColor: current === 'present' ? statusColor.present : 'transparent', opacity: canEdit ? 1 : 0.5 }]}>
                     <Feather name="check" size={20} color={current === 'present' ? '#fff' : statusColor.present} />
                   </Pressable>
+                  {canMarkTardy ? <Pressable testID={`rollcall-tardy-${s.id}`} accessibilityRole="button" accessibilityLabel={`${s.fullName} tardy`} accessibilityState={{ selected: current === 'tardy', disabled: saving || !canEdit }} disabled={saving || !canEdit} onPress={() => setStatus(s.id, s.status, current, 'tardy')} style={[styles.toggle, styles.compactToggle, { borderColor: statusColor.tardy, backgroundColor: current === 'tardy' ? statusColor.tardy : 'transparent', opacity: canEdit ? 1 : 0.5 }]}>
+                    <Text style={[styles.tardyText, { color: current === 'tardy' ? '#fff' : statusColor.tardy }]}>T</Text>
+                  </Pressable> : null}
                   <Pressable testID={`rollcall-absent-${s.id}`} accessibilityRole="button" accessibilityLabel={`${s.fullName} absent`} accessibilityState={{ selected: current === 'absent', disabled: saving || !canEdit }} disabled={saving || !canEdit} onPress={() => setStatus(s.id, s.status, current, 'absent')} style={[styles.toggle, { borderColor: statusColor.absent, backgroundColor: current === 'absent' ? statusColor.absent : 'transparent', opacity: canEdit ? 1 : 0.5 }]}>
                     <Feather name="x" size={20} color={current === 'absent' ? '#fff' : statusColor.absent} />
                   </Pressable>
@@ -461,6 +470,8 @@ const styles = StyleSheet.create({
   rowMeta: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   rowState: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 0.5, marginTop: 5 },
   toggle: { width: 52, height: 52, borderRadius: 16, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  compactToggle: { width: 44, height: 44 },
+  tardyText: { fontFamily: 'Inter_700Bold', fontSize: 16 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.58)', justifyContent: 'center', padding: 22 },
   modal: { borderWidth: 1, borderRadius: 20, padding: 20, width: '100%', maxWidth: 460, alignSelf: 'center' },
   modalTitle: { fontFamily: 'Inter_700Bold', fontSize: 18 },
