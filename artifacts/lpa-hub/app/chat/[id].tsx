@@ -17,6 +17,7 @@ import { ChatDeletionConfirmation } from '@/components/ChatDeletionConfirmation'
 import { MessageDateSeparator } from '@/components/MessageDateSeparator';
 import { buildMessageHistoryRows } from '@/lib/chatMessageHistory';
 import { getChatMuteMode, useChatMute, type ChatMuteMode } from '@/lib/useChatMute';
+import { CHAT_LIST_REFRESH_INTERVAL_MS } from '@/lib/chatListRefresh';
 import { collapseMentionLastName, reconcileMentions } from '@/lib/mentionDraft';
 import { useTagCatalog } from '@/hooks/useTagCatalog';
 import { tagLabel } from '@/constants/tagCatalog';
@@ -92,7 +93,7 @@ export default function ChatScreen() {
   const catalogQuery = useTagCatalog();
   const catalog = catalogQuery.data;
   const { id } = useLocalSearchParams<{ id: string }>();
-  const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: 10_000 } });
+  const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: CHAT_LIST_REFRESH_INTERVAL_MS } });
   const chat = (chats.data ?? []).find((item) => item.id === id);
   const { setMuteMode, isPending: mutePending } = useChatMute();
   const messages = useListChatMessages(id ?? '', { query: { queryKey: ['chat-messages', id ?? ''], refetchInterval: 10_000 } });
