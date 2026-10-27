@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'expo-router';
 import { useListChats, getListAnnouncementsQueryKey, getListAdminAnnouncementsQueryKey } from '@workspace/api-client-react';
 import { useApp } from '@/context/AppContext';
 import { addPushReceivedListener, addPushResponseListener, setApplicationBadgeCount } from '@/lib/messagePushNotifications';
+import { CHAT_LIST_REFRESH_INTERVAL_MS } from '@/lib/chatListRefresh';
 
 type Chat = {
   unreadCount: number;
@@ -14,7 +15,7 @@ export function MessageNotificationCenter() {
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
-  const chats = useListChats({ query: { queryKey: ['chats'], enabled: Boolean(user), refetchInterval: 10_000 } });
+  const chats = useListChats({ query: { queryKey: ['chats'], enabled: Boolean(user), refetchInterval: CHAT_LIST_REFRESH_INTERVAL_MS } });
   const unreadCount = ((chats.data ?? []) as Chat[]).reduce((total, chat) => total + chat.unreadCount, 0);
 
   useEffect(() => {
