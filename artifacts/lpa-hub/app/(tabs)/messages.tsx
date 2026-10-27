@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, SectionList, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -13,6 +13,7 @@ import { getChatMuteMode, useChatMute, type ChatMuteMode } from '@/lib/useChatMu
 import { visibleFormMessageText } from '@/lib/formMessageText';
 import { ChatDeletionConfirmation } from '@/components/ChatDeletionConfirmation';
 import { useLegacyChatDeletionMigration } from '@/lib/useLegacyChatDeletionMigration';
+import { CHAT_LIST_REFRESH_INTERVAL_MS } from '@/lib/chatListRefresh';
 
 type Chat = { id: string; name: string; type: string; isPinned: boolean; isMuted: boolean; muteMode?: ChatMuteMode; createdAt: string; unreadCount: number; members: { fullName: string }[]; lastMessage: { id: string; senderId: string; text: string; createdAt: string } | null };
 
@@ -24,7 +25,7 @@ export default function MessagesScreen() {
   const queryClient = useQueryClient();
   const deleteChat = useDeleteChat();
   const legacy = useLegacyChatDeletionMigration(user?.id);
-  const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: 10_000 } });
+  const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: CHAT_LIST_REFRESH_INTERVAL_MS } });
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('All');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -35,15 +36,24 @@ export default function MessagesScreen() {
   useEffect(() => { setDeleteTarget(null); setDeleteError(''); setOptionsId(null); }, [user?.id]);
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return ([...((chats.data ?? []) as Chat[])].filter((chat) => (
+    return ((chats.data ?? []) as Chat[]).filter((chat) => (
        !legacy.hiddenIds.includes(chat.id)
       &&
        (filter === 'Direct' ? chat.type === 'direct' : true)
       && (!normalizedQuery || chat.name.toLowerCase().includes(normalizedQuery) || chat.members.some((member) => member.fullName.toLowerCase().includes(normalizedQuery)))
-      )).sort((a, b) => Number(b.isPinned) - Number(a.isPinned)
-        || (Date.parse(b.lastMessage?.createdAt ?? b.createdAt) || 0) - (Date.parse(a.lastMessage?.createdAt ?? a.createdAt) || 0)
-        || a.id.localeCompare(b.id)));
+      ));
   }, [chats.data, query, filter, legacy.hiddenIds]);
+  const sections = useMemo(() => {
+    const ordered = [...filtered].sort((a, b) =>
+      (Date.parse(b.lastMessage?.createdAt ?? b.createdAt) || 0) - (Date.parse(a.lastMessage?.createdAt ?? a.createdAt) || 0)
+      || a.id.localeCompare(b.id));
+    const pinned = ordered.filter((chat) => chat.type === 'group' && chat.isPinned);
+    const other = ordered.filter((chat) => chat.type !== 'group' || !chat.isPinned);
+    return [
+      ...(pinned.length ? [{ title: 'Pinned Chats', data: pinned }] : []),
+      ...(other.length ? [{ title: 'Other Chats', data: other }] : []),
+    ];
+  }, [filtered]);
   const confirmHideConversation = useCallback((conversationId: string) => {
     setOptionsId(null);
     setDeleteError('');
@@ -66,7 +76,8 @@ export default function MessagesScreen() {
     });
   };
   const openConversation = useCallback((conversationId: string) => router.push(('/chat/' + conversationId) as never), [router]);
-   const renderConversation = useCallback(({ item }: { item: Chat }) => <ConversationRow item={item} colors={colors} onOpen={openConversation} onDelete={confirmHideConversation} onOptions={setOptionsId} />, [colors, confirmHideConversation, openConversation]);
+  const renderConversation = useCallback(({ item }: { item: Chat }) => <ConversationRow item={item} colors={colors} onOpen={openConversation} onDelete={confirmHideConversation} onOptions={setOptionsId} />, [colors, confirmHideConversation, openConversation]);
+  const renderSectionHeader = useCallback(({ section }: { section: { title: string; data: Chat[] } }) => <View style={[styles.sectionHeading, { backgroundColor: colors.background }]}><Text style={[styles.sectionHeadingTitle, { color: colors.foreground }]}>{section.title}</Text><Text style={[styles.sectionHeadingCount, { color: colors.mutedForeground }]}>{section.data.length}</Text></View>, [colors]);
   const conversationKey = useCallback((item: Chat) => item.id, []);
    const selectedChat = (chats.data as Chat[] | undefined)?.find((item) => item.id === optionsId);
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -77,7 +88,7 @@ export default function MessagesScreen() {
     </View>
        {muteError ? <Pressable onPress={() => setMuteError('')} accessibilityRole="alert"><Text style={[styles.muteError, { color: colors.destructive }]}>{muteError}</Text></Pressable> : null}
        {legacy.error ? <Pressable testID="retry-legacy-deletions" onPress={legacy.retry} accessibilityRole="button"><Text style={[styles.muteError, { color: colors.destructive }]}>{legacy.error} Tap to retry.</Text></Pressable> : null}
-       {chats.isLoading || legacy.loading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : chats.isError ? <State title="Unable to load conversations" copy="Check your connection and try again." colors={colors} onRetry={() => void chats.refetch()} /> : <FlatList data={filtered} keyExtractor={conversationKey} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 30, paddingTop: 10 }} renderItem={renderConversation} removeClippedSubviews={Platform.OS === 'android'} initialNumToRender={10} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50} getItemLayout={(_, index) => ({ length: 76, offset: 76 * index, index })} ListEmptyComponent={<State title="No conversations yet" copy="Start a private direct message with an active LPA member." colors={colors} />} />}
+       {chats.isLoading || legacy.loading ? <ActivityIndicator style={{ marginTop: 50 }} color={colors.primary} /> : chats.isError ? <State title="Unable to load conversations" copy="Check your connection and try again." colors={colors} onRetry={() => void chats.refetch()} /> : <SectionList sections={sections} keyExtractor={conversationKey} renderItem={renderConversation} renderSectionHeader={renderSectionHeader} stickySectionHeadersEnabled={false} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 30, paddingTop: 10, flexGrow: 1 }} removeClippedSubviews={Platform.OS === 'android'} initialNumToRender={10} maxToRenderPerBatch={8} windowSize={7} updateCellsBatchingPeriod={50} ListEmptyComponent={<State title="No conversations yet" copy="Start a private direct message with an active LPA member." colors={colors} />} />}
        <Modal visible={Boolean((optionsId && selectedChat) || deleteTarget)} transparent animationType="slide" onRequestClose={() => { if (deleteTarget) { if (!deleteChat.isPending) setDeleteTarget(null); } else setOptionsId(null); }}>
          {deleteTarget ? <ChatDeletionConfirmation embedded kind="conversation" visible pending={deleteChat.isPending} error={deleteError} onConfirm={deleteConversation} onCancel={() => setDeleteTarget(null)} /> : <View style={styles.optionsOverlay}>
            <Pressable style={StyleSheet.absoluteFill} onPress={() => setOptionsId(null)} accessibilityLabel="Close chat options" />
@@ -129,6 +140,6 @@ function State({ title, copy, colors, onRetry }: { title: string; copy: string; 
 }
 
 const styles = StyleSheet.create({
-  optionsOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0009' }, optionsSheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 22, paddingTop: 20 }, optionsTitle: { fontFamily: 'Inter_700Bold', fontSize: 16, marginBottom: 13 }, optionsAction: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 13 }, optionsText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 }, muteError: { fontFamily: 'Inter_600SemiBold', fontSize: 12, paddingHorizontal: 20, paddingVertical: 8 },
+  optionsOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0009' }, optionsSheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 22, paddingTop: 20 }, optionsTitle: { fontFamily: 'Inter_700Bold', fontSize: 16, marginBottom: 13 }, optionsAction: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 13 }, optionsText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 }, muteError: { fontFamily: 'Inter_600SemiBold', fontSize: 12, paddingHorizontal: 20, paddingVertical: 8 }, sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 15, paddingBottom: 7 }, sectionHeadingTitle: { fontFamily: 'Inter_700Bold', fontSize: 13 }, sectionHeadingCount: { fontFamily: 'Inter_500Medium', fontSize: 11 },
   container: { flex: 1 }, header: { paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, eyebrow: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 1.2 }, title: { fontFamily: 'Inter_700Bold', fontSize: 26, marginTop: 5 }, compose: { width: 42, height: 42, borderRadius: 14, justifyContent: 'center', alignItems: 'center' }, search: { height: 43, marginHorizontal: 18, marginTop: 18, borderRadius: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 }, searchInput: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 13 }, filters: { flexDirection: 'row', gap: 8, paddingHorizontal: 18, marginTop: 14, marginBottom: 2 }, filter: { paddingHorizontal: 13, paddingVertical: 8, borderRadius: 16, borderWidth: 1 }, filterText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 }, swipeContainer: { borderRadius: 16, overflow: 'hidden' }, swipeAction: { width: 110, paddingHorizontal: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5 }, swipeActionText: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 10, textAlign: 'center' }, conversation: { minHeight: 76, paddingVertical: 15, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }, initials: { width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, initialsText: { fontFamily: 'Inter_700Bold', fontSize: 13 }, row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }, meta: { flexDirection: 'row', alignItems: 'center', gap: 6 }, sender: { fontFamily: 'Inter_700Bold', fontSize: 13 }, time: { fontFamily: 'Inter_400Regular', fontSize: 10 }, preview: { fontFamily: 'Inter_400Regular', fontSize: 12, paddingRight: 4 }, unreadText: { fontFamily: 'Inter_700Bold' }, unreadBadge: { minWidth: 19, height: 19, borderRadius: 10, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center' }, unreadBadgeText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 10 }, empty: { alignItems: 'center', paddingTop: 80, gap: 8, paddingHorizontal: 30 }, emptyTitle: { fontFamily: 'Inter_700Bold', fontSize: 16, marginTop: 6 }, emptyCopy: { fontFamily: 'Inter_400Regular', fontSize: 13, textAlign: 'center' }, retry: { marginTop: 7, borderWidth: 1, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 14 }, retryText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
 });
