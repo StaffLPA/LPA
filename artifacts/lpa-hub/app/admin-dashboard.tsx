@@ -22,9 +22,11 @@ import {
   useRevokeInvite,
   useUpdateUserRole, updateUserTeams, customFetch,
   useCreateTagOption, useRenameTagOption, useDeleteTagOption, useUpdateUserRoleTag,
+  useListAdminGroupChats, useUpdateGroupChatPin,
 } from '@workspace/api-client-react';
 import { useApp, useLiveSync } from '@/context/AppContext';
 import { AccountLockAction } from '@/components/AccountLockAction';
+import { UserIdentityEditor } from '@/components/UserIdentityEditor';
 import { useColors } from '@/hooks/useColors';
 import { CALENDAR_TEAM_COLORS, CALENDAR_TEAMS, LPA_TEAMS, getCalendarTeamColor, teamEventAliases } from '@/constants/teams';
 import { AdminAnnouncementsPanel } from '@/components/AdminAnnouncementsPanel';
@@ -37,6 +39,18 @@ type UserRow = { id: string; fullName: string; email?: string | null; phone?: st
 type EventRow = { id: string; title: string; date: string; time: string; location: string; locationAddress?: string | null; notes?: string | null; team: string; repeatSeriesId?: string | null; repeatUntil?: string | null };
 type GuardianLink = { id: string; athlete: Pick<UserRow, 'id' | 'fullName' | 'teams' | 'gradYear' | 'profilePhotoUri'>; guardian: Pick<UserRow, 'id' | 'fullName' | 'profilePhotoUri'>; createdAt: string };
 const roles: Role[] = ['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete'];
+function matchesGroupChatRole(role: string, selectedRoles: string[]) {
+  return selectedRoles.length === 0 || selectedRoles.includes(role);
+}
+function areAllVisibleGroupChatParticipantsSelected(selectedIds: string[], visibleIds: string[]) {
+  return visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+}
+function toggleVisibleGroupChatParticipants(selectedIds: string[], visibleIds: string[]) {
+  const visible = new Set(visibleIds);
+  return areAllVisibleGroupChatParticipantsSelected(selectedIds, visibleIds)
+    ? selectedIds.filter((id) => !visible.has(id))
+    : Array.from(new Set([...selectedIds, ...visibleIds]));
+}
 let teams: string[] = [...CALENDAR_TEAMS];
 const legacyEventTeam = (catalog: TagCatalog, value: string) => {
   const canonical = canonicalTeam(catalog, value);
@@ -109,6 +123,7 @@ function AdminDashboardContent() {
   const [groupParticipants, setGroupParticipants] = useState<string[]>([]);
   const [rosterTeamFilters, setRosterTeamFilters] = useState<string[]>([]);
   const [groupTeamFilters, setGroupTeamFilters] = useState<string[]>([]);
+  const [groupRoleFilters, setGroupRoleFilters] = useState<Role[]>([]);
   const [groupParticipantSearch, setGroupParticipantSearch] = useState('');
   const [uploadingUserPhoto, setUploadingUserPhoto] = useState<string | null>(null);
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
@@ -118,7 +133,9 @@ function AdminDashboardContent() {
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
   const [selectedGuardianId, setSelectedGuardianId] = useState<string | null>(null);
   const [tagError, setTagError] = useState('');
+  const [groupPinError, setGroupPinError] = useState('');
   const users = useListUsers(undefined, { query: { queryKey: ['/api/admin/users', 'live'] } });
+  const groupChats = useListAdminGroupChats({ query: { queryKey: ['/api/admin/group-chats'], enabled: currentUser?.role === 'Admin' } });
   const guardianLinks = useListGuardianLinks({ query: { queryKey: ['/api/admin/guardian-links', 'live'], enabled: currentUser?.role === 'Admin' || currentUser?.role === 'Staff-Coach' } });
   const calendar = useListCalendarEvents(eventTeam === 'All Teams' ? undefined : { team: legacyEventTeam(tagCatalog, eventTeam) }, { query: { queryKey: ['/api/admin/calendar-events', eventTeam] } });
   const refreshAdminData = () => {
@@ -141,6 +158,14 @@ function AdminDashboardContent() {
   const renameTag = useRenameTagOption({ mutation: { onSuccess: invalidateTagCatalog, onError: tagMutationError } });
   const deleteTag = useDeleteTagOption({ mutation: { onSuccess: invalidateTagCatalog, onError: tagMutationError } });
   const updateRoleTag = useUpdateUserRoleTag({ mutation: { onSuccess: refreshAdminData, onError: (error) => Alert.alert('Could not update role label', error.message) } });
+  const updateGroupChatPin = useUpdateGroupChatPin({ mutation: { onSuccess: async () => {
+    setGroupPinError('');
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: groupChats.queryKey }),
+      queryClient.invalidateQueries({ queryKey: ['/api/chats'] }),
+      queryClient.invalidateQueries({ queryKey: ['chats'] }),
+    ]);
+  }, onError: (error) => setGroupPinError(error.message || 'Could not update the pin setting. Please try again.') } });
   const createInvite = useCreateInvite({ mutation: { onSuccess: () => { refreshAdminData(); setShowInvite(false); setInvite({ fullName: '', email: '', phone: '', role: 'Parent-Athlete', roleTag: '', teams: [], gradYear: '' }); } } });
   const resendInvite = useResendInvite({ mutation: { onSuccess: refreshAdminData } });
   const revokeInvite = useRevokeInvite({ mutation: { onSuccess: refreshAdminData } });
@@ -248,6 +273,7 @@ function AdminDashboardContent() {
   const athleteCandidates = familyCandidates.filter((person) => person.role === 'Athlete');
   const guardianCandidates = familyCandidates.filter((person) => person.role === 'Parent-Athlete');
   const filteredGroupUsers = Array.from(new Map(activeGroupUsers
+    .filter((person) => matchesGroupChatRole(person.role, groupRoleFilters))
     .filter((person) => !groupTeamFilters.length || person.teams.some((team) => groupTeamFilters.some((filter) => teamMatches(tagCatalog, team, filter))))
     .filter((person) => {
       const teamSearch = person.teams.flatMap((team) => {
@@ -257,6 +283,13 @@ function AdminDashboardContent() {
       return `${person.fullName} ${person.email ?? ''} ${teamSearch}`.toLowerCase().includes(groupParticipantSearch.trim().toLowerCase());
     })
     .map((person) => [person.id, person])).values());
+  const visibleGroupParticipantIds = filteredGroupUsers
+    .filter((person) => person.id !== currentUser?.id)
+    .map((person) => person.id);
+  const allVisibleGroupParticipantsSelected = areAllVisibleGroupChatParticipantsSelected(groupParticipants, visibleGroupParticipantIds);
+  const toggleVisibleGroupParticipants = () => {
+    setGroupParticipants((current) => toggleVisibleGroupChatParticipants(current, visibleGroupParticipantIds));
+  };
   const handleInvite = () => createInvite.mutate({ data: { fullName: invite.fullName, email: invite.email || undefined, phone: invite.phone || undefined, role: invite.role, roleTag: invite.roleTag || null, teams: invite.teams.length ? invite.teams : undefined, gradYear: invite.gradYear || undefined } }, { onError: (error) => Alert.alert('Invite not sent', error.message) });
   const saveEvent = async (repeatDaily = false, repeatUntil = '', applyToRemainingRepeatEvents = false) => {
     if (!eventTitle.trim() || !eventDate.trim() || !eventTime.trim()) return;
@@ -360,11 +393,20 @@ function AdminDashboardContent() {
         <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.panelTitle, { color: colors.foreground }]}>Create a group chat</Text>
           <TextInput testID="group-chat-name" value={groupName} onChangeText={setGroupName} placeholder="Group name" placeholderTextColor={colors.mutedForeground} style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, marginTop: 12 }]} />
+           <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>FILTER PARTICIPANTS BY ROLE · ANY SELECTED ROLE</Text>
+           <View style={groupChatFilterStyles.roleFilters}>
+             <Pressable testID="group-role-filter-all" accessibilityRole="checkbox" accessibilityState={{ checked: groupRoleFilters.length === 0 }} onPress={() => setGroupRoleFilters([])} style={[groupChatFilterStyles.roleChip, { backgroundColor: groupRoleFilters.length === 0 ? colors.primary : colors.card, borderColor: groupRoleFilters.length === 0 ? colors.primary : colors.border }]}><Text style={[groupChatFilterStyles.roleChipText, { color: groupRoleFilters.length === 0 ? '#fff' : colors.foreground }]}>All roles</Text></Pressable>
+             {roles.map((role) => {
+               const selected = groupRoleFilters.includes(role);
+               return <Pressable key={role} testID={`group-role-filter-${role}`} accessibilityRole="checkbox" accessibilityState={{ checked: selected }} onPress={() => setGroupRoleFilters((current) => selected ? current.filter((item) => item !== role) : [...current, role])} style={[groupChatFilterStyles.roleChip, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}><Text style={[groupChatFilterStyles.roleChipText, { color: selected ? '#fff' : colors.foreground }]}>{roleLabel(role)}</Text></Pressable>;
+             })}
+           </View>
           <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>FILTER PARTICIPANTS BY TEAM · ANY SELECTED TEAM</Text>
           <TeamMultiFilter catalog={tagCatalog} selected={groupTeamFilters} onChange={setGroupTeamFilters} colors={colors} testIDPrefix="group-team-filter" />
           <Text style={[styles.formLabel, { color: colors.mutedForeground, marginTop: 9 }]}>SEARCH PARTICIPANTS</Text>
           <View style={[styles.search, { backgroundColor: colors.background, borderColor: colors.border, marginTop: 5, marginBottom: 10 }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput testID="group-participant-search" value={groupParticipantSearch} onChangeText={setGroupParticipantSearch} placeholder="Search name, email, or team" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>
           <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>PARTICIPANTS · {groupParticipants.length} SELECTED</Text>
+           <Pressable testID="select-all-filtered-group-users" accessibilityRole="button" accessibilityLabel={allVisibleGroupParticipantsSelected ? `Remove ${visibleGroupParticipantIds.length} filtered users` : `Select all ${visibleGroupParticipantIds.length} filtered users`} disabled={!visibleGroupParticipantIds.length} onPress={toggleVisibleGroupParticipants} style={[groupChatFilterStyles.bulkSelect, { backgroundColor: colors.background, borderColor: colors.border, opacity: visibleGroupParticipantIds.length ? 1 : 0.5 }]}><Feather name={allVisibleGroupParticipantsSelected ? 'minus-square' : 'check-square'} size={15} color={colors.primary} /><Text style={[groupChatFilterStyles.bulkSelectText, { color: colors.primary }]}>{allVisibleGroupParticipantsSelected ? `Remove ${visibleGroupParticipantIds.length} filtered users` : `Select all ${visibleGroupParticipantIds.length} filtered users`}</Text></Pressable>
           <View style={styles.groupPeople}>
             {filteredGroupUsers.map((person) => {
               const isSelf = person.id === currentUser?.id;
@@ -383,12 +425,73 @@ function AdminDashboardContent() {
           {!filteredGroupUsers.length ? <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>No active members match these filters.</Text> : null}
           <Pressable testID="create-group-chat" onPress={createGroup} disabled={!groupName.trim() || !groupParticipants.length || createGroupChat.isPending} style={[styles.submit, { backgroundColor: groupName.trim() && groupParticipants.length ? colors.primary : colors.muted, marginTop: 14 }]}>{createGroupChat.isPending ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitText}>Create group chat</Text><Feather name="message-square" size={16} color="#fff" /></>}</Pressable>
         </View>
+        <GroupChatPinManagement
+          role={currentUser?.role}
+          colors={colors}
+          chats={groupChats.data ?? []}
+          isLoading={groupChats.isLoading}
+          isError={groupChats.isError}
+          pinError={groupPinError}
+          isSaving={updateGroupChatPin.isPending}
+          savingConversationId={updateGroupChatPin.variables?.conversationId}
+          onRefresh={() => void groupChats.refetch()}
+          onClearError={() => setGroupPinError('')}
+          onToggle={(conversationId, isPinned) => updateGroupChatPin.mutate({ conversationId, data: { isPinned } })}
+        />
       </> : null}
 
       {section === 'Announcements' ? <AdminAnnouncementsPanel colors={colors} catalog={tagCatalog} /> : null}
-      {section === 'Tagging' ? <TagCatalogPanel colors={colors} catalog={tagCatalog} unavailable={tagApiUnavailable} error={tagApiUnavailable ? 'Tag editing is not available on this server yet. Publish the updated API server, then try again.' : tagError} onCreate={(kind, label) => createTag.mutate({ kind, data: { label } })} onRename={(kind, id, label) => renameTag.mutate({ kind, id, data: { label } })} onDelete={(kind, id) => deleteTag.mutate({ kind, id })} /> : null}
+      {section === 'Tagging' ? <TagCatalogPanel colors={colors} catalog={tagCatalog} unavailable={tagApiUnavailable} busy={createTag.isPending || renameTag.isPending || deleteTag.isPending} savingVisibility={renameTag.isPending} error={tagApiUnavailable ? 'Tag editing is not available on this server yet. Publish the updated API server, then try again.' : tagError} onCreate={(kind, label) => createTag.mutate({ kind, data: { label } })} onUpdate={(kind, id, label, hidden, onSaved) => renameTag.mutate({ kind, id, data: { label, ...(hidden === undefined ? {} : { hidden }) } }, { onSuccess: () => onSaved?.() })} onDelete={(kind, id) => deleteTag.mutate({ kind, id })} /> : null}
 
     </ScrollView>
+  </View>;
+}
+
+function GroupChatPinManagement({ role, colors, chats, isLoading, isError, pinError, isSaving, savingConversationId, onRefresh, onClearError, onToggle }: {
+  role?: string;
+  colors: ReturnType<typeof useColors>;
+  chats: { id: string; name: string; isPinned: boolean }[];
+  isLoading: boolean;
+  isError: boolean;
+  pinError: string;
+  isSaving: boolean;
+  savingConversationId?: string;
+  onRefresh: () => void;
+  onClearError: () => void;
+  onToggle: (conversationId: string, isPinned: boolean) => void;
+}) {
+  if (role !== 'Admin') return null;
+
+  return <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View style={styles.panelHeader}>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.panelTitle, { color: colors.foreground }]}>Manage pinned group chats</Text>
+        <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>Pins are shared with everyone in Messages.</Text>
+      </View>
+      <Pressable testID="refresh-group-chat-pins" accessibilityRole="button" accessibilityLabel="Refresh group chats" onPress={onRefresh} style={styles.rowIcon}>
+        <Feather name="refresh-cw" size={16} color={colors.primary} />
+      </Pressable>
+    </View>
+    {pinError ? <Text testID="group-chat-pin-error" accessibilityRole="alert" style={[styles.panelCopy, { color: colors.destructive, marginBottom: 9 }]}>{pinError}</Text> : null}
+    {isLoading ? <ActivityIndicator testID="group-chat-pins-loading" style={{ paddingVertical: 18 }} color={colors.primary} /> : isError ? <View>
+      <Text testID="group-chat-pins-load-error" accessibilityRole="alert" style={[styles.panelCopy, { color: colors.destructive }]}>Could not load group chats. Check your connection and try again.</Text>
+      <Pressable testID="retry-group-chat-pins" accessibilityRole="button" accessibilityLabel="Try again" onPress={onRefresh} style={[styles.smallButton, { backgroundColor: colors.muted, alignSelf: 'flex-start', marginTop: 10 }]}>
+        <Text style={[styles.smallButtonText, { color: colors.primary }]}>Try again</Text>
+      </Pressable>
+    </View> : chats.length ? chats.map((chat) => {
+      const saving = isSaving && savingConversationId === chat.id;
+      return <Pressable key={chat.id} testID={`toggle-group-chat-pin-${chat.id}`} accessibilityRole="switch" accessibilityLabel={`${chat.isPinned ? 'Unpin' : 'Pin'} ${chat.name}`} accessibilityState={{ checked: chat.isPinned, disabled: isSaving }} disabled={isSaving} onPress={() => {
+        onClearError();
+        onToggle(chat.id, !chat.isPinned);
+      }} style={[styles.eventCard, { borderBottomColor: colors.border, borderBottomWidth: 1, borderWidth: 0, borderRadius: 0, paddingHorizontal: 2, opacity: isSaving && !saving ? 0.55 : 1 }]}>
+        <Feather name="bookmark" size={17} color={chat.isPinned ? colors.primary : colors.mutedForeground} />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.eventTitle, { color: colors.foreground, marginBottom: 0 }]}>{chat.name}</Text>
+          <Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{chat.isPinned ? 'Pinned for everyone' : 'Not pinned'}</Text>
+        </View>
+        {saving ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name={chat.isPinned ? 'check-circle' : 'circle'} size={18} color={chat.isPinned ? colors.primary : colors.mutedForeground} />}
+      </Pressable>;
+    }) : <Text testID="group-chat-pins-empty" style={[styles.panelCopy, { color: colors.mutedForeground }]}>No group chats yet.</Text>}
   </View>;
 }
 
@@ -444,6 +547,7 @@ function RosterCard({ user, colors, roleMenuOpen, teamMenuOpen, gradYearMenuOpen
   return <View style={[styles.userCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
     <Pressable testID={`edit-photo-${user.id}`} accessibilityLabel={`Change ${user.fullName} profile photo`} onPress={onPhotoChange} disabled={uploadingPhoto} style={[styles.initials, { backgroundColor: `${colors.primary}18` }]}>{user.profilePhotoUri ? <Image source={{ uri: user.profilePhotoUri }} resizeMode="cover" style={styles.userPhoto} /> : uploadingPhoto ? <ActivityIndicator color={colors.primary} /> : <Text style={[styles.initialsText, { color: colors.primary }]}>{initials}</Text>}</Pressable>
     <View style={{ flex: 1 }}><Text style={[styles.userName, { color: colors.foreground }]}>{user.fullName}</Text><Text style={[styles.userMeta, { color: colors.mutedForeground }]}>{user.email ?? user.phone ?? 'No contact'}</Text>
+      <UserIdentityEditor user={user} />
       <View style={styles.userFooter}><Text style={[styles.status, { color: user.status === 'active' ? colors.accent : colors.primary }]}>{user.status}</Text><Pressable testID={`role-menu-${user.id}`} onPress={onToggleRole}><Text style={[styles.roleText, { color: colors.primary }]}>Access: {roleLabel(user.role)} <Feather name="chevron-down" size={12} /></Text></Pressable><Pressable testID={`role-tag-menu-${user.id}`} onPress={() => setRoleTagOpen((open) => !open)}><Text style={[styles.roleText, { color: colors.primary }]}>Label: {displayRole} <Feather name={roleTagOpen ? "chevron-up" : "chevron-down"} size={12} /></Text></Pressable></View>
       {roleMenuOpen ? menu(roles, 'roles', user.role, (value) => value && onRoleChange(value as Role)) : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 8 }}>
@@ -586,16 +690,20 @@ function CalendarChoiceRow({ options, value, onChange, colors }: { options: read
 type EditableTagKind = 'roles' | 'teams' | 'gradYears';
 type PendingTagChange = { action: 'rename' | 'delete'; kind: EditableTagKind; id: string; oldLabel: string; newLabel?: string };
 
-function TagCatalogPanel({ colors, catalog, error, unavailable, onCreate, onRename, onDelete }: {
+function TagCatalogPanel({ colors, catalog, error, unavailable, busy, savingVisibility, onCreate, onUpdate, onDelete }: {
   colors: ReturnType<typeof useColors>;
   catalog: TagCatalog;
   error: string;
   unavailable: boolean;
+  busy: boolean;
+  savingVisibility: boolean;
   onCreate: (kind: EditableTagKind, label: string) => void;
-  onRename: (kind: EditableTagKind, id: string, label: string) => void;
+  onUpdate: (kind: EditableTagKind, id: string, label: string, hidden?: boolean, onSaved?: () => void) => void;
   onDelete: (kind: EditableTagKind, id: string) => void;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [visibilityDrafts, setVisibilityDrafts] = useState<Record<string, boolean>>({});
+  const [savedVisibility, setSavedVisibility] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingTagChange | null>(null);
   const labels: Record<EditableTagKind, string> = { roles: 'Roles', teams: 'Teams', gradYears: 'Graduation years' };
@@ -603,7 +711,7 @@ function TagCatalogPanel({ colors, catalog, error, unavailable, onCreate, onRena
     if (!pending) return;
     if (unavailable) { setPending(null); return; }
     if (pending.action === 'rename' && pending.newLabel) {
-      onRename(pending.kind, pending.id, pending.newLabel);
+      onUpdate(pending.kind, pending.id, pending.newLabel);
       setEditing(null);
     } else if (pending.action === 'delete') {
       onDelete(pending.kind, pending.id);
@@ -616,7 +724,7 @@ function TagCatalogPanel({ colors, catalog, error, unavailable, onCreate, onRena
     <View style={styles.sectionHeader}>
       <View>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Tagging</Text>
-        <Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>Manage labels used throughout the LPA community. Tags in use cannot be deleted.</Text>
+        <Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>Manage labels used throughout the LPA community. Check Hide from Calendar, then save the team to apply the change.</Text>
       </View>
     </View>
     {error ? <Text style={{ color: colors.destructive, marginBottom: 10 }}>{error}</Text> : null}
@@ -627,23 +735,52 @@ function TagCatalogPanel({ colors, catalog, error, unavailable, onCreate, onRena
           {catalog[kind].map((option) => {
             const key = `${kind}:${option.id}`;
             const value = drafts[key] ?? option.label;
-            return <View key={option.id} style={[styles.roleOption, { gap: 12 }]}>
-              <TextInput value={value} onChangeText={(text) => setDrafts((current) => ({ ...current, [key]: text }))}
-                editable={!unavailable && editing === key} accessibilityLabel={`${option.label} tag name`}
-                style={[styles.input, { flex: 1, height: 38, backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]} />
-              <Pressable testID={`edit-tag-${key}`} accessibilityRole="button" accessibilityLabel={editing === key ? `Save ${option.label}` : `Edit ${option.label}`} disabled={unavailable} style={{ paddingVertical: 8, opacity: unavailable ? 0.5 : 1 }}
-                onPress={() => {
-                  if (editing !== key) { setEditing(key); return; }
-                  if (!value.trim()) return;
-                  if (value.trim() !== option.label) setPending({ action: 'rename', kind, id: option.id, oldLabel: option.label, newLabel: value.trim() });
-                  else setEditing(null);
-                }}>
-                <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12 }}>{editing === key ? 'Save' : 'Edit'}</Text>
-              </Pressable>
-              <Pressable testID={`delete-tag-${key}`} accessibilityRole="button" accessibilityLabel={`Delete ${option.label}`} disabled={unavailable} style={{ paddingVertical: 8, opacity: unavailable ? 0.5 : 1 }}
-                onPress={() => setPending({ action: 'delete', kind, id: option.id, oldLabel: option.label })}>
-                <Text style={{ color: colors.destructive, fontFamily: 'Inter_700Bold', fontSize: 12 }}>Delete</Text>
-              </Pressable>
+            const savedHidden = option.hidden === true;
+            const hiddenDraft = visibilityDrafts[key] ?? savedHidden;
+            const visibilityIsSaved = savedVisibility[key] === hiddenDraft;
+            const visibilityHasUnsavedChanges = hiddenDraft !== savedHidden && !visibilityIsSaved;
+            return <View key={option.id}>
+              <View style={[styles.roleOption, { gap: 12 }]}>
+                <TextInput value={value} onChangeText={(text) => setDrafts((current) => ({ ...current, [key]: text }))}
+                  editable={!unavailable && editing === key} accessibilityLabel={`${option.label} tag name`}
+                  style={[styles.input, { flex: 1, height: 38, backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]} />
+                <Pressable testID={`edit-tag-${key}`} accessibilityRole="button" accessibilityLabel={editing === key ? `Save ${option.label}` : `Edit ${option.label}`} disabled={unavailable || busy} style={{ paddingVertical: 8, opacity: unavailable || busy ? 0.5 : 1 }}
+                  onPress={() => {
+                    if (editing !== key) { setEditing(key); return; }
+                    if (!value.trim()) return;
+                    if (value.trim() !== option.label) setPending({ action: 'rename', kind, id: option.id, oldLabel: option.label, newLabel: value.trim() });
+                    else setEditing(null);
+                  }}>
+                  <Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 12 }}>{editing === key ? 'Save' : 'Edit'}</Text>
+                </Pressable>
+                <Pressable testID={`delete-tag-${key}`} accessibilityRole="button" accessibilityLabel={`Delete ${option.label}`} disabled={unavailable || busy} style={{ paddingVertical: 8, opacity: unavailable || busy ? 0.5 : 1 }}
+                  onPress={() => setPending({ action: 'delete', kind, id: option.id, oldLabel: option.label })}>
+                  <Text style={{ color: colors.destructive, fontFamily: 'Inter_700Bold', fontSize: 12 }}>Delete</Text>
+                </Pressable>
+              </View>
+              {kind === 'teams' ? <>
+                <View style={tagVisibilityStyles.visibilityRow}>
+                  <Pressable testID={`hide-team-${option.id}`} accessibilityRole="checkbox" accessibilityLabel="Hide from Calendar" accessibilityState={{ checked: hiddenDraft }} disabled={unavailable || busy} onPress={() => {
+                    setVisibilityDrafts((current) => ({ ...current, [key]: !hiddenDraft }));
+                    setSavedVisibility((current) => { const next = { ...current }; delete next[key]; return next; });
+                  }} style={[tagVisibilityStyles.toggle, { opacity: unavailable || busy ? 0.5 : 1 }]}>
+                    <Feather name={hiddenDraft ? 'check-square' : 'square'} size={17} color={hiddenDraft ? colors.primary : colors.mutedForeground} />
+                    <Text style={[tagVisibilityStyles.toggleText, { color: colors.foreground }]}>Hide from Calendar</Text>
+                  </Pressable>
+                  <Pressable testID={`save-team-visibility-${option.id}`} accessibilityRole="button" accessibilityLabel={`Save calendar visibility for ${option.label}`} disabled={unavailable || busy || !visibilityHasUnsavedChanges} onPress={() => {
+                    onUpdate('teams', option.id, option.label, hiddenDraft, () => {
+                      setSavedVisibility((current) => ({ ...current, [key]: hiddenDraft }));
+                    });
+                  }} style={[tagVisibilityStyles.saveButton, { backgroundColor: colors.primary, opacity: unavailable || busy || !visibilityHasUnsavedChanges ? 0.5 : 1 }]}>
+                    {visibilityIsSaved ? <Feather name="check" size={14} color="#fff" /> : null}
+                    <Text style={tagVisibilityStyles.saveButtonText}>{savingVisibility && visibilityHasUnsavedChanges ? 'Saving…' : visibilityIsSaved ? 'Saved' : 'Save'}</Text>
+                  </Pressable>
+                </View>
+                {visibilityIsSaved ? <View testID={`team-visibility-status-${option.id}`} accessibilityLiveRegion="polite" style={tagVisibilityStyles.savedStatus}>
+                  <Feather name="check-circle" size={14} color={colors.primary} />
+                  <Text style={[tagVisibilityStyles.savedStatusText, { color: colors.primary }]}>{hiddenDraft ? 'Saved — hidden from Calendar' : 'Saved — visible on Calendar'}</Text>
+                </View> : null}
+              </> : null}
             </View>;
           })}
         </View>
@@ -652,10 +789,10 @@ function TagCatalogPanel({ colors, catalog, error, unavailable, onCreate, onRena
             placeholderTextColor={colors.mutedForeground} value={drafts[kind] ?? ''} editable={!unavailable}
             onChangeText={(text) => setDrafts((current) => ({ ...current, [kind]: text }))}
             style={[styles.input, { flex: 1, backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]} />
-          <Pressable disabled={unavailable} onPress={() => {
+          <Pressable disabled={unavailable || busy} onPress={() => {
             const value = drafts[kind]?.trim();
             if (value) { onCreate(kind, value); setDrafts((current) => ({ ...current, [kind]: '' })); }
-          }} style={[styles.smallButton, { backgroundColor: colors.primary, opacity: unavailable ? 0.5 : 1 }]}>
+          }} style={[styles.smallButton, { backgroundColor: colors.primary, opacity: unavailable || busy ? 0.5 : 1 }]}>
             <Text style={styles.smallButtonText}>Add</Text>
           </Pressable>
         </View>
@@ -727,3 +864,21 @@ Object.assign(styles, StyleSheet.create({
   groupPersonInitials: { fontFamily: 'Inter_700Bold', fontSize: 10 },
   groupPersonName: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
 }));
+
+const groupChatFilterStyles = StyleSheet.create({
+  roleFilters: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 6, marginBottom: 8 },
+  roleChip: { minHeight: 34, borderRadius: 18, borderWidth: 1, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  roleChipText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
+  bulkSelect: { minHeight: 34, alignSelf: 'flex-start', borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, marginTop: 7, marginBottom: 2, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bulkSelectText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
+});
+
+const tagVisibilityStyles = StyleSheet.create({
+  visibilityRow: { minHeight: 40, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, paddingHorizontal: 8, marginTop: 2 },
+  toggle: { minHeight: 36, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 0 },
+  toggleText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  saveButton: { minHeight: 32, minWidth: 68, borderRadius: 10, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  saveButtonText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 10 },
+  savedStatus: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, marginBottom: 4 },
+  savedStatusText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
+});
