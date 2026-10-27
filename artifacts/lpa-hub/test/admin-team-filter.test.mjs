@@ -7,6 +7,37 @@ import ts from 'typescript';
 const source = ts.createSourceFile('admin-dashboard.tsx',
   readFileSync(new URL('../app/admin-dashboard.tsx', import.meta.url), 'utf8'),
   ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const groupChatHelpers = source.statements.filter((node) =>
+  ts.isFunctionDeclaration(node) && [
+    'matchesGroupChatRole',
+    'areAllVisibleGroupChatParticipantsSelected',
+    'toggleVisibleGroupChatParticipants',
+  ].includes(node.name?.text ?? ''));
+const compiledGroupChatHelpers = ts.transpileModule(
+  `${groupChatHelpers.map((node) => node.getText(source)).join('\n')}\n({ matchesGroupChatRole, areAllVisibleGroupChatParticipantsSelected, toggleVisibleGroupChatParticipants })`,
+  { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+).outputText;
+const groupChat = vm.runInNewContext(compiledGroupChatHelpers);
+test('group-chat role filters include all roles by default and combine selected roles', () => {
+  assert.equal(groupChat.matchesGroupChatRole('Parent-Athlete', []), true);
+  assert.equal(groupChat.matchesGroupChatRole('Athlete', ['Parent-Athlete', 'Athlete']), true);
+  assert.equal(groupChat.matchesGroupChatRole('Staff-Coach', ['Parent-Athlete', 'Athlete']), false);
+});
+test('bulk selection adds or removes only visible filtered participants', () => {
+  assert.deepEqual(
+    Array.from(groupChat.toggleVisibleGroupChatParticipants(['outside-filter', 'parent-1'], ['parent-1', 'athlete-1'])),
+    ['outside-filter', 'parent-1', 'athlete-1'],
+  );
+  assert.equal(groupChat.areAllVisibleGroupChatParticipantsSelected(['parent-1', 'athlete-1'], ['parent-1', 'athlete-1']), true);
+  assert.deepEqual(
+    Array.from(groupChat.toggleVisibleGroupChatParticipants(['outside-filter', 'parent-1', 'athlete-1'], ['parent-1', 'athlete-1'])),
+    ['outside-filter'],
+  );
+  assert.deepEqual(
+    Array.from(groupChat.toggleVisibleGroupChatParticipants(['parent-1'], [])),
+    ['parent-1'],
+  );
+});
 const component = source.statements.find((node) =>
   ts.isFunctionDeclaration(node) && node.name?.text === 'TeamMultiFilter');
 assert.ok(component, 'shared team filter must exist');
