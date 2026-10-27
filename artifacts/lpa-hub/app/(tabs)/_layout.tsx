@@ -6,6 +6,7 @@ import { Tabs } from 'expo-router';
 import { useListChats } from '@workspace/api-client-react';
 import { LpaIcon, type LpaIconName } from '@/components/LpaIcon';
 import { useApp } from '@/context/AppContext';
+import { CHAT_LIST_REFRESH_INTERVAL_MS } from '@/lib/chatListRefresh';
 
 type TabIconProps = { color: ColorValue; focused: boolean };
 
@@ -28,7 +29,7 @@ export default function TabLayout() {
   const isDark = useColorScheme() === 'dark';
   const isWeb = Platform.OS === 'web';
   const usesNativeBlur = Platform.OS === 'ios';
-  const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: 10_000 } });
+  const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: CHAT_LIST_REFRESH_INTERVAL_MS } });
   const unreadCount = (chats.data ?? []).reduce((total, chat) => total + chat.unreadCount, 0);
   const screenOptions = useMemo(() => ({
     headerShown: false,
