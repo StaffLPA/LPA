@@ -177,11 +177,11 @@ export default function MoreScreen() {
         <View style={{ flex: 1 }}><Text style={[styles.manageTitle, { color: colors.foreground }]}>Microsoft Forms Submissions</Text><Text style={[styles.manageCopy, { color: colors.mutedForeground }]}>Requests, approvals, and status updates</Text></View>
         <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
       </Pressable> : null}
-      <Pressable testID="performance-reports-entry" accessibilityRole="button" onPress={() => router.push((role === 'Admin' || role === 'Staff-Coach' ? '/metrics' : '/metrics/reports') as never)} style={[styles.manageUsers, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+      {role === 'Admin' || role === 'Staff-Coach' ? <Pressable testID="performance-reports-entry" accessibilityRole="button" onPress={() => router.push('/metrics')} style={[styles.manageUsers, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
         <View style={[styles.manageIcon, { backgroundColor: `${colors.primary}22` }]}><Feather name="award" size={18} color={colors.primary} /></View>
-        <View style={{ flex: 1 }}><Text style={[styles.manageTitle, { color: colors.foreground }]}>{role === 'Admin' || role === 'Staff-Coach' ? 'LPA Metrics' : 'Performance reports'}</Text><Text style={[styles.manageCopy, { color: colors.mutedForeground }]}>{role === 'Admin' || role === 'Staff-Coach' ? 'Testing, progress, and reports' : 'Published athlete progress reports'}</Text></View>
+        <View style={{ flex: 1 }}><Text style={[styles.manageTitle, { color: colors.foreground }]}>LPA Metrics</Text><Text style={[styles.manageCopy, { color: colors.mutedForeground }]}>Testing, progress, and reports</Text></View>
         <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-      </Pressable>
+      </Pressable> : null}
         <>
           <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput value={query} onChangeText={setQuery} placeholder="Search staff, partners, and rosters" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Rosters</Text>
