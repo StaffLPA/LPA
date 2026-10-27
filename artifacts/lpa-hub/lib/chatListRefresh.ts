@@ -1,0 +1,1 @@
+export const CHAT_LIST_REFRESH_INTERVAL_MS = 10_000;
