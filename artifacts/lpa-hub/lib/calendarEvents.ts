@@ -8,6 +8,13 @@ export type TeamResolver = {
   teamColor: (team: string) => string;
 };
 
+export function filterCalendarEventsByTeamVisibility<T extends { team: string }>(
+  events: T[],
+  isTeamHidden: (team: string) => boolean,
+) {
+  return events.filter((event) => !isTeamHidden(event.team));
+}
+
 export const dateFromKey = (date: string) => {
   const [year, month, day] = date.split('-').map(Number);
   return new Date(year, month - 1, day, 12);
