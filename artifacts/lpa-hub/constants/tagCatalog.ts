@@ -1,6 +1,6 @@
 import { CALENDAR_TEAM_COLORS } from '@/constants/teams';
 
-export type TagOption = { id: string; label: string; aliases?: string[] };
+export type TagOption = { id: string; label: string; aliases?: string[]; hidden?: boolean };
 export type TagCatalog = { roles: TagOption[]; teams: TagOption[]; gradYears: TagOption[] };
 export type TagKind = keyof TagCatalog | 'role' | 'team' | 'gradYear';
 
@@ -31,6 +31,10 @@ export function tagOption(catalog: TagCatalog, kind: TagKind, value: string) {
 
 export function tagLabel(catalog: TagCatalog, kind: TagKind, value: string) {
   return tagOption(catalog, kind, value)?.label ?? value;
+}
+
+export function isTeamHidden(catalog: TagCatalog, value: string) {
+  return tagOption(catalog, 'teams', value)?.hidden === true;
 }
 
 export function canonicalTeam(catalog: TagCatalog, value: string) {
