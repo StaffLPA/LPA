@@ -9,7 +9,7 @@ import { MetricProgressChart } from './MetricProgressChart';
 import { athleteWorkspaceParams, fixed, fmtDate, latestTeamAverage, MetricsWorkspace, periodError, useFilters, useWorkspace } from '@/lib/metrics';
 
 /** Exactly three tracked items per athlete: latest value, date, optional recorded goal. All neutral. */
-export function HealthPanel({ athleteId, teamWorkspace, teamLabel, showTeamAverage = false }: { athleteId: string; teamWorkspace?: MetricsWorkspace; teamLabel?: string; showTeamAverage?: boolean }) {
+export function HealthPanel({ athleteId, teamWorkspace, averageTeams = [], showTeamAverage = false }: { athleteId: string; teamWorkspace?: MetricsWorkspace; averageTeams?: { id: string; label: string }[]; showTeamAverage?: boolean }) {
   const c = useColors(); const router = useRouter();
   const filters = useFilters();
   const invalidPeriod = periodError(filters);
@@ -19,7 +19,7 @@ export function HealthPanel({ athleteId, teamWorkspace, teamLabel, showTeamAvera
   if (invalidPeriod) return <ErrorBox message={invalidPeriod} />;
   if (q.isLoading) return <Skeleton h={160} />;
   if (q.isError) return <ErrorBox message="Health tracking could not load." onRetry={() => void q.refetch()} />;
-  const items = HEALTH_METRICS.map((id) => {
+  const items = HEALTH_METRICS.filter((id) => ws?.metrics.some((m) => m.id === id && m.active)).map((id) => {
     const m = ws?.metrics.find((x) => x.id === id);
     const rows = (ws?.results ?? []).filter((r) => r.metricId === id).sort((a, b) => b.testingDate.localeCompare(a.testingDate) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
     const latest = rows[0];
@@ -27,18 +27,18 @@ export function HealthPanel({ athleteId, teamWorkspace, teamLabel, showTeamAvera
       ? ws?.summaries.find((s) => s.athleteId === athleteId && s.metricId === id && s.unit === latest.unit && s.protocol === latest.protocol)
       : undefined;
     const unit = latest?.unit ?? group?.unit ?? m?.unit ?? '';
-    const average = group ? latestTeamAverage(teamWorkspace, id, group.unit, group.protocol) : null;
-    return { id, m, latest, goal: latest?.goal ?? null, unit, average };
+    const averages = averageTeams.map((team) => ({ ...team, value: group ? latestTeamAverage(teamWorkspace, id, group.unit, group.protocol, team.id) : null }));
+    return { id, m, latest, goal: latest?.goal ?? null, unit, averages };
   });
   const histWs = ws && hist ? { ...ws, filters: { ...ws.filters, metricIds: hist }, results: ws.results.filter((r) => r.metricId === hist) } : undefined;
   return <View>
     <H sub="Neutral tracking of recorded values. Changes are not judged as better or worse, and this is not medical advice.">Health</H>
-    {items.map(({ id, m, latest, goal, unit, average }) => <Card key={id}>
+    {items.map(({ id, m, latest, goal, unit, averages }) => <Card key={id}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <View style={{ flex: 1 }}><Text style={{ color: c.foreground, fontFamily: 'Inter_700Bold', fontSize: 14 }}>{m?.name ?? id}</Text>
           <Body muted style={{ fontSize: 12 }}>Date set {latest ? fmtDate(latest.testingDate) : '-'}</Body>
           <Body muted style={{ fontSize: 12 }}>Goal {goal !== null ? `${fixed(goal, m?.decimals)} ${unit} (recorded target)` : 'N/A'}</Body>
-          {showTeamAverage && teamLabel ? <Body muted style={{ fontSize: 12, marginTop: 5 }}>Avg {m?.name ?? id} {teamLabel}: {average === null ? '-' : `${fixed(average, m?.decimals)}${unit ? ` ${unit}` : ''}`}</Body> : null}</View>
+          {showTeamAverage ? averages.map((team) => <Body key={team.id} muted style={{ fontSize: 12, marginTop: 5 }}>Avg {m?.name ?? id} {team.label}: {team.value === null ? '-' : `${fixed(team.value, m?.decimals)}${unit ? ` ${unit}` : ''}`}</Body>) : null}</View>
         <Text style={{ color: c.foreground, fontFamily: 'Inter_700Bold', fontSize: 26 }}>{latest ? fixed(latest.value, m?.decimals) : '-'} <Text style={{ fontSize: 12, color: c.mutedForeground }}>{unit}</Text></Text>
       </View>
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
