@@ -15,6 +15,15 @@ export const CATS = [{ label: 'Speed', category: 'Speed' }, { label: 'Baseball',
 
 export const recordable = (m: { active: boolean; unit: string }) => m.active && m.unit.trim().toLowerCase() !== 'unconfigured';
 
+export function filterAthletesByName<T extends { fullName: string }>(athletes: T[], query: string): T[] {
+  const terms = query.normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return athletes;
+  return athletes.filter((athlete) => {
+    const name = athlete.fullName.normalize('NFKC').toLocaleLowerCase();
+    return terms.every((term) => name.includes(term));
+  });
+}
+
 export function validateDate(date: string, today: string): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 'Enter the testing date as YYYY-MM-DD.';
   const t = new Date(`${date}T00:00:00Z`);
