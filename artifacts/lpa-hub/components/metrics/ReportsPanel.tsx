@@ -7,6 +7,9 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { Body, Btn, Card, Chip, Confirm, Empty, ErrorBox, Field, H, Label, Skeleton } from './ui';
 import { Filters, MetricsWorkspace, errMsg, filterParams, fmtDate, periodOf, useInvalidateMetrics } from '@/lib/metrics';
+import { useValdReportSelection } from '@/lib/valdReportSelection';
+import { isValdMetric, ValdMeasurementCards } from './ValdMeasurementCards';
+import { ExportBar } from './ExportBar';
 
 export function ReportList({ canManage }: { canManage: boolean }) {
   const c = useColors(); const router = useRouter(); const invalidate = useInvalidateMetrics();
@@ -32,12 +35,15 @@ export function ReportList({ canManage }: { canManage: boolean }) {
 export function ReportsPanel({ ws, f }: { ws?: MetricsWorkspace; f: Filters }) {
   const c = useColors(); const invalidate = useInvalidateMetrics(); const router = useRouter();
   const create = useCreatePerformanceReport();
+  const [valdSelection] = useValdReportSelection();
   const [title, setTitle] = useState(''); const [publish, setPublish] = useState(false);
   const [mSel, setMSel] = useState<string[] | null>(null); const [aSel, setASel] = useState<string[] | null>(null);
   const [err, setErr] = useState('');
   const scope = JSON.stringify(filterParams(f));
   useEffect(() => { setMSel(null); setASel(null); setPublish(false); setErr(''); }, [scope]);
-  const metricsAvail = (ws?.metrics ?? []).filter((m) => ws?.summaries.some((s) => s.metricId === m.id) || ws?.results.some((r) => r.metricId === m.id));
+  const metricsAvail = (ws?.metrics ?? []).filter((m) => (!f.category || m.category === f.category) &&
+    (!f.metricIds.length || f.metricIds.includes(m.id)) && !f.metricsCleared &&
+    (isValdMetric(m.id) || ws?.summaries.some((s) => s.metricId === m.id) || ws?.results.some((r) => r.metricId === m.id)));
   const athletesAvail = (ws?.athletes ?? []).filter((a) => ws?.selectedAthleteIds.includes(a.id));
   const mIds = mSel ?? metricsAvail.map((m) => m.id); const aIds = aSel ?? athletesAvail.map((a) => a.id);
   const tog = (l: string[], id: string) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]);
@@ -45,7 +51,7 @@ export function ReportsPanel({ ws, f }: { ws?: MetricsWorkspace; f: Filters }) {
     if (!title.trim()) return setErr('Give the report a title.');
     if (!mIds.length || !aIds.length) return setErr('Select at least one athlete and one metric with data.');
     const p = filterParams(f); const { start, end } = periodOf(f);
-    create.mutate({ data: { title: title.trim(), team: p.team, athleteIds: aIds, metricIds: mIds, start, end, category: p.category, coachId: p.coachId, published: publish && aIds.length === 1 } }, {
+    create.mutate({ data: { title: title.trim(), team: p.team, athleteIds: aIds, metricIds: mIds, start, end, category: p.category, coachId: p.coachId, includeValdMeasurements: true, ...valdSelection, published: publish && aIds.length === 1 } }, {
       onSuccess: (r) => { void invalidate(); setTitle(''); setErr(''); setMSel(null); setASel(null); router.push(`/metrics/report/${r.id}` as never); },
       onError: (e) => setErr(errMsg(e)),
     });
@@ -56,12 +62,15 @@ export function ReportsPanel({ ws, f }: { ws?: MetricsWorkspace; f: Filters }) {
       <Field label="Report title" value={title} onChangeText={setTitle} placeholder="Fall testing progress" />
       <Label>Metrics ({mIds.length})</Label>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>{metricsAvail.map((m) => <Chip key={m.id} label={m.name} active={mIds.includes(m.id)} onPress={() => setMSel(tog(mIds, m.id))} />)}</View>
+      {ws && mIds.some(isValdMetric) ? <><Label>VALD measurements to include</Label><Body muted>These selections are saved with the report, including their original units and trial results.</Body>
+        <ValdMeasurementCards ws={{ ...ws, selectedAthleteIds: aIds }} metricIds={mIds.filter(isValdMetric)} label="Group Average" width="100%" showDetails={false} /></> : null}
       <Label>Athletes ({aIds.length})</Label>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>{athletesAvail.slice(0, 100).map((a) => <Chip key={a.id} label={a.fullName} active={aIds.includes(a.id)} onPress={() => setASel(tog(aIds, a.id))} />)}</View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>{aIds.length === 1 ? <Chip label={publish ? 'Publish immediately' : 'Save as draft'} active={publish} onPress={() => setPublish(!publish)} /> : <Body muted style={{ fontSize: 11 }}>Reports with more than one athlete are staff-only drafts. Select a single athlete to publish to a family.</Body>}</View>
       {err ? <Body style={{ color: c.destructive, marginBottom: 8 }}>{err}</Body> : null}
       <Btn label="Create report" icon="file-text" loading={create.isPending} onPress={save} />
     </Card>
+    <ExportBar params={{ ...filterParams(f), athleteIds: aIds.length ? aIds.join(',') : 'none', metricIds: mIds.length ? mIds.join(',') : 'none' }} />
     <ReportList canManage />
   </View>;
 }
