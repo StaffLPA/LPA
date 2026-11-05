@@ -8,21 +8,11 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { useListSharedCalendarEvents, useListAnnouncements, getListAnnouncementsQueryKey } from '@workspace/api-client-react';
 import { useTagCatalog } from '@/hooks/useTagCatalog';
-import { canonicalTeam, getTeamColor, teamMatches } from '@/constants/tagCatalog';
+import { canonicalTeam, getTeamColor } from '@/constants/tagCatalog';
+import { getUpcomingCalendarEvents } from '@/lib/calendarEvents';
 import { LpaIcon, type LpaIconName } from '@/components/LpaIcon';
 import { AnnouncementCard } from '@/components/AnnouncementCard';
 
-const eventTimestamp = (date: string, time: string) => {
-  const day = new Date(`${date}T12:00:00`);
-  const match = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (match) {
-    let hours = Number(match[1]);
-    if (match[3].toUpperCase() === 'PM' && hours !== 12) hours += 12;
-    if (match[3].toUpperCase() === 'AM' && hours === 12) hours = 0;
-    day.setHours(hours, Number(match[2]), 0, 0);
-  }
-  return day.getTime();
-};
 const initialsFor = (fullName: string) => fullName.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'LPA';
 
 export default function HomeScreen() {
@@ -37,11 +27,15 @@ export default function HomeScreen() {
   const { role, user } = useApp();
   const catalog = useTagCatalog().data;
   const calendar = useListSharedCalendarEvents(undefined, {
-    query: { queryKey: ['home-calendar-events'] },
+    query: {
+      queryKey: ['/api/calendar-events'],
+      refetchInterval: 30_000,
+      refetchOnMount: 'always',
+    },
   });
 
   const announcements = useListAnnouncements({
-    query: { queryKey: getListAnnouncementsQueryKey() }
+    query: { queryKey: getListAnnouncementsQueryKey(), refetchInterval: 60_000 }
   });
 
   useEffect(() => {
@@ -54,19 +48,14 @@ export default function HomeScreen() {
 
   const firstName = user?.firstName?.trim() || user?.fullName.trim().split(/\s+/)[0] || 'there';
   const upcomingEvents = useMemo(() => {
-    const now = Date.now();
-    const seen = new Set<string>();
-    return (calendar.data ?? [])
-      .map((event) => ({ ...event, timestamp: eventTimestamp(event.date, event.time) }))
-      .filter((event) => event.timestamp >= now && (role === 'Admin' || role === 'Staff-Coach' || canonicalTeam(catalog, event.team) === 'LPA' || user?.teams?.some((team) => teamMatches(catalog, team, event.team))))
-      .filter((event) => {
-        if (seen.has(event.id)) return false;
-        seen.add(event.id);
-        return true;
-      })
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .slice(0, 3);
-  }, [calendar.data, user?.teams, catalog, role]);
+    return getUpcomingCalendarEvents(
+      calendar.data ?? [],
+      user?.teams ?? [],
+      (team) => canonicalTeam(catalog, team),
+      Date.now(),
+      3,
+    );
+  }, [calendar.data, calendar.dataUpdatedAt, user?.teams, catalog]);
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView ref={scrollViewRef} contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
