@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterCalendarEventsByTeamVisibility, parseIcsEvents, mergeEvents, timeRangeLabel } from '../lib/calendarEvents.ts';
+import { filterCalendarEventsByTeamVisibility, parseIcsEvents, mergeEvents, timeRangeLabel, getUpcomingCalendarEvents } from '../lib/calendarEvents.ts';
 
 const resolver = { canonicalTeam: (team) => team, tagLabel: (team) => team, teamColor: () => '#AB562B' };
 const feed = (extra = '') => `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:test@lpahub\r\nDTSTART;TZID=America/Phoenix:20261001T103000\r\nDTEND;TZID=America/Phoenix:20261001T123000\r\nSUMMARY:LPA vs Bombers\r\nLOCATION:Royals 5\r\n${extra}\r\nEND:VEVENT\r\nEND:VCALENDAR`;
@@ -48,4 +48,25 @@ test('hidden team tags and their events stay out of the calendar, including lega
     { id: 'visible-event', team: 'LPA Varsity' },
   ], (team) => hiddenTeamAliases.has(team));
   assert.deepEqual(visibleEvents.map(({ id }) => id), ['visible-event']);
+});
+
+test('Home events combine assigned teams with LPA, deduplicate cross-calendar copies, and sort by start time', () => {
+  const canonicalizeTeam = (team) => ({
+    Varsity: 'LPA Varsity',
+    'LPA Events': 'LPA',
+    '14u': 'LPA 14U',
+  }[team] ?? team);
+  const events = [
+    { id: 'team-copy', title: 'LPA vs Rival', date: '2026-10-29', time: '16:00 - 18:00', location: 'East Field', team: 'LPA Varsity' },
+    { id: 'lpa-copy', title: ' LPA vs Rival ', date: '2026-10-29', time: '4:00 PM - 6:00 PM', location: 'East Field', team: 'LPA Events' },
+    { id: 'lpa-event', title: 'LPA fundraiser', date: '2026-10-29', time: '9:00 AM', location: 'LPA Campus', team: 'LPA' },
+    { id: 'varsity-event', title: 'Varsity practice', date: '2026-10-28', time: '16:30 - 18:00', location: 'East Field', team: 'LPA Varsity' },
+    { id: 'fourteen-event', title: '14U workout', date: '2026-10-28', time: '6:00 PM', location: 'West Field', team: 'LPA 14U' },
+    { id: 'unrelated-event', title: 'JV practice', date: '2026-10-28', time: '3:00 PM', location: 'East Field', team: 'LPA JV' },
+    { id: 'past-event', title: 'Earlier practice', date: '2026-10-28', time: '1:00 PM', location: 'East Field', team: 'LPA Varsity' },
+  ];
+  const now = new Date(2026, 9, 28, 14).getTime();
+  const upcoming = getUpcomingCalendarEvents(events, ['Varsity', '14u'], canonicalizeTeam, now, 10);
+
+  assert.deepEqual(upcoming.map(({ id }) => id), ['varsity-event', 'fourteen-event', 'lpa-event', 'team-copy']);
 });
