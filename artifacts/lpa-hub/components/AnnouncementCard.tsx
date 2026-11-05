@@ -64,7 +64,10 @@ export function AnnouncementCard({
       )}
       
       <Text style={[styles.date, { color: colors.mutedForeground }]}>
-        {new Date(announcement.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+        {announcement.creatorName ? `${announcement.creatorName} · ` : ''}
+        {(announcement.publicationStatus && announcement.publicationStatus !== 'published') || !announcement.publishedAt
+          ? 'Not yet published'
+          : new Date(announcement.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
       </Text>
     </View>
   );
