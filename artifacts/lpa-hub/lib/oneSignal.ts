@@ -10,7 +10,7 @@ let initialized = false;
 
 function getSDK(): OneSignalSDK | null {
   // The native module is not part of Expo Go or the web bundle.
-  if (Platform.OS !== 'ios' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return null;
+  if ((Platform.OS !== 'ios' && Platform.OS !== 'android') || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return null;
   if (sdk !== undefined) return sdk;
   try {
     sdk = (require('react-native-onesignal') as typeof import('react-native-onesignal')).OneSignal;
