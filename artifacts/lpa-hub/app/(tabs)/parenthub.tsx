@@ -14,8 +14,8 @@ const forms = [
 ];
 const resources = [
   { title: 'Clarity Helpful Links', copy: 'Helpful links and resources for using Clarity.', icon: 'external-link' as const, url: 'https://legendaryprep-my.sharepoint.com/:b:/g/personal/staff_legendaryprepacademy_com/IQDC-yqu47rPS7DnnFnYhVWkAXYpn6oC7sBTB7RsYi-SdKg' },
-  { title: 'Policy Handbook', copy: 'Important guidelines for every family', icon: 'book-open' as const, url: 'https://legendaryprep-my.sharepoint.com/:b:/g/personal/staff_legendaryprepacademy_com/IQC5JjUfIdx-S45erfC44vBDATpaTpK5pZ1wJA_2U6CCz3k' },
-  { title: 'Protect the culture', copy: 'Our shared commitment to one another', icon: 'heart' as const, url: 'https://legendaryprep-my.sharepoint.com/:b:/g/personal/staff_legendaryprepacademy_com/IQDWil7XQYXoSYQ49K1g4jeJAUNMbpJ3dxpwyyZpPfDN_eQ' },
+  { title: 'Policy Handbook', copy: 'Important guidelines for every family', icon: 'book-open' as const, url: 'https://legendaryprep-my.sharepoint.com/:b:/g/personal/staff_legendaryprepacademy_com/IQB_rTv2AQNeQqsgVqUQehHgATWnk_j_3MSWOonPaZUDlKQ' },
+  { title: 'Protect the culture', copy: 'Our shared commitment to one another', icon: 'heart' as const, url: 'https://legendaryprep-my.sharepoint.com/:b:/g/personal/staff_legendaryprepacademy_com/IQA9qrLHq8DqRaz03RgAkv0DAbfQQ8vTEOVKxggXDE6V9h8' },
   { title: 'EdOptions LMA: CIM', copy: 'Open the learning platform', icon: 'external-link' as const, url: 'https://cimlearn.com/login?next=%2Fclasses' },
   { title: 'LPA Fan Gear', copy: 'Shop Legendary Prep Academy fan gear.', icon: 'external-link' as const, url: 'https://legendaryprepacademy.com/fan-gear' },
 ];
