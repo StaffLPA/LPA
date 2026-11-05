@@ -3,6 +3,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
+import { useApp } from '@/context/AppContext';
+import { CalendarQuickAddModal } from '@/components/CalendarQuickAddModal';
 import { useColors } from '@/hooks/useColors';
 import { useGetCalendarFeed } from '@workspace/api-client-react';
 import { useTagCatalog } from '@/hooks/useTagCatalog';
@@ -38,6 +40,8 @@ const eventTimestamp = (date: string, time: string) => {
 
 export default function CalendarScreen() {
   const colors = useColors();
+  const { user } = useApp();
+  const canCreateEvents = user?.role === 'Admin' || user?.role === 'Staff-Coach';
   const insets = useSafeAreaInsets();
   const today = new Date();
   const [monthDate, setMonthDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -45,6 +49,7 @@ export default function CalendarScreen() {
   const [monthDayFilter, setMonthDayFilter] = useState<string | null>(null);
   const [weekDayFilter, setWeekDayFilter] = useState<string | null>(null);
   const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [view, setView] = useState<ViewMode>('Week');
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
   const [showTeamMenu, setShowTeamMenu] = useState(false);
@@ -146,7 +151,7 @@ export default function CalendarScreen() {
   };
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 115 }} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.primary }]}>{monthLabel.toUpperCase()}</Text><Text style={[styles.title, { color: colors.foreground }]}>Calendar</Text></View></View>
+       <View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.primary }]}>{monthLabel.toUpperCase()}</Text><Text style={[styles.title, { color: colors.foreground }]}>Calendar</Text></View>{canCreateEvents ? <Pressable testID="calendar-add-event" accessibilityRole="button" accessibilityLabel="Add calendar event" onPress={() => setShowQuickAdd(true)} style={[styles.add, { backgroundColor: colors.primary }]}><Feather name="plus" size={21} color="#fff" /></Pressable> : null}</View>
         <View style={styles.filterWrap}><Pressable testID="calendar-team-filter" onPress={() => setShowTeamMenu((visible) => !visible)} style={[styles.filterSelect, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={[styles.filterDot, { backgroundColor: visibleSelectedTeam === 'all' ? colors.primary : getTeamColor(catalog, visibleSelectedTeam) }]} /><Text style={[styles.filterText, { color: colors.foreground }]}>{teamOptions.find((team) => team.id === visibleSelectedTeam)?.label ?? visibleSelectedTeam}</Text><Feather name={showTeamMenu ? 'chevron-up' : 'chevron-down'} size={17} color={colors.mutedForeground} /></Pressable>{showTeamMenu ? <View style={[styles.filterMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>{teamOptions.map((team) => <Pressable key={team.id} testID={`calendar-filter-${team.id}`} onPress={() => { setSelectedTeam(team.id); setShowTeamMenu(false); }} style={styles.filterOption}><View style={[styles.filterDot, { backgroundColor: team.id === 'all' ? colors.primary : getTeamColor(catalog, team.id) }]} /><Text style={[styles.filterText, { color: colors.foreground, flex: 1 }]}>{team.label}</Text>{visibleSelectedTeam === team.id ? <Feather name="check" size={16} color={colors.primary} /> : null}</Pressable>)}</View> : null}</View>
       <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
          <View style={styles.monthRow}><Text style={[styles.month, { color: colors.foreground }]}>{monthLabel}</Text><View style={styles.arrows}><Pressable testID={view === 'Week' ? 'previous-week' : 'previous-month'} accessibilityLabel={view === 'Week' ? 'Previous week' : 'Previous month'} onPress={() => view === 'Week' ? moveWeek(-1) : moveMonth(-1)} hitSlop={10}><Feather name="chevron-left" size={19} color={colors.foreground} /></Pressable><Pressable testID={view === 'Week' ? 'next-week' : 'next-month'} accessibilityLabel={view === 'Week' ? 'Next week' : 'Next month'} onPress={() => view === 'Week' ? moveWeek(1) : moveMonth(1)} hitSlop={10}><Feather name="chevron-right" size={19} color={colors.foreground} /></Pressable></View></View>
@@ -158,6 +163,7 @@ export default function CalendarScreen() {
           {view === 'Week' ? <CalendarEventList onSelect={setDetailEvent} colors={colors} events={visibleWeekEvents} emptyMessage={feedsUnavailable ? 'Calendar could not sync' : weekDayFilter ? 'No events scheduled for this day' : 'No events scheduled this week'} /> : <CalendarEventList onSelect={setDetailEvent} colors={colors} events={monthEvents} emptyMessage={feedsUnavailable ? 'Calendar could not sync' : monthDayFilter ? 'No events scheduled for this day' : 'No events scheduled this month'} />}
     </ScrollView>
      <CalendarEventDetails event={detailEvent && events.some((event) => event.id === detailEvent.id) ? detailEvent : null} onClose={() => setDetailEvent(null)} />
+      {canCreateEvents ? <CalendarQuickAddModal visible={showQuickAdd} onClose={() => setShowQuickAdd(false)} /> : null}
   </View>;
 }
 
