@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Switch, Text, View } from 'react-native';
-import { useCreatePerformanceMetric, useUpdatePerformanceMetric } from '@workspace/api-client-react';
+import { useCreatePerformanceMetric, useDeletePerformanceMetric, useUpdatePerformanceMetric } from '@workspace/api-client-react';
 import type { PerformanceMetric } from '@workspace/api-client-react';
 import { useColors } from '@/hooks/useColors';
 import { Body, Btn, Card, Chip, Empty, Field, H, Label, Sheet, SearchBox, Confirm } from './ui';
@@ -17,6 +17,8 @@ export function LibraryPanel({ metrics }: { metrics: PerformanceMetric[] }) {
   const invalidate = useInvalidateMetrics();
   const create = useCreatePerformanceMetric();
   const update = useUpdatePerformanceMetric();
+  const remove = useDeletePerformanceMetric();
+  const [deleting, setDeleting] = useState<PerformanceMetric | null>(null);
   const [q, setQ] = useState(''); const [edit, setEdit] = useState<PerformanceMetric | 'new' | null>(null);
   const [f, setF] = useState<Form>(blank); const [err, setErr] = useState('');
   const [audit, setAudit] = useState<string | null>(null); const [deact, setDeact] = useState<PerformanceMetric | null>(null);
@@ -34,7 +36,7 @@ export function LibraryPanel({ metrics }: { metrics: PerformanceMetric[] }) {
   const list = metrics.filter((m) => `${m.name} ${m.category}`.toLowerCase().includes(q.trim().toLowerCase()));
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((p) => ({ ...p, [k]: v }));
   return <View>
-    <H sub="Deactivating hides a metric from new testing; history and reports are kept.">Metrics library</H>
+    <H sub="Inactive metrics are hidden from dashboards and new testing. Delete removes a metric from this library; history and saved reports are kept.">Metrics library</H>
     <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}><View style={{ flex: 1 }}><SearchBox value={q} onChange={setQ} placeholder="Search metrics or category" /></View><Btn label="New metric" icon="plus" onPress={() => open('new')} /></View>
     {err && !edit ? <Body style={{ color: c.destructive, marginBottom: 8 }}>{err}</Body> : null}
     {!list.length ? <Empty title="No metrics" copy="Create a custom metric to start testing." /> : list.map((m) => <Card key={m.id} style={{ opacity: m.active ? 1 : 0.65 }}>
@@ -48,6 +50,7 @@ export function LibraryPanel({ metrics }: { metrics: PerformanceMetric[] }) {
         <Btn label={isUnconfigured(m) ? 'Configure unit' : 'Edit'} kind="ghost" onPress={() => open(m)} />
         <Btn label={m.active ? 'Deactivate' : 'Reactivate'} kind={m.active ? 'danger' : 'ghost'} onPress={() => (m.active ? setDeact(m) : toggle(m))} />
         <Btn label="History" kind="ghost" onPress={() => setAudit(m.id)} />
+        <Btn label="Delete" kind="danger" testID={`delete-metric-${m.id}`} onPress={() => { setErr(''); setDeleting(m); }} />
       </View>
     </Card>)}
     <Sheet visible={!!edit} title={edit === 'new' ? 'New metric' : 'Edit metric'} onClose={() => setEdit(null)}>
@@ -62,7 +65,16 @@ export function LibraryPanel({ metrics }: { metrics: PerformanceMetric[] }) {
       {err ? <Body style={{ color: c.destructive, marginBottom: 8 }}>{err}</Body> : null}
       <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}><Btn label="Cancel" kind="ghost" onPress={() => setEdit(null)} /><Btn label="Save metric" loading={create.isPending || update.isPending} onPress={save} /></View>
     </Sheet>
-    <Confirm visible={!!deact} title="Deactivate metric?" copy="It will no longer be available for new testing. Existing results and reports stay intact." confirmLabel="Deactivate" onCancel={() => setDeact(null)} onConfirm={() => deact && toggle(deact)} />
+    <Confirm visible={!!deact} title="Deactivate metric?" copy="It will be hidden from team and athlete dashboards and unavailable for new testing. Existing results and saved reports stay intact." confirmLabel="Deactivate" onCancel={() => setDeact(null)} onConfirm={() => deact && toggle(deact)} />
+    <Confirm visible={!!deleting} title="Delete metric?" copy={`Remove "${deleting?.name ?? ''}" from the metrics library and dashboards? Recorded results and saved reports will be preserved. This is different from deactivating, which keeps the metric available in this library.`}
+      confirmLabel="Delete metric" busy={remove.isPending} danger confirmTestID="confirm-delete-metric"
+      onCancel={() => setDeleting(null)} onConfirm={() => {
+        if (!deleting || remove.isPending) return;
+        remove.mutate({ id: deleting.id, data: { revision: deleting.revision } }, {
+          onSuccess: async () => { await invalidate(); setDeleting(null); },
+          onError: (e) => { setDeleting(null); setErr(errMsg(e)); },
+        });
+      }} />
     <AuditSheet kind="metric" id={audit} title="Metric audit history" onClose={() => setAudit(null)} />
   </View>;
 }
