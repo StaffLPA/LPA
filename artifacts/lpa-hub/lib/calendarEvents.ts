@@ -19,6 +19,70 @@ export const dateFromKey = (date: string) => {
   const [year, month, day] = date.split('-').map(Number);
   return new Date(year, month - 1, day, 12);
 };
+const startTimeMinutes = (time: string) => {
+  const start = time.trim().split(/\s*[-–—]\s*/, 2)[0];
+  const twelveHour = start.match(/^(\d{1,2}):([0-5]\d)\s*(AM|PM)$/i);
+  if (twelveHour) {
+    let hours = Number(twelveHour[1]);
+    if (twelveHour[3].toUpperCase() === 'PM' && hours !== 12) hours += 12;
+    if (twelveHour[3].toUpperCase() === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + Number(twelveHour[2]);
+  }
+  const twentyFourHour = start.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  return twentyFourHour ? Number(twentyFourHour[1]) * 60 + Number(twentyFourHour[2]) : null;
+};
+export const calendarEventTimestamp = (date: string, time: string) => {
+  const day = dateFromKey(date);
+  const minutes = startTimeMinutes(time);
+  if (minutes === null) day.setHours(12, 0, 0, 0);
+  else day.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return day.getTime();
+};
+const normalizedEventPart = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+type UpcomingEvent = { id: string; date: string; time: string; title: string; location: string; team: string };
+
+export function getUpcomingCalendarEvents<T extends UpcomingEvent>(
+  events: T[],
+  assignedTeams: string[],
+  canonicalizeTeam: (team: string) => string,
+  now = Date.now(),
+  limit = 3,
+): T[] {
+  const allowedTeams = new Set(assignedTeams.map(canonicalizeTeam));
+  const candidates = events
+    .map((event) => ({
+      event,
+      team: canonicalizeTeam(event.team),
+      timestamp: calendarEventTimestamp(event.date, event.time),
+      identity: [
+        event.date,
+        startTimeMinutes(event.time) ?? normalizedEventPart(event.time),
+        normalizedEventPart(event.title),
+        normalizedEventPart(event.location),
+      ].join('\u0000'),
+    }))
+    .filter((candidate) => candidate.timestamp >= now && (candidate.team === 'LPA' || allowedTeams.has(candidate.team)))
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  const unique: typeof candidates = [];
+  const seenIds = new Set<string>();
+  for (const candidate of candidates) {
+    if (seenIds.has(candidate.event.id)) continue;
+    seenIds.add(candidate.event.id);
+    const duplicateIndex = unique.findIndex((existing) =>
+      existing.identity === candidate.identity &&
+      (existing.team === candidate.team || existing.team === 'LPA' || candidate.team === 'LPA'),
+    );
+    if (duplicateIndex === -1) {
+      unique.push(candidate);
+    } else if (unique[duplicateIndex].team === 'LPA' && candidate.team !== 'LPA') {
+      // Keep the team-specific label when the same event is listed on both calendars.
+      unique[duplicateIndex] = candidate;
+    }
+  }
+
+  return unique.sort((a, b) => a.timestamp - b.timestamp).slice(0, limit).map(({ event }) => event);
+}
 export const dateRangeLabel = (startDate: string, endDate = startDate) => {
   const start = dateFromKey(startDate);
   const end = dateFromKey(endDate);
