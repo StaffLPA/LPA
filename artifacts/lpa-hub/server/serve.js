@@ -13,11 +13,17 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { pipeline } = require('stream');
+const { createGzip } = require('zlib');
 
 const STATIC_ROOT = path.resolve(__dirname, '..', 'static-build');
 const WEB_ROOT = path.join(STATIC_ROOT, 'web');
 const TEMPLATE_PATH = path.resolve(__dirname, 'templates', 'landing-page.html');
 const basePath = (process.env.BASE_PATH || '/').replace(/\/+$/, '');
+const MANIFESTS = Object.freeze({
+  ios: readBuildManifest('ios/manifest.json'),
+  android: readBuildManifest('android/manifest.json'),
+});
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -66,9 +72,11 @@ function toScriptString(value) {
 }
 
 function serveManifest(platform, res) {
-  const manifestPath = path.join(STATIC_ROOT, platform, 'manifest.json');
+  const manifest = Object.hasOwn(MANIFESTS, platform)
+    ? MANIFESTS[platform]
+    : null;
 
-  if (!fs.existsSync(manifestPath)) {
+  if (manifest === null) {
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end(
       JSON.stringify({ error: `Manifest not found for platform: ${platform}` }),
@@ -76,7 +84,6 @@ function serveManifest(platform, res) {
     return;
   }
 
-  const manifest = fs.readFileSync(manifestPath, 'utf-8');
   res.writeHead(200, {
     'content-type': 'application/json',
     'expo-protocol-version': '1',
@@ -102,47 +109,127 @@ function serveLandingPage(req, res, landingPageTemplate, appName) {
   res.end(html);
 }
 
-function serveFile(filePath, res) {
+function serveFile(filePath, req, res) {
   const ext = path.extname(filePath).toLowerCase();
   const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-  const content = fs.readFileSync(filePath);
-  res.writeHead(200, { 'content-type': contentType });
-  res.end(content);
+  const stat = fs.statSync(filePath);
+  // Only content-fingerprinted assets are safe to retain across releases.
+  const fingerprinted = /[-.][a-f0-9]{16,}\./i.test(path.basename(filePath));
+  const etag = `W/"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`;
+  const headers = {
+    'content-type': contentType,
+    'cache-control': fingerprinted && ext !== '.html'
+      ? 'public, max-age=31536000, immutable'
+      : 'no-cache',
+    etag,
+    'last-modified': stat.mtime.toUTCString(),
+    vary: 'Accept-Encoding',
+    'x-content-type-options': 'nosniff',
+  };
+  if (req.headers['if-none-match']?.split(',').map((value) => value.trim()).includes(etag)) {
+    res.writeHead(304, headers);
+    res.end();
+    return;
+  }
+  const acceptsGzip = (req.headers['accept-encoding'] || '').split(',').some((entry) => {
+    const [encoding, ...parameters] = entry.trim().toLowerCase().split(';');
+    const quality = parameters.find((parameter) => parameter.trim().startsWith('q='));
+    return encoding === 'gzip' && (!quality || Number(quality.trim().slice(2)) > 0);
+  });
+  const compressible = /\.(html|js|json|css|svg|map)$/i.test(filePath);
+  const gzip = acceptsGzip && compressible && stat.size >= 1024;
+  if (gzip) headers['content-encoding'] = 'gzip';
+  else headers['content-length'] = stat.size;
+  res.writeHead(200, headers);
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+  const onError = (error) => { if (error) res.destroy(error); };
+  // Stream rather than buffering a complete JS bundle per concurrent visitor.
+  const source = fs.createReadStream(filePath);
+  if (gzip) pipeline(source, createGzip(), res, onError);
+  else pipeline(source, res, onError);
 }
 
-function serveStaticFile(urlPath, res) {
-  const safePath = path
-    .normalize(urlPath)
-    .replace(/^(\.\.(\/|\\|$))+/, '')
-    .replace(/^[/\\]+/, '');
-  const candidates = [path.join(STATIC_ROOT, safePath), path.join(WEB_ROOT, safePath)];
+function readBuildManifest(relativePath) {
+  const filePath = safeStaticFilePath(STATIC_ROOT, relativePath);
+  return filePath ? fs.readFileSync(filePath, 'utf-8') : null;
+}
 
-  for (const filePath of candidates) {
-    if (!filePath.startsWith(STATIC_ROOT)) {
-      res.writeHead(403);
-      res.end('Forbidden');
-      return true;
-    }
-    if (fs.existsSync(filePath) && !fs.statSync(filePath).isDirectory()) {
-      serveFile(filePath, res);
-      return true;
+/** Production build output is immutable: request URLs select a pre-registered handler, never a file path. */
+function createStaticFileServer(roots) {
+  const assets = [];
+  function registerDirectory(root, relativeDirectory = '') {
+    const directory = path.join(root, relativeDirectory);
+    if (!fs.existsSync(directory)) return;
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue;
+      const relativePath = path.join(relativeDirectory, entry.name);
+      if (entry.isDirectory()) registerDirectory(root, relativePath);
+      else if (entry.isFile()) {
+        const filePath = safeStaticFilePath(root, relativePath);
+        if (filePath) assets.push({
+          url: `/${relativePath.split(path.sep).join('/')}`,
+          serve: (req, res) => serveFile(filePath, req, res),
+        });
+      }
     }
   }
-  return false;
+  for (const root of roots) registerDirectory(root);
+  return (urlPath, req, res) => {
+    let decodedPath;
+    try {
+      decodedPath = decodeURIComponent(urlPath);
+    } catch {
+      res.writeHead(400);
+      res.end('Invalid asset path');
+      return true;
+    }
+    const asset = assets.find((entry) => entry.url === decodedPath);
+    if (!asset) return false;
+    asset.serve(req, res);
+    return true;
+  };
 }
 
-function serveWebEntry(res) {
+function isWithinDirectory(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === '' || (
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
+}
+
+function safeStaticFilePath(root, relativePath) {
+  const absoluteRoot = path.resolve(root);
+  const candidate = path.resolve(absoluteRoot, relativePath);
+  if (!isWithinDirectory(absoluteRoot, candidate)) return null;
+  try {
+    const realRoot = fs.realpathSync(absoluteRoot);
+    const realCandidate = fs.realpathSync(candidate);
+    if (!isWithinDirectory(realRoot, realCandidate) || !fs.statSync(realCandidate).isFile()) return null;
+    return realCandidate;
+  } catch (error) {
+    if (['ENOENT', 'ENOTDIR', 'ELOOP', 'EACCES'].includes(error?.code)) return null;
+    throw error;
+  }
+}
+
+function serveWebEntry(req, res) {
   const entry = path.join(WEB_ROOT, 'index.html');
   if (!fs.existsSync(entry)) {
     res.writeHead(404);
     res.end('Web application is not available.');
     return;
   }
-  serveFile(entry, res);
+  serveFile(entry, req, res);
 }
 
 const landingPageTemplate = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 const appName = getAppName();
+const serveStaticFile = createStaticFileServer([STATIC_ROOT, WEB_ROOT]);
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
@@ -166,17 +253,21 @@ const server = http.createServer((req, res) => {
       return serveManifest(platform, res);
     }
 
-    if (pathname === '/') return serveWebEntry(res);
+    if (pathname === '/') return serveWebEntry(req, res);
   }
 
   if (pathname === '/download') return serveLandingPage(req, res, landingPageTemplate, appName);
-  if (serveStaticFile(pathname, res)) return;
-  if (!path.extname(pathname)) return serveWebEntry(res);
+  if (serveStaticFile(pathname, req, res)) return;
+  if (!path.extname(pathname)) return serveWebEntry(req, res);
   res.writeHead(404);
   res.end('Not Found');
 });
 
-const port = parseInt(process.env.PORT || '3000', 10);
-server.listen(port, '0.0.0.0', () => {
-  console.log(`Serving static Expo build on port ${port}`);
-});
+if (require.main === module) {
+  const port = parseInt(process.env.PORT || '3000', 10);
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`Serving static Expo build on port ${port}`);
+  });
+}
+
+module.exports = { serveFile, safeStaticFilePath, createStaticFileServer };
