@@ -137,8 +137,11 @@ test('athlete route and Health panel use the tested query scopes', () => {
   const route = readFileSync(new URL('../app/metrics/athlete/[id].tsx', import.meta.url), 'utf8');
   const health = readFileSync(new URL('../components/metrics/HealthPanel.tsx', import.meta.url), 'utf8');
   assert.match(route, /athleteWorkspaceParams\(f,\s*String\(id\)\)/);
-  assert.match(route, /athleteTeamAverageParams\(f,\s*averageTeamId\)/);
+  assert.match(route, /athleteTeamAverageParams\(f,\s*averageTeams\.length === 1 \? averageTeams\[0\]\.id : undefined\)/);
   assert.match(route, /<FilterBar[^>]*hideTeam/);
-  assert.match(route, /const averageTeamId = a\?\.teams\[0\]/);
+  assert.match(route, /new Set\(a\?\.teams \?\? \[\]\)/);
+  assert.equal((route.match(/averageTeams=\{averageTeams\}/g) ?? []).length, 2);
+  assert.doesNotMatch(route, /Growth counts exclude/);
   assert.match(health, /athleteWorkspaceParams\(filters,\s*athleteId,\s*\{\s*category:\s*'Health'\s*\}\)/);
+  assert.match(health, /averages\.map\(\(team\)/);
 });
