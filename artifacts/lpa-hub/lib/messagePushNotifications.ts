@@ -8,9 +8,9 @@ import {
   hasOneSignalNativeModule,
 } from '@/lib/oneSignal';
 
-// The OneSignal native SDK presents its own iOS notifications. Do not ask
-// expo-notifications to present the same foreground APNs event a second time.
-if (Platform.OS !== 'web' && !(Platform.OS === 'ios' && hasOneSignalNativeModule())) {
+// OneSignal owns native presentation on both mobile platforms.
+// Keep Expo presentation only for clients without the OneSignal native SDK.
+if (Platform.OS !== 'web' && !hasOneSignalNativeModule()) {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
@@ -23,7 +23,7 @@ if (Platform.OS !== 'web' && !(Platform.OS === 'ios' && hasOneSignalNativeModule
 
 export type RegisteredPushToken = { expoPushToken: string; platform: 'ios' | 'android' };
 
-export async function requestMessagePushToken(): Promise<RegisteredPushToken | null> {
+export async function requestMessagePushToken(oneSignalSubscriptionId?: string | null): Promise<RegisteredPushToken | null> {
   if (Platform.OS === 'web' || !Device.isDevice || (Platform.OS !== 'ios' && Platform.OS !== 'android')) return null;
 
   if (Platform.OS === 'android') {
@@ -38,12 +38,17 @@ export async function requestMessagePushToken(): Promise<RegisteredPushToken | n
     });
   }
 
+  // Native OneSignal registration must not depend on obtaining an Expo token.
+  // In particular Android may have OneSignal FCM configured without Expo FCM credentials.
+  if (hasOneSignalNativeModule()) {
+    return oneSignalSubscriptionId
+      ? { expoPushToken: `OneSignalPushToken[${oneSignalSubscriptionId}]`, platform: Platform.OS }
+      : null;
+  }
+
   const existing = await Notifications.getPermissionsAsync();
-  // On iOS native builds, OneSignal's subscription dialog owns permission.
-  // Keep the Expo flow for Expo Go and older builds without OneSignal.
-  const oneSignalOwnsPermission = Platform.OS === 'ios' && hasOneSignalNativeModule();
+  // OneSignal's subscription dialog owns native permission. This is the legacy Expo path.
   const permissionGranted = existing.granted
-    || oneSignalOwnsPermission
     || (await Notifications.requestPermissionsAsync()).granted;
   if (!permissionGranted) return null;
 
