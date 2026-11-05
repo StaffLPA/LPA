@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.legendaryprepacademy.lpa",
-      "versionCode": 8,
+      "versionCode": 9,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
@@ -35,6 +35,15 @@
           "mode": "production",
           "disableLocation": true,
           "iPhoneDeploymentTarget": "16.4"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
         }
       ],
       [
