@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "278031992128",
+    "project_id": "lpa-app-b9bce",
+    "storage_bucket": "lpa-app-b9bce.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:278031992128:android:cdde2b3e2a4fc86a0326a5",
+        "android_client_info": {
+          "package_name": "com.legendaryprepacademy.lpa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDarubHJONSKV6pRskd5CLbwPyq8aLem4E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
