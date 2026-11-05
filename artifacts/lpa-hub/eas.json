@@ -4,6 +4,9 @@
       "corepack": true,
       "pnpm": "10.26.1",
       "node": "22.14.0",
+      "buildArtifactPaths": [
+        "android/app/build/outputs/mapping/release/mapping.txt"
+      ],
       "android": {
         "image": "sdk-57",
         "buildType": "app-bundle"
