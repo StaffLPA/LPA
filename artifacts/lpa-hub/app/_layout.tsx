@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Platform, Pressable, StyleSheet, Text } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,12 +12,14 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider, usePathname, useRouter, useSegments } from 'expo-router';
 import { safeFormPath } from '@/lib/formNavigation';
 import * as SplashScreen from 'expo-splash-screen';
+import { FontDisplay, type FontSource } from 'expo-font';
 import { AppProvider, useApp, useLiveSync } from '@/context/AppContext';
 import { setBaseUrl } from '@workspace/api-client-react';
 import { MessageNotificationCenter } from '@/components/MessageNotificationCenter';
+import { useColors } from '@/hooks/useColors';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -50,8 +52,10 @@ function RootLayoutNav() {
 
     const onLaunch = segments[0] === 'launch';
     const onAdminDashboard = segments.some((segment) => segment === 'admin-dashboard');
+    const onAccountDeletion = Platform.OS === 'web' && segments[0] === 'account-deletion';
+    const onPublicBuild = (segments[0] as string) === 'build' || (segments[0] as string) === 'intensity-guide';
 
-    if (!user && !onLaunch) {
+    if (!user && !onLaunch && !onAccountDeletion && !onPublicBuild) {
       router.replace(
         safeFormPath(pathname)
           ? { pathname: '/launch', params: { returnTo: pathname } }
@@ -69,6 +73,7 @@ function RootLayoutNav() {
   return (
     <Stack initialRouteName="launch" screenOptions={{ headerBackTitle: 'Back' }}>
       <Stack.Screen name="launch" options={{ headerShown: false }} />
+      <Stack.Screen name="account-deletion" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="admin-users" options={{ headerShown: false }} />
       <Stack.Screen name="admin-dashboard" options={{ headerShown: false }} />
@@ -85,7 +90,32 @@ function RootLayoutNav() {
       <Stack.Screen name="new-chat" options={{ headerShown: false }} />
       <Stack.Screen name="chat/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="account" options={{ headerShown: false }} />
+      <Stack.Screen name="build" options={{ headerShown: false }} />
+      <Stack.Screen name="intensity-guide" options={{ headerShown: false }} />
     </Stack>
+  );
+}
+
+function AppNavigation() {
+  const colors = useColors();
+  if (Platform.OS !== 'web') return <RootLayoutNav />;
+  // Navigation owns the area outside centered scenes; its default light
+  // background must not show through around LPA's dark desktop content.
+  return (
+    <ThemeProvider value={{
+      ...DarkTheme,
+      colors: {
+        ...DarkTheme.colors,
+        background: colors.background,
+        card: colors.card,
+        text: colors.foreground,
+        border: colors.border,
+        primary: colors.primary,
+        notification: colors.primary,
+      },
+    }}>
+      <RootLayoutNav />
+    </ThemeProvider>
   );
 }
 
@@ -108,21 +138,36 @@ function LiveSyncNotice() {
   );
 }
 
+// Web uses font-display: swap so text paints in the system fallback immediately
+// instead of rendering invisible while Inter downloads. Native is unchanged.
+const webFont = (asset: number): FontSource =>
+  Platform.OS === 'web' ? { uri: asset, display: FontDisplay.SWAP } : asset;
+const interFonts: Record<string, FontSource> = {
+  Inter_400Regular: webFont(Inter_400Regular),
+  Inter_500Medium: webFont(Inter_500Medium),
+  Inter_600SemiBold: webFont(Inter_600SemiBold),
+  Inter_700Bold: webFont(Inter_700Bold),
+};
+
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-  });
+  const [fontsLoaded, fontError] = useFonts(interFonts);
+
+  // On web, wait briefly for Inter so text never paints blank, but never block forever.
+  const [webFontTimeout, setWebFontTimeout] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const timer = setTimeout(() => setWebFontTimeout(true), 800);
+    return () => clearTimeout(timer);
+  }, []);
+  const fontsSettled = fontsLoaded || !!fontError || (Platform.OS === 'web' && webFontTimeout);
 
   useEffect(() => {
-    if (Platform.OS === 'web' || fontsLoaded || fontError) {
+    if (fontsSettled) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [fontsSettled]);
 
-  if (Platform.OS !== 'web' && !fontsLoaded && !fontError) return null;
+  if (!fontsSettled) return Platform.OS === 'web' ? <View style={styles.webBoot} /> : null;
 
   return (
     <SafeAreaProvider>
@@ -131,7 +176,7 @@ export default function RootLayout() {
           <GestureHandlerRootView>
             <KeyboardProvider>
               <AppProvider>
-                <RootLayoutNav />
+                <AppNavigation />
                 <LiveSyncNotice />
                 <MessageNotificationCenter />
               </AppProvider>
@@ -144,11 +189,13 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  webBoot: { flex: 1, backgroundColor: '#050505' },
   liveSyncNotice: {
     position: 'absolute',
     left: 18,
     right: 18,
-    bottom: 92,
+    bottom: Platform.OS === 'web' ? 100 : 92,
+    ...(Platform.OS === 'web' ? { maxWidth: 520, marginHorizontal: 'auto' as const } : null),
     backgroundColor: '#5A2418',
     borderRadius: 12,
     paddingHorizontal: 14,
