@@ -19,35 +19,38 @@ export default function AthleteProfile() {
   const params = athleteWorkspaceParams(f, String(id));
   const q = useWorkspace(params);
   const ws = q.data; const a = ws?.athletes.find((x) => x.id === id);
-  const averageTeamId = a?.teams[0];
-  const rawAverageTeamLabel = averageTeamId ? ws?.teams.find((team) => team.id === averageTeamId)?.label ?? averageTeamId : undefined;
-  const ageGroup = rawAverageTeamLabel?.match(/^(?:LPA\s+)?(\d+)U$/i)?.[1];
-  const averageTeamLabel = ageGroup ? `${ageGroup}u` : rawAverageTeamLabel;
-  const teamAverageParams = athleteTeamAverageParams(f, averageTeamId);
-  const teamAverageQuery = useWorkspace(teamAverageParams, Boolean(averageTeamId && (role === 'Admin' || role === 'Staff-Coach')));
+  const averageTeams = [...new Set(a?.teams ?? [])].map((teamId) => {
+    const label = ws?.teams.find((team) => team.id === teamId)?.label ?? teamId;
+    const ageGroup = label.match(/^(?:LPA\s+)?(\d+)U$/i)?.[1];
+    return { id: teamId, label: ageGroup ? `${ageGroup}u` : label };
+  });
+  // Fetch a shared comparison workspace for multiple teams, then calculate each
+  // team's average independently using its actual roster membership.
+  const teamAverageParams = athleteTeamAverageParams(f, averageTeams.length === 1 ? averageTeams[0].id : undefined);
+  const teamAverageQuery = useWorkspace(teamAverageParams, Boolean(averageTeams.length && (role === 'Admin' || role === 'Staff-Coach')));
   if (role !== 'Admin' && role !== 'Staff-Coach') return <Shell title="Athlete profile"><Card><Body>Athlete profiles are for Admin and Staff-Coach users.</Body></Card></Shell>;
   const groups = groupSummaries(ws);
   return <Shell title={a?.fullName ?? 'Athlete profile'} kicker={a ? `${a.teams.join(', ')}${a.gradYear ? ` · ${a.gradYear}` : ''}`.toUpperCase() : 'LPA METRICS'} onRefresh={() => void q.refetch()} refreshing={q.isRefetching}>
     <CategoryTabs f={f} />
      <FilterBar f={f} ws={ws} hideAthletes hideTeam />
-     {averageTeamId && teamAverageQuery.isError ? <ErrorBox message="The team averages could not be loaded." onRetry={() => void teamAverageQuery.refetch()} /> : null}
+     {averageTeams.length > 0 && teamAverageQuery.isError ? <ErrorBox message="The team averages could not be loaded." onRetry={() => void teamAverageQuery.refetch()} /> : null}
     {f.category === 'Health' ? <>
-       <HealthPanel athleteId={String(id)} teamWorkspace={teamAverageQuery.data} teamLabel={averageTeamLabel} showTeamAverage={Boolean(averageTeamId && averageTeamLabel)} />
+       <HealthPanel athleteId={String(id)} teamWorkspace={teamAverageQuery.data} averageTeams={averageTeams} showTeamAverage={averageTeams.length > 0} />
       {ws && a && !q.isError ? <AthleteProgressChart key={String(id)} ws={ws} athleteId={String(id)} athleteName={a.fullName} /> : null}
     </> : <>
     {q.isLoading ? <><Skeleton /><Skeleton h={160} /></> : q.isError ? <ErrorBox message={(q.error as Error)?.message} onRetry={() => void q.refetch()} /> : !a ? <Empty title="Athlete not found" copy="This person is not on your authorized Athlete roster." /> : <>
-       <KpiCards ws={ws} title="Latest results" label="Latest" showDetails={false} teamWorkspace={teamAverageQuery.data} teamLabel={averageTeamLabel} showTeamAverage={Boolean(averageTeamId && averageTeamLabel)} renderGraph={ws ? (metricId, unit, protocol) => <MetricProgressChart key={`${id}-${metricId}-${unit}-${protocol ?? ''}`} ws={ws} athleteId={String(id)} metricId={metricId} unit={unit} protocol={protocol} /> : undefined} />
+       <KpiCards ws={ws} title="Latest results" label="Latest" showDetails={false} teamWorkspace={teamAverageQuery.data} averageTeams={averageTeams} showTeamAverage={averageTeams.length > 0} renderGraph={ws ? (metricId, unit, protocol) => <MetricProgressChart key={`${id}-${metricId}-${unit}-${protocol ?? ''}`} ws={ws} athleteId={String(id)} metricId={metricId} unit={unit} protocol={protocol} /> : undefined} />
       <View style={{ height: 14 }} />
       {ws ? <AthleteProgressChart key={String(id)} ws={ws} athleteId={String(id)} athleteName={a.fullName} /> : null}
       <View style={{ height: 14 }} />
       <Card>
-        <H sub="Growth counts exclude neutral metrics. Lower is better for sprints, so a faster time counts as improved.">Growth summary</H>
+        <H>Growth summary</H>
         <Body>{groups.filter((g) => g.metric.direction !== 'neutral' && g.summaries.some((s) => s.status === 'improved')).length} metrics improved · {groups.reduce((n, g) => n + (g.metric.direction === 'neutral' ? 0 : g.summaries.filter((s) => s.personalBestInPeriod).length), 0)} personal bests</Body>
       </Card>
       {[...new Set(groups.map((g) => g.metric.category))].sort().map((cat) => <Card key={cat}>
         <H sub="First, latest, best and change per metric.">{cat}</H>
         {groups.filter((g) => g.metric.category === cat).map((g) => g.summaries.map((s) => <View key={g.key} style={{ borderTopWidth: 1, borderColor: c.border, paddingVertical: 10 }}>
-          <Text style={{ color: c.foreground, fontFamily: 'Inter_700Bold', fontSize: 13 }}>{g.metric.name} <Text style={{ color: c.mutedForeground, fontSize: 11 }}>({s.unit}, {s.protocol})</Text>{s.personalBestInPeriod && g.metric.direction !== 'neutral' ? '  PB' : ''}</Text>
+          <Text style={{ color: c.foreground, fontFamily: 'Inter_700Bold', fontSize: 13 }}>{g.metric.name}{s.personalBestInPeriod && g.metric.direction !== 'neutral' ? '  PB' : ''}</Text>
           <Body muted style={{ fontSize: 12 }}>First {fixed(s.first, g.metric.decimals)} · Latest {fixed(s.latest, g.metric.decimals)} · Previous {fixed(s.previous, g.metric.decimals)} · Best {g.metric.direction === 'neutral' ? 'N/A' : fixed(s.best, g.metric.decimals)}</Body>
           <Body muted style={{ fontSize: 12 }}>Change {fixed(s.change, g.metric.decimals)} ({fmtPct(s.percentChange)}) · Overall {fixed(s.overallChange, g.metric.decimals)} ({fmtPct(s.overallPercentChange)}) · {s.count} tests · last {fmtDate(s.lastTestingDate)} · {g.metric.direction === 'neutral' ? 'Tracked' : STATUS_LABEL[s.status] ?? s.status}</Body></View>))}
       </Card>)}
