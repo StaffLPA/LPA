@@ -18,7 +18,7 @@ export function FilterBar({ f, ws, hideAthletes, hideTeam }: { f: Filters; ws?: 
   const coaches: [string, string][] = ws?.coaches?.length ? ws.coaches.map((x) => [x.id, x.label]) : [...new Map((ws?.results ?? []).map((r) => [r.recordedBy, r.recorderName] as [string, string])).entries()];
   const err = periodError(f);
   const athletes = (ws?.athletes ?? []).filter((a) => a.fullName.toLowerCase().includes(f.athleteSearch.trim().toLowerCase()));
-  const metrics = (ws?.metrics ?? []).filter((m) => (!f.category || m.category === f.category) && m.name.toLowerCase().includes(f.metricSearch.trim().toLowerCase()));
+  const metrics = (ws?.metrics ?? []).filter((m) => m.active && (!f.category || m.category === f.category) && m.name.toLowerCase().includes(f.metricSearch.trim().toLowerCase()));
   const active = [hideTeam ? '' : f.team, f.athleteIds.length || f.athletesCleared, f.metricIds.length || f.metricsCleared, f.category, f.coachId, f.preset !== 'all'].filter(Boolean).length;
   const teamLabel = f.team ? ws?.teams.find((t) => t.id === f.team)?.label ?? f.team : 'All teams';
   const periodLabel = f.preset === 'custom' ? (f.start || f.end ? `${f.start ? fmtDate(f.start) : '?'} to ${f.end ? fmtDate(f.end) : '?'}` : 'Custom') : PRESETS.find((p) => p.id === f.preset)?.label;
@@ -71,7 +71,7 @@ export function FilterBar({ f, ws, hideAthletes, hideTeam }: { f: Filters; ws?: 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <Btn label="Select all" kind="ghost" onPress={() => setFilters({ metricIds: [], metricsCleared: false })} />
         <Btn label="Clear all" kind="ghost" onPress={() => setFilters({ metricIds: [], metricsCleared: true })} />
-        {f.category ? <Btn label={`Select all in ${f.category}`} kind="ghost" onPress={() => setFilters({ metricIds: (ws?.metrics ?? []).filter((m) => m.category === f.category).map((m) => m.id), metricsCleared: false })} /> : null}
+        {f.category ? <Btn label={`Select all in ${f.category}`} kind="ghost" onPress={() => setFilters({ metricIds: (ws?.metrics ?? []).filter((m) => m.active && m.category === f.category).map((m) => m.id), metricsCleared: false })} /> : null}
       </View>
       <SearchBox value={f.metricSearch} onChange={(v) => setFilters({ metricSearch: v })} placeholder="Search metrics" />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>{metrics.map((m) => <Chip key={m.id} label={m.name} active={!f.metricsCleared && (!f.metricIds.length || f.metricIds.includes(m.id))} onPress={() => { const t = toggleSelection(f.metricIds, f.metricsCleared, m.id); setFilters({ metricIds: t.ids, metricsCleared: t.cleared }); }} />)}</View>
