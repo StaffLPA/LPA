@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Platform, StyleSheet, useColorScheme, View, type ColorValue } from 'react-native';
+import { Platform, StyleSheet, useColorScheme, useWindowDimensions, View, type ColorValue } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
@@ -28,6 +28,9 @@ export default function TabLayout() {
   const colors = useColors();
   const isDark = useColorScheme() === 'dark';
   const isWeb = Platform.OS === 'web';
+  const { width } = useWindowDimensions();
+  // Desktop web: contain tab content to a readable column; phones stay edge-to-edge.
+  const isWideWeb = isWeb && width >= 900;
   const usesNativeBlur = Platform.OS === 'ios';
   const chats = useListChats({ query: { queryKey: ['chats'], refetchInterval: CHAT_LIST_REFRESH_INTERVAL_MS } });
   const unreadCount = (chats.data ?? []).reduce((total, chat) => total + chat.unreadCount, 0);
@@ -43,16 +46,21 @@ export default function TabLayout() {
       borderTopColor: colors.border,
       height: isWeb ? 84 : 82,
       paddingTop: 8,
+      ...(isWeb ? { paddingBottom: 'max(env(safe-area-inset-bottom), 26px)' as unknown as number, height: 'calc(58px + max(env(safe-area-inset-bottom), 26px))' as unknown as number } : null),
       elevation: 0,
+      ...(isWideWeb ? { paddingHorizontal: Math.max(24, (width - 760) / 2) } : null),
     },
-    tabBarItemStyle: { paddingBottom: 2 },
+    tabBarItemStyle: { paddingBottom: 2, ...(isWeb ? { minHeight: 48 } : null) },
     tabBarHideOnKeyboard: true,
+    sceneStyle: isWideWeb
+      ? { width: '100%' as const, maxWidth: 760, alignSelf: 'center' as const, backgroundColor: colors.background, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border }
+      : undefined,
     lazy: true,
     freezeOnBlur: true,
     tabBarBackground: () => usesNativeBlur
       ? <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
       : <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />,
-  }), [colors, isDark, isWeb, usesNativeBlur]);
+  }), [colors, isDark, isWeb, isWideWeb, usesNativeBlur, width]);
   const messageOptions = useMemo(() => ({
     title: 'Messages',
     tabBarBadge: unreadCount || undefined,
