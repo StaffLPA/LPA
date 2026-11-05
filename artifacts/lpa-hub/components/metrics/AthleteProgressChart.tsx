@@ -38,6 +38,5 @@ export function AthleteProgressChart({ ws, athleteId, athleteName, metricId, uni
           <LineChart title={`${metricName ?? g.category} (${g.unit})`} unit={g.unit} direction="neutral" decimals={g.lines[0].decimals} caption={`${mode === 'monthly' ? 'Monthly' : 'Daily'} latest result`} series={series} dateLabel={mode === 'monthly' ? monthLabel : undefined} showEndpoints={false} />
         </View>;
       })}
-    <Body muted style={{ fontSize: 11 }}>Lines never mix units or protocols. Tap a legend item to hide it, or a point for details.</Body>
   </Card>;
 }
