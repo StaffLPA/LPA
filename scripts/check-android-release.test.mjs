@@ -10,14 +10,19 @@ function fixture(run) {
   const mobile = path.join(root, 'artifacts/lpa-hub');
   mkdirSync(path.join(mobile, 'vendor'), { recursive: true });
   const config = {
-    expo: { version: '1.0.6', android: { package: 'com.legendaryprepacademy.lpa', versionCode: 8 },
-      plugins: [['onesignal-expo-plugin', { mode: 'production' }]] },
+    expo: { version: '1.0.6', android: { package: 'com.legendaryprepacademy.lpa', versionCode: 9 },
+      plugins: [['onesignal-expo-plugin', { mode: 'production' }], ['expo-build-properties', { android: {
+        enableMinifyInReleaseBuilds: true, enableShrinkResourcesInReleaseBuilds: true,
+      } }]] },
   };
   const save = () => writeFileSync(path.join(mobile, 'app.json'), JSON.stringify(config));
   save();
-  writeFileSync(path.join(mobile, 'eas.json'), JSON.stringify({ build: { production: { android: { buildType: 'app-bundle' } } } }));
+  writeFileSync(path.join(mobile, 'eas.json'), JSON.stringify({ build: { production: {
+    buildArtifactPaths: ['android/app/build/outputs/mapping/release/mapping.txt'],
+    android: { buildType: 'app-bundle' },
+  } } }));
   writeFileSync(path.join(mobile, 'package.json'), JSON.stringify({ dependencies: {
-    expo: '~57.0.32', react: '19.2.3', 'react-native': '0.86.3',
+    expo: '~57.0.32', 'expo-build-properties': '~57.0.23', react: '19.2.3', 'react-native': '0.86.3',
     'react-native-onesignal': '5.5.14', '@workspace/api-client-react': 'file:vendor/client.tgz',
   } }));
   writeFileSync(path.join(mobile, 'vendor/client.tgz'), 'fixture');
@@ -26,12 +31,12 @@ function fixture(run) {
 }
 test('preflight distinguishes source readiness from unverified provider and device setup', () => fixture(({ root }) => {
   const result = checkAndroidRelease(root);
-  assert.equal(result.versionCode, 8);
+  assert.equal(result.versionCode, 9);
   assert.match(result.warnings.join(' '), /real-device delivery/);
   assert.match(result.warnings.join(' '), /No google-services/);
 }));
 test('preflight rejects old Android version codes and application ID changes', () => fixture(({ root, config, save }) => {
-  config.expo.android.versionCode = 7; save();
+  config.expo.android.versionCode = 8; save();
   assert.throws(() => checkAndroidRelease(root), /versionCode/);
   config.expo.android.versionCode = 8;
   config.expo.android.package = 'wrong.package'; save();
