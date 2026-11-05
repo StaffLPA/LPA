@@ -12,13 +12,15 @@ import { TeamProgressChart } from '@/components/metrics/TeamProgressChart';
 import { OverviewEntry, LeaveGuard } from '@/components/metrics/OverviewEntry';
 import { AthletesPanel } from '@/components/metrics/AthletesPanel';
 import { LibraryPanel } from '@/components/metrics/LibraryPanel';
+import { ValdSyncPanel } from '@/components/metrics/ValdSyncPanel';
 import { ReportsPanel } from '@/components/metrics/ReportsPanel';
 import { CategoryTabs } from '@/components/metrics/CategoryTabs';
 import { SummaryCards } from '@/components/metrics/SummaryCards';
 import { MaxesSection } from '@/components/metrics/MaxesSection';
+import { BuildTab } from '@/components/metrics/BuildTab';
 import { filterParams, periodError, useFilters, useWorkspace } from '@/lib/metrics';
 
-const TABS = ['Overview', 'Team KPI Dashboard', 'Athletes', 'Reports & Progress', 'Metrics Library'] as const;
+const TABS = ['Overview', 'Team KPI Dashboard', 'Athletes', 'Reports & Progress', 'Build', 'Metrics Library'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function MetricsScreen() {
@@ -39,23 +41,23 @@ function Workspace() {
   const perr = tab === 'Overview' ? null : periodError(f);
   const q = useWorkspace(params, !perr);
   const ws = q.data;
-  const showFilters = tab !== 'Metrics Library' && tab !== 'Overview';
+  const showFilters = tab !== 'Metrics Library' && tab !== 'Overview' && tab !== 'Build';
   const guardRef = useRef<LeaveGuard | null>(null);
   const register = useCallback((g: LeaveGuard | null) => { guardRef.current = g; }, []);
   const go = (t: Tab) => { if (t === tab) return; if (tab === 'Overview' && guardRef.current) guardRef.current(() => setTab(t)); else setTab(t); };
-  return <Shell title="LPA Metrics" onRefresh={() => void q.refetch()} refreshing={q.isRefetching}>
+  return <Shell title="LPA Metrics" onRefresh={() => void q.refetch()} refreshing={q.isRefetching} keyboardAware={tab === 'Build'}>
     <SyncControl />
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
       <View style={{ flexDirection: 'row', backgroundColor: c.muted, borderRadius: 14, padding: 3 }}>
         {TABS.map((t) => <Pressable key={t} testID={`metrics-tab-${t.toLowerCase().replace(/[^a-z]+/g, '-')}`} accessibilityRole="tab" onPress={() => go(t)} style={{ paddingHorizontal: 13, paddingVertical: 10, borderRadius: 11, backgroundColor: tab === t ? c.card : 'transparent' }}><Text style={{ color: tab === t ? c.foreground : c.mutedForeground, fontFamily: 'Inter_600SemiBold', fontSize: 12 }}>{t === 'Overview' ? 'KPI Overview' : t}</Text></Pressable>)}
       </View>
     </ScrollView>
-    {tab === 'Overview' ? null : <CategoryTabs f={f} />}
+    {tab === 'Overview' || tab === 'Build' ? null : <CategoryTabs f={f} />}
     {showFilters ? <FilterBar f={f} ws={ws} /> : null}
-    {tab === 'Overview' ? <OverviewEntry register={register} initialMetricId={sp.metricId} initialAthleteId={sp.athleteId} /> : perr && showFilters ? <ErrorBox message={perr} /> : q.isLoading ? <><Skeleton /><Skeleton h={160} /></> : q.isError ? <ErrorBox message={(q.error as Error)?.message || 'Metrics could not load.'} onRetry={() => void q.refetch()} /> : <>
+    {tab === 'Build' ? <BuildTab /> : tab === 'Overview' ? <OverviewEntry register={register} initialMetricId={sp.metricId} initialAthleteId={sp.athleteId} /> : perr && showFilters ? <ErrorBox message={perr} /> : q.isLoading ? <><Skeleton /><Skeleton h={160} /></> : q.isError ? <ErrorBox message={(q.error as Error)?.message || 'Metrics could not load.'} onRetry={() => void q.refetch()} /> : <>
       {tab === 'Team KPI Dashboard' ? <><SummaryCards ws={ws} /><TeamProgressChart ws={ws} /><View style={{ height: 14 }} /><KpiCards ws={ws} showDetails={false} /><MaxesSection ws={ws} /></> : null}
       {tab === 'Athletes' ? <AthletesPanel ws={ws} /> : null}
-      {tab === 'Metrics Library' ? <LibraryPanel metrics={(ws?.metrics ?? []).filter((m) => !f.category || m.category === f.category)} /> : null}
+      {tab === 'Metrics Library' ? <>{f.category === 'VALD' ? <ValdSyncPanel /> : null}<LibraryPanel metrics={(ws?.metrics ?? []).filter((m) => !f.category || m.category === f.category)} /></> : null}
       {tab === 'Reports & Progress' ? <ReportsPanel ws={ws} f={f} /> : null}
     </>}
     {Platform.OS === 'web' ? null : null}
