@@ -11,7 +11,7 @@ export function checkAndroidRelease(root = workspace) {
   const { build } = readJSON(path.join(mobile, 'eas.json'));
   const pkg = readJSON(path.join(mobile, 'package.json'));
   assert.equal(expo.android?.package, 'com.legendaryprepacademy.lpa', 'Preserve the existing Google Play application ID');
-  assert.ok(Number.isSafeInteger(expo.android.versionCode) && expo.android.versionCode >= 8, 'Android versionCode must be at least 8');
+  assert.ok(Number.isSafeInteger(expo.android.versionCode) && expo.android.versionCode >= 9, 'Android versionCode must be at least 9');
   assert.equal(build.production?.android?.buildType, 'app-bundle', 'Google Play release must use an Android App Bundle');
   assert.equal(expo.plugins[0]?.[0], 'onesignal-expo-plugin', 'OneSignal plugin must remain first');
   assert.ok(pkg.dependencies['react-native-onesignal'], 'OneSignal native dependency is required');
@@ -19,6 +19,11 @@ export function checkAndroidRelease(root = workspace) {
     assert.ok(pkg.dependencies[name], `${name} must be a runtime dependency so Expo prebuild does not trigger an unlocked cloud reinstall`);
     assert.equal(pkg.devDependencies?.[name], undefined, `${name} must not be duplicated in devDependencies`);
   }
+  const buildProperties = expo.plugins.find(plugin => Array.isArray(plugin) && plugin[0] === 'expo-build-properties')?.[1]?.android;
+  assert.equal(pkg.dependencies['expo-build-properties'], '~57.0.23', 'SDK-matched Android build properties plugin is required');
+  assert.equal(buildProperties?.enableMinifyInReleaseBuilds, true, 'Android R8 minification is required for release');
+  assert.equal(buildProperties?.enableShrinkResourcesInReleaseBuilds, true, 'Android release resource shrinking is required');
+  assert.ok(build.production?.buildArtifactPaths?.includes('android/app/build/outputs/mapping/release/mapping.txt'), 'Upload the Android R8 mapping file as a build artifact');
   for (const name of ['app.config.js', 'app.config.ts']) {
     assert.equal(existsSync(path.join(mobile, name)), false, 'Keep the static Expo app.json configuration');
   }
