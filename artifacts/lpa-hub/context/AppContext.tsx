@@ -9,6 +9,7 @@ import { createSharedSyncCoordinator, startSharedSyncTriggers } from './live-syn
 import { clearStoredSession, loadStoredSession, persistStoredSession } from './session-store.mjs';
 import { requestMessagePushToken, setApplicationBadgeCount, type RegisteredPushToken } from '@/lib/messagePushNotifications';
 import { hasOneSignalNativeModule, loginOneSignal, logoutOneSignal, pauseOneSignalPush, resumeOneSignalPush, requestOneSignalPermission, startOneSignal } from '@/lib/oneSignal';
+import { removeDevicePushRegistrations } from '@/lib/pushRegistrationCleanup';
 
 export type Role = 'Admin' | 'Staff-Coach' | 'Parent-Athlete' | 'Athlete';
 export type StoredUser = { id: string; fullName: string; firstName?: string | null; lastName?: string | null; email?: string | null; phone?: string | null; address?: string | null; birthday?: string | null; gender?: string | null; role: Role; status: string; teams: string[]; photoUri?: string | null; profilePhotoUri?: string | null; profilePhotoOriginalUri?: string | null; profilePhotoPath?: string | null };
@@ -85,7 +86,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!active) return;
       setOneSignalSubscriptionId(subscriptionId);
       setOneSignalReady(true);
-      if (!subscriptionId || oneSignalDialogShown.current) return;
+      if (oneSignalDialogShown.current) return;
       oneSignalDialogShown.current = true;
       void AsyncStorage.getItem('lpa-onesignal-intro-shown').then((shown) => {
         if (shown || !active) return;
@@ -135,22 +136,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // the captured session, even though local sign-out happens immediately.
     const removal = registrationQueueRef.current.catch(() => undefined).then(async () => {
       if (!previousUserId || !previousSessionToken) return;
-      let token = previousCandidate;
-      if (!token) {
-        try {
-          const stored = await cachedToken;
-          const parsed = stored ? JSON.parse(stored) as Partial<RegisteredPushToken> : null;
-          if (parsed?.platform === 'ios' || parsed?.platform === 'android') {
-            if (typeof parsed.expoPushToken === 'string') token = { platform: parsed.platform, expoPushToken: parsed.expoPushToken };
-          }
-        } catch {
-          // No cached token to remove; the next login will register the device again.
-        }
-      }
-      if (token) await removePushToken(
-        { expoPushToken: token.expoPushToken },
+      await removeDevicePushRegistrations(previousCandidate, cachedToken, key => removePushToken(
+        { expoPushToken: key },
         { suppressUnauthorizedHandler: true, headers: { Authorization: `Bearer ${previousSessionToken}` } },
-      );
+      ));
     });
     registrationQueueRef.current = removal.catch(() => undefined);
     void removal.catch((error: unknown) => console.warn('Unable to remove this device from LPA notifications during sign-out.', error))
@@ -234,9 +223,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const registerDevice = async () => {
       if (cancelled || !sessionToken || signingOutUserRef.current === user.id) return;
       try {
-        const oneSignalNative = Platform.OS === 'ios' && hasOneSignalNativeModule();
+        const oneSignalNative = hasOneSignalNativeModule();
         const subscriptionId = oneSignalNative ? oneSignalSubscriptionId : undefined;
-        let token = await requestMessagePushToken();
+        let token = await requestMessagePushToken(subscriptionId);
         // Permission can be revoked after the Expo token has been registered.
         // Use that same stored device token to clear an expired OneSignal mapping.
         if (!token && oneSignalNative && subscriptionId === null) {
@@ -265,7 +254,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const registration = subscriptionId === undefined
             ? token
             : { ...token, oneSignalSubscriptionId: subscriptionId };
-          await registerPushToken(registration, { suppressUnauthorizedHandler: true });
+          const registrationOptions = {
+            suppressUnauthorizedHandler: true,
+            headers: { Authorization: `Bearer ${sessionToken}` },
+          };
+          let previousToken: string | null = null;
+          const stored = await AsyncStorage.getItem(`lpa-push-token:${user.id}`);
+          try {
+            const parsed = stored ? JSON.parse(stored) as Partial<RegisteredPushToken> : null;
+            previousToken = typeof parsed?.expoPushToken === 'string' ? parsed.expoPushToken : null;
+          } catch {
+            // A damaged cache does not prevent a fresh registration.
+          }
+          await registerPushToken(registration, registrationOptions);
+          // Retire this installation's legacy registration, not other devices.
+          // Keep cleanup in the same queue so sign-out cannot leave the old token behind.
+          if (previousToken && previousToken !== token.expoPushToken) {
+            await removePushToken({ expoPushToken: previousToken }, registrationOptions);
+          }
           if (cancelled) return;
           registeredPushKeyRef.current = registrationKey;
           setPushToken(token);
