@@ -1,18 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from 'expo-router/build/react-navigation/core';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
-import { useExportDailyRollcall, useExportRollcallWorkbook, useGetDailyRollcall, useRetryRollcallWorkbook, useSaveDailyRollcall } from '@workspace/api-client-react';
+import { useGetDailyRollcall, useGetRollcallWorkbookLink, useRetryRollcallWorkbook, useSaveDailyRollcall } from '@workspace/api-client-react';
 import type { DailyRollcall } from '@workspace/api-client-react';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import { ROLLCALL_LABELS, deliverRollcallExport, formatLongDate, isRollcallCategory, phoenixToday, shiftDate, validateRollcallDate, MIN_DATE } from '@/lib/rollcall';
+import { ROLLCALL_LABELS, formatLongDate, isRollcallCategory, phoenixToday, shiftDate, validateRollcallDate, MIN_DATE } from '@/lib/rollcall';
+import { markRollcallDraft, reconcileRollcallDraft, type RollcallDraft as Draft } from '@/lib/rollcallDraft';
 
 type Status = 'present' | 'absent' | 'tardy' | 'pending';
-type Draft = { baseRevision: number; statuses: Record<string, Status>; previous: Record<string, Status> };
 type Confirm = { title: string; body: string; confirmLabel: string; onConfirm: () => void; saveBeforeLeave?: boolean };
 const savedTime = (value: string) => new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Phoenix', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -73,10 +73,30 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
     },
   });
   const saveMutation = useSaveDailyRollcall();
-  const exportMutation = useExportDailyRollcall();
-  const workbookExport = useExportRollcallWorkbook();
+  const workbookLink = useGetRollcallWorkbookLink({
+    query: { enabled: false, queryKey: ['/api/rollcall/workbook/open'] },
+  });
   const retryWorkbook = useRetryRollcallWorkbook();
   const data = query.data as DailyRollcall | undefined;
+  const [rosterNotice, setRosterNotice] = useState('');
+  useEffect(() => { setRosterNotice(''); }, [key]);
+  useEffect(() => {
+    if (!data || !draft || savingRef.current) return;
+    const enrolled = new Set(data.students.map((student) => student.id));
+    const removed = Object.keys(draft.statuses).filter((id) => !enrolled.has(id));
+    if (!removed.length) return;
+    setRosterNotice('Roster updated. Unsaved marks for users no longer on the Athlete roster were not applied.');
+    setDrafts((all) => {
+      const current = all[key];
+      if (!current) return all;
+      const statuses = { ...current.statuses }, previous = { ...current.previous };
+      removed.forEach((id) => { delete statuses[id]; delete previous[id]; });
+      const next = { ...all };
+      if (Object.keys(statuses).length) next[key] = { ...current, statuses, previous };
+      else delete next[key];
+      return next;
+    });
+  }, [data, draft, key]);
   const canEdit = authorized && (date === today || role === 'Admin') && data?.canEdit !== false;
   const pendingLeave = useRef<(() => void) | null>(null);
   const [historyId, setHistoryId] = useState<string | null>(null);
@@ -116,7 +136,8 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
   const userId = user?.id ?? null;
   useEffect(() => { pendingLeave.current = null; setDrafts({}); setConfirm(null); setConflict(false); setNotice(null); }, [userId, authorized]);
 
-  const saving = saveMutation.isPending;
+  const saving = saveMutation.isPending || saveInFlight.current;
+  const marksBlocked = !canEdit || (manualSubmit && saving);
   const savingRef = useRef(false);
   savingRef.current = saving || saveInFlight.current;
   useEffect(() => {
@@ -171,17 +192,16 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
     if (next !== date) goToDate(next);
   };
 
-  const setStatus = (id: string, serverStatus: Status, current: Status, next: Status) => {
-     if (!data || savingRef.current || !canEdit) return;
-    const target: Status = current === next ? 'pending' : next;
+  const setStatus = (id: string, serverStatus: Status, next: Status) => {
+    if (!data || (manualSubmit && savingRef.current) || !canEdit) return;
+    const wasSaving = saveInFlight.current;
     setNotice(null);
     setDrafts((all) => {
-      const base = all[key] ?? { baseRevision: data.revision, statuses: {}, previous: {} };
-      const statuses = { ...base.statuses };
-      const previous = { ...base.previous, [id]: base.previous[id] ?? serverStatus };
-      if (target === serverStatus) delete statuses[id]; else statuses[id] = target;
-      if (!Object.keys(statuses).length) { const rest = { ...all }; delete rest[key]; return rest; }
-      return { ...all, [key]: { ...base, statuses, previous } };
+      const nextDraft = markRollcallDraft(all[key], data.revision, id, serverStatus, next, wasSaving);
+      const updated = { ...all };
+      if (nextDraft) updated[key] = nextDraft;
+      else delete updated[key];
+      return updated;
     });
   };
 
@@ -202,11 +222,17 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
         entries: draft ? Object.entries(draft.statuses).map(([studentId, status]) => ({ studentId, status, previousStatus: draft.previous[studentId] })) : [] } });
           if (!ownsResponse(savingUserId)) return false;
           queryClient.setQueryData([`/api/rollcall/${savedCategory}/${savedDate}`], saved);
-          setDrafts((all) => { const next = { ...all }; delete next[savedKey]; return next; });
+          setDrafts((all) => {
+            const next = { ...all };
+            const remaining = manualSubmit ? undefined : reconcileRollcallDraft(all[savedKey], saved);
+            if (remaining) next[savedKey] = remaining;
+            else delete next[savedKey];
+            return next;
+          });
            if (manualSubmit && savedDate === today) { setGroup('All'); setSearch(''); }
           setConflict(false);
           autoRetryAt.current = 0;
-           setNotice({ kind: 'ok', text: `${manualSubmit ? 'Bus roll call submitted successfully' : 'Attendance automatically saved'}${saved.updatedAt ? ` at ${savedTime(saved.updatedAt)}` : ''}.${manualSubmit && savedDate === today ? ' Attendance recorded for Excel. All students reset to Pending/NA for the next Bus rollcall.' : ''}` });
+          if (manualSubmit) setNotice({ kind: 'ok', text: `Bus roll call submitted successfully.${savedDate === today ? ' All students reset to Pending/NA for the next Bus rollcall.' : ''}` });
           return true;
     } catch (error) {
           if (!ownsResponse(savingUserId)) return false;
@@ -240,30 +266,42 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
     },
   });
 
-  const exportFile = async () => {
-    const exportingUserId = user?.id;
+  const openExcelWorkbook = async () => {
+    const openingUserId = user?.id;
+    // Browsers block window.open after an awaited request because it no longer
+    // runs directly inside the tap gesture. Reserve the tab before fetching.
+    const workbookWindow = Platform.OS === 'web' ? window.open('about:blank', '_blank') : null;
+    if (workbookWindow) {
+      workbookWindow.opener = null;
+      workbookWindow.document.title = 'Opening LPA Rollcall';
+      workbookWindow.document.body.textContent = 'Preparing the Rollcall workbook…';
+    }
     setNotice(null);
     try {
-      const file = await exportMutation.mutateAsync({ category, date });
-      if (!ownsResponse(exportingUserId)) return;
-      await deliverRollcallExport(file);
-      if (ownsResponse(exportingUserId)) setNotice({ kind: 'ok', text: 'Export ready.' });
+      const result = await workbookLink.refetch();
+      if (!ownsResponse(openingUserId)) {
+        if (workbookWindow && !workbookWindow.closed) workbookWindow.close();
+        return;
+      }
+      if (result.error) throw result.error;
+      if (!result.data?.webUrl) throw new Error('The Excel workbook link is unavailable.');
+      if (Platform.OS === 'web') {
+        if (workbookWindow && !workbookWindow.closed) workbookWindow.location.replace(result.data.webUrl);
+        else window.location.assign(result.data.webUrl);
+      } else {
+        await Linking.openURL(result.data.webUrl);
+      }
+      if (ownsResponse(openingUserId)) setNotice({ kind: 'ok', text: 'Opened the LPA Rollcall workbook.' });
     } catch (error) {
-      if (ownsResponse(exportingUserId)) setNotice({ kind: 'error', text: `Export failed: ${errorInfo(error).message}` });
+      if (workbookWindow && !workbookWindow.closed) workbookWindow.close();
+      if (ownsResponse(openingUserId)) setNotice({ kind: 'error', text: `Could not open Excel: ${errorInfo(error).message}` });
     }
-  };
-  const downloadDailyWorkbook = async () => {
-    const viewer = user?.id;
-    try {
-      const file = await workbookExport.mutateAsync();
-      if (ownsResponse(viewer)) await deliverRollcallExport(file);
-    } catch (error) { if (ownsResponse(viewer)) setNotice({ kind: 'error', text: `Workbook download failed: ${errorInfo(error).message}` }); }
   };
   const retryDailyWorkbook = async () => {
     const viewer = user?.id;
     try {
       await retryWorkbook.mutateAsync();
-      if (ownsResponse(viewer)) { setNotice({ kind: 'ok', text: 'Daily Excel workbook updated.' }); void query.refetch(); }
+      if (ownsResponse(viewer)) { setNotice({ kind: 'ok', text: 'Excel summary sync finished.' }); void query.refetch(); }
     } catch (error) { if (ownsResponse(viewer)) setNotice({ kind: 'error', text: `Excel retry failed: ${errorInfo(error).message}. Attendance is safely retained.` }); }
   };
 
@@ -303,7 +341,7 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
   const stat = (label: string, value: number, color: string) => <View style={[styles.stat, { backgroundColor: colors.card, borderColor: colors.border }]}>
     <Text style={[styles.statValue, { color }]}>{value}</Text><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{label}</Text>
   </View>;
-  const exportBlocked = dirty || saving;
+  const workbookOpenBlocked = dirty || saving;
    const canSave = canEdit && (dirty || (!data?.updatedAt && students.length > 0));
    const snapshot = data?.snapshots?.find((item) => item.id === historyId);
 
@@ -362,22 +400,17 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
           <View style={styles.actionRow}>
             {manualSubmit ? <Pressable testID="rollcall-save" accessibilityRole="button" disabled={!canSave || saving} onPress={() => void save()} style={[styles.bigButton, { flex: 1, backgroundColor: colors.primary, opacity: !canSave || saving ? 0.45 : 1 }]}>
               {saveMutation.isPending ? <ActivityIndicator color="#fff" /> : <Feather name="check" size={16} color="#fff" />}<Text style={styles.applyText}>{saving ? 'Submitting…' : 'Submit'}</Text>
-            </Pressable> : <Text testID="rollcall-auto-save" style={[styles.hint, { flex: 1, color: colors.mutedForeground }]}>{saving ? 'Auto-saving…' : 'Changes save automatically'}</Text>}
-            <Pressable testID="rollcall-export" accessibilityRole="button" accessibilityState={{ disabled: exportBlocked || exportMutation.isPending }} disabled={exportBlocked || exportMutation.isPending} onPress={() => void exportFile()} style={[styles.bigButton, { flex: 1, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: exportBlocked ? 0.5 : 1 }]}>
-              {exportMutation.isPending ? <ActivityIndicator color={colors.primary} /> : <Feather name="download" size={16} color={colors.primary} />}<Text style={[styles.applyText, { color: colors.primary }]}>Export Excel</Text>
+            </Pressable> : null}
+            <Pressable testID="rollcall-open-excel" accessibilityRole="button" accessibilityState={{ disabled: workbookOpenBlocked || workbookLink.isFetching }} disabled={workbookOpenBlocked || workbookLink.isFetching} onPress={() => void openExcelWorkbook()} style={[styles.bigButton, { flex: 1, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: workbookOpenBlocked || workbookLink.isFetching ? 0.5 : 1 }]}>
+              {workbookLink.isFetching ? <ActivityIndicator color={colors.primary} /> : <Feather name="external-link" size={16} color={colors.primary} />}<Text style={[styles.applyText, { color: colors.primary }]}>Open Excel</Text>
             </Pressable>
           </View>
-          {manualSubmit && date === today ? <Text style={[styles.hint, { color: colors.mutedForeground }]}>Submit records this trip for Excel and resets all students to Pending/NA for the next Bus rollcall.</Text> : null}
-          {exportBlocked ? <Text testID="rollcall-export-hint" style={[styles.hint, { color: colors.mutedForeground }]}>{manualSubmit ? 'Submit first.' : 'Waiting for auto-save.'} The Excel file contains saved attendance only.</Text> : null}
-          <Text testID="rollcall-save-status" accessibilityLiveRegion="polite" style={[styles.hint, { color: dirty ? colors.warning : data.updatedAt ? colors.success : colors.mutedForeground, fontWeight: '700' }]}>{saving ? 'Saving…' : dirty ? 'Unsaved Changes' : data.updatedAt ? manualSubmit && date === today ? 'Ready for next Bus rollcall' : 'Saved' : 'Not yet saved'}</Text>
-          {data.updatedAt ? <Text style={[styles.hint, { color: colors.mutedForeground }]}>Last saved {savedTime(data.updatedAt)}</Text> : null}
-          <Text style={[styles.hint, { color: colors.mutedForeground }]}>Excel includes Coach, Bus, and Academics history through {date}. Bus saves appear in separate timestamped columns.</Text>
-          {data.automation ? <View testID="rollcall-automation" style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 14 }]}>
-            <Text style={[styles.rowName, { color: colors.foreground }]}>Daily Excel record</Text>
-            <Text accessibilityLiveRegion="polite" style={[styles.hint, { color: data.automation.workbookError ? colors.warning : colors.mutedForeground }]}>{data.automation.workbookError ?? (data.automation.workbookPending ? 'Workbook update queued · saved attendance is safe' : `Workbook updated${data.automation.workbookUpdatedAt ? ` ${savedTime(data.automation.workbookUpdatedAt)}` : ''}`)}</Text>
-            {data.automation.finalizedAt ? <Text style={[styles.hint, { color: colors.mutedForeground }]}>Day finalized {savedTime(data.automation.finalizedAt)} · historical attendance preserved</Text> : null}
+          {manualSubmit && date === today ? <Text style={[styles.hint, { color: colors.mutedForeground }]}>Submit saves this trip for the weekly Bus summary and resets all students to Pending/NA for the next Bus rollcall.</Text> : null}
+          {rosterNotice ? <Text accessibilityLiveRegion="polite" style={[styles.hint, { color: colors.warning }]}>{rosterNotice}</Text> : null}
+          {data.automation?.workbookError ? <View testID="rollcall-automation" style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 14 }]}>
+            <Text style={[styles.rowName, { color: colors.foreground }]}>Excel sync issue</Text>
+            <Text accessibilityLiveRegion="polite" style={[styles.hint, { color: colors.warning }]}>{data.automation.workbookError}</Text>
             <View style={styles.actionRow}>
-              <Pressable testID="rollcall-daily-workbook" disabled={workbookExport.isPending || data.automation.workbookPending || !data.automation.workbookUpdatedAt} onPress={() => void downloadDailyWorkbook()} style={[styles.modalButton, { borderColor: colors.border, opacity: data.automation.workbookPending ? 0.5 : 1 }]}><Text style={[styles.modalButtonText, { color: colors.foreground }]}>{workbookExport.isPending ? 'Downloading…' : 'Download daily workbook'}</Text></Pressable>
               {role === 'Admin' && data.automation.workbookError ? <Pressable testID="rollcall-workbook-retry" disabled={retryWorkbook.isPending} onPress={() => void retryDailyWorkbook()} style={[styles.modalButton, { borderColor: colors.primary }]}><Text style={[styles.modalButtonText, { color: colors.primary }]}>{retryWorkbook.isPending ? 'Retrying…' : 'Retry Excel update'}</Text></Pressable> : null}
             </View>
           </View> : null}
@@ -389,7 +422,7 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
 
           {students.length === 0 ? <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 16 }]} testID="rollcall-empty">
             <Text style={[styles.rowName, { color: colors.foreground }]}>No athletes on the roster</Text>
-            <Text style={[styles.copy, { color: colors.mutedForeground, marginTop: 4 }]}>The temporary enrollment roster is used while students register. Previously saved dates retain their original roster.</Text>
+            <Text style={[styles.copy, { color: colors.mutedForeground, marginTop: 4 }]}>The roster updates automatically from Athlete-tagged users. Previously saved dates retain their original roster.</Text>
           </View> : visible.length === 0 ? <Text style={[styles.copy, { color: colors.mutedForeground, textAlign: 'center', marginTop: 20 }]}>No students match this group and search.</Text>
             : <View style={{ gap: 9, marginTop: 14 }}>
               {visible.map((s) => {
@@ -401,13 +434,13 @@ export function RollcallAttendance({ rawCategory }: { rawCategory?: string }) {
                     <Text style={[styles.rowMeta, { color: colors.mutedForeground }]}>{[s.gradYear, s.teams.join(', ')].filter(Boolean).join(' · ') || 'No grad year or team'}</Text>
                     <Text style={[styles.rowState, { color: statusColor[current] }]}>{current.toUpperCase()}{changed ? ' · UNSAVED' : ''}</Text>
                   </View>
-                  <Pressable testID={`rollcall-present-${s.id}`} accessibilityRole="button" accessibilityLabel={`${s.fullName} present`} accessibilityState={{ selected: current === 'present', disabled: saving || !canEdit }} disabled={saving || !canEdit} onPress={() => setStatus(s.id, s.status, current, 'present')} style={[styles.toggle, { borderColor: statusColor.present, backgroundColor: current === 'present' ? statusColor.present : 'transparent', opacity: canEdit ? 1 : 0.5 }]}>
+                  <Pressable testID={`rollcall-present-${s.id}`} accessibilityRole="button" accessibilityLabel={`${s.fullName} present`} accessibilityState={{ selected: current === 'present', disabled: marksBlocked }} disabled={marksBlocked} onPress={() => setStatus(s.id, s.status, 'present')} style={[styles.toggle, { borderColor: statusColor.present, backgroundColor: current === 'present' ? statusColor.present : 'transparent', opacity: canEdit ? 1 : 0.5 }]}>
                     <Feather name="check" size={20} color={current === 'present' ? '#fff' : statusColor.present} />
                   </Pressable>
-                  {canMarkTardy ? <Pressable testID={`rollcall-tardy-${s.id}`} accessibilityRole="button" accessibilityLabel={`${s.fullName} tardy`} accessibilityState={{ selected: current === 'tardy', disabled: saving || !canEdit }} disabled={saving || !canEdit} onPress={() => setStatus(s.id, s.status, current, 'tardy')} style={[styles.toggle, styles.compactToggle, { borderColor: statusColor.tardy, backgroundColor: current === 'tardy' ? statusColor.tardy : 'transparent', opacity: canEdit ? 1 : 0.5 }]}>
+                  {canMarkTardy ? <Pressable testID={`rollcall-tardy-${s.id}`} accessibilityRole="button" accessibilityLabel={`${s.fullName} tardy`} accessibilityState={{ selected: current === 'tardy', disabled: marksBlocked }} disabled={marksBlocked} onPress={() => setStatus(s.id, s.status, 'tardy')} style={[styles.toggle, styles.compactToggle, { borderColor: statusColor.tardy, backgroundColor: current === 'tardy' ? statusColor.tardy : 'transparent', opacity: canEdit ? 1 : 0.5 }]}>
                     <Text style={[styles.tardyText, { color: current === 'tardy' ? '#fff' : statusColor.tardy }]}>T</Text>
                   </Pressable> : null}
-                  <Pressable testID={`rollcall-absent-${s.id}`} accessibilityRole="button" accessibilityLabel={`${s.fullName} absent`} accessibilityState={{ selected: current === 'absent', disabled: saving || !canEdit }} disabled={saving || !canEdit} onPress={() => setStatus(s.id, s.status, current, 'absent')} style={[styles.toggle, { borderColor: statusColor.absent, backgroundColor: current === 'absent' ? statusColor.absent : 'transparent', opacity: canEdit ? 1 : 0.5 }]}>
+                  <Pressable testID={`rollcall-absent-${s.id}`} accessibilityRole="button" accessibilityLabel={`${s.fullName} absent`} accessibilityState={{ selected: current === 'absent', disabled: marksBlocked }} disabled={marksBlocked} onPress={() => setStatus(s.id, s.status, 'absent')} style={[styles.toggle, { borderColor: statusColor.absent, backgroundColor: current === 'absent' ? statusColor.absent : 'transparent', opacity: canEdit ? 1 : 0.5 }]}>
                     <Feather name="x" size={20} color={current === 'absent' ? '#fff' : statusColor.absent} />
                   </Pressable>
                 </View>;
