@@ -1,7 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeSyntheticEvent, type TextInputSelectionChangeEventData } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeSyntheticEvent, type TextInputSelectionChangeEventData, type TextInputKeyPressEventData, type TextInputContentSizeChangeEventData } from 'react-native';
 import { CachedImage } from '@/components/CachedImage';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -14,6 +14,10 @@ import { useApp } from '@/context/AppContext';
 import { MessagePhotoViewer } from '@/components/MessagePhotoViewer';
 import { MessageReactions } from '@/components/MessageReactions';
 import { ChatDeletionConfirmation } from '@/components/ChatDeletionConfirmation';
+import { GroupChatMemberFilters } from '@/components/GroupChatMemberFilters';
+import { GroupChatRename } from '@/components/GroupChatRename';
+import { GroupChatAvatar, GroupChatPhotoEditor } from '@/components/GroupChatPhotoEditor';
+import { matchesMemberRole } from '@/lib/groupChatMembers';
 import { MessageDateSeparator } from '@/components/MessageDateSeparator';
 import { buildMessageHistoryRows } from '@/lib/chatMessageHistory';
 import { getChatMuteMode, useChatMute, type ChatMuteMode } from '@/lib/useChatMute';
@@ -24,6 +28,11 @@ import { tagLabel } from '@/constants/tagCatalog';
 import { LPA_TEAMS, teamEventAliases } from '@/constants/teams';
 import { ChatAttachmentUploadCache } from '@/lib/chatAttachmentUploadCache';
 import { formRequestIdFromMessage, visibleFormMessageText } from '@/lib/formMessageText';
+import { canManageGroupChats } from '@/lib/groupChatPermissions';
+import { CHAT_DRAFT_DEBOUNCE_MS } from '@/lib/chatDraft';
+import { loadChatDraft, saveChatDraft } from '@/lib/chatDraftStore';
+import { COMPOSER_MAX_HEIGHT, COMPOSER_MIN_HEIGHT, composerHeight, composerHeightForText, shouldSendOnWebKey } from '@/lib/composerKeys';
+import { canChangeGroupPhoto, canSendChatAttachments, canUseEveryoneMention, EVERYONE_DISPLAY_NAME, EVERYONE_MENTION_ID, everyoneMatchesPrefix, isEveryoneMention } from '@/lib/chatCapabilities';
 
 function loadErrorMessage(error: unknown) {
   const status = typeof error === 'object' && error !== null && 'status' in error ? Number(error.status) : 0;
@@ -67,8 +76,8 @@ function normalizeOutgoingMessage(text: string, mentions: MessageMention[]) {
   };
 }
 
-function DraftMentionHighlight({ text, mentions, color, mentionColor }: {
-  text: string; mentions: MessageMention[]; color: string; mentionColor: string;
+function DraftMentionHighlight({ text, mentions, color, mentionColor, scrollOffset = 0 }: {
+  text: string; mentions: MessageMention[]; color: string; mentionColor: string; scrollOffset?: number;
 }) {
   let cursor = 0;
   const parts: React.ReactNode[] = [];
@@ -80,7 +89,7 @@ function DraftMentionHighlight({ text, mentions, color, mentionColor }: {
   }
   parts.push(text.slice(cursor));
   return <View pointerEvents="none" importantForAccessibility="no-hide-descendants" style={draftMentionStyles.overlay}>
-    <Text numberOfLines={1} style={[draftMentionStyles.text, { color }]}>{parts}</Text>
+    <Text style={[draftMentionStyles.text, { color, transform: [{ translateY: -scrollOffset }] }]}>{parts}</Text>
   </View>;
 }
 
@@ -152,9 +161,17 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [draftMentions, setDraftMentions] = useState<MessageMention[]>([]);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const [inputHeight, setInputHeight] = useState(COMPOSER_MIN_HEIGHT);
+  const [inputScroll, setInputScroll] = useState(0);
+  const visibleInputHeight = composerHeightForText(draft, inputHeight);
+  useEffect(() => {
+    if (!draft) { setInputHeight(COMPOSER_MIN_HEIGHT); setInputScroll(0); }
+  }, [draft]);
   const [sendError, setSendError] = useState('');
   const [showParticipants, setShowParticipants] = useState(false);
   const [participantQuery, setParticipantQuery] = useState('');
+  const [participantRoles, setParticipantRoles] = useState<string[]>([]);
+  useEffect(() => { setParticipantQuery(''); setParticipantRoles([]); }, [id, user?.id]);
   const [actionError, setActionError] = useState('');
   const [removeTarget, setRemoveTarget] = useState<{ id: string; fullName: string } | null>(null);
   const removalInFlight = useRef(false);
@@ -172,17 +189,29 @@ export default function ChatScreen() {
   const [selectedProfile, setSelectedProfile] = useState<SelectedProfile | null>(null);
   const lastReadMessageId = useRef<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const canManage = Boolean(chat && chat.type !== 'direct' && (role === 'Admin' || role === 'Staff-Coach' || chat.createdBy === user?.id));
+  const canManage = Boolean(chat && chat.type !== 'direct' && (
+    chat.type === 'group'
+      ? canManageGroupChats(role)
+      : canManageGroupChats(role) || chat.createdBy === user?.id
+  ));
   const canDeleteChat = Boolean(chat);
+  const canAttach = canSendChatAttachments(chat, role);
+  const canEveryone = canUseEveryoneMention(chat, role);
+  const groupPhotoUri = (chat as (typeof chat & { photoUri?: string | null }) | undefined)?.photoUri ?? null;
+  const updateGroupPhoto = (photoUri: string | null) => {
+    queryClient.setQueryData(chats.queryKey, (current: unknown) => ((current ?? []) as Array<{ id: string }>).map((item) => item.id === id ? { ...item, photoUri } : item));
+    void queryClient.invalidateQueries({ queryKey: chats.queryKey });
+  };
   const availablePeople = useMemo(() => ((people.data ?? []) as DirectoryPerson[]).filter((person) => person.status === 'active' && !chat?.members.some((member) => member.id === person.id)), [chat?.members, people.data]);
   const filteredAvailablePeople = useMemo(() => {
     const search = participantQuery.trim().toLocaleLowerCase();
-    return availablePeople.filter((person) => !search || [
+    return availablePeople.filter((person) => matchesMemberRole(person.role, participantRoles))
+      .filter((person) => !search || [
       person.fullName, person.role, tagLabel(catalog, 'role', person.role),
       ...person.teams.flatMap((team) => [team, tagLabel(catalog, 'team', team)]),
     ].some((value) => value.toLocaleLowerCase().includes(search)))
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [availablePeople, participantQuery, catalog]);
+  }, [availablePeople, participantQuery, participantRoles, catalog]);
   const conversationPeople = useMemo(() => (chat?.members ?? []).map((member) => {
     const directoryPerson = (people.data as DirectoryPerson[] | undefined)?.find((person) => person.id === member.id);
     return { ...member, role: directoryPerson?.role ?? member.role, roleTag: directoryPerson?.roleTag ?? (member as typeof member & { roleTag?: string }).roleTag, status: directoryPerson?.status ?? 'active', teams: directoryPerson?.teams ?? [], profilePhotoUri: directoryPerson?.profilePhotoUri ?? member.profilePhotoUri ?? null };
@@ -203,8 +232,12 @@ export default function ChatScreen() {
   }, [draft, draftMentions, selection]);
   const mentionSuggestions = useMemo(() => {
     if (!activeMention) return [];
-    return conversationPeople.filter((person) => person.id !== user?.id && person.fullName.trim().split(/\s+/).some((name) => name.toLocaleLowerCase().startsWith(activeMention.prefix))).slice(0, 8);
-  }, [activeMention, conversationPeople, user?.id]);
+    const people = conversationPeople.filter((person) => person.id !== user?.id && person.id !== EVERYONE_MENTION_ID && person.fullName.trim().split(/\s+/).some((name) => name.toLocaleLowerCase().startsWith(activeMention.prefix))).slice(0, 8);
+    const everyone = canEveryone && everyoneMatchesPrefix(activeMention.prefix)
+      ? [{ id: EVERYONE_MENTION_ID, fullName: EVERYONE_DISPLAY_NAME, role: '', profilePhotoUri: null as string | null | undefined }]
+      : [];
+    return [...everyone, ...people];
+  }, [activeMention, canEveryone, conversationPeople, user?.id]);
   const openProfile = (message: ChatMessage) => {
     if (message.senderId === user?.id) return;
     const directoryPerson = (people.data as DirectoryPerson[] | undefined)?.find((person) => person.id === message.senderId);
@@ -219,6 +252,7 @@ export default function ChatScreen() {
     });
   };
   const openMentionProfile = (userId: string, displayName: string) => {
+    if (isEveryoneMention(userId)) return;
     const directoryPerson = conversationPeople.find((person) => person.id === userId);
     setSelectedProfile({
       id: userId,
@@ -278,7 +312,67 @@ export default function ChatScreen() {
     }
     Alert.alert('Add attachment', 'Choose what you want to send.', [{ text: 'Photo', onPress: () => void addAttachment('image') }, { text: 'File', onPress: () => void addAttachment('file') }, { text: 'Cancel', style: 'cancel' }]);
   };
+  // Private per-device drafts, keyed by signed-in user + conversation.
+  const draftScope = user?.id && id ? { userId: user.id, conversationId: id, key: `${user.id}:${id}` } : null;
+  const hydratedDraftKey = useRef<string | null>(null);
+  const typedSinceOpen = useRef(false);
+  const pendingDraft = useRef<{ userId: string; conversationId: string; text: string; mentions: MessageMention[] } | null>(null);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stashedDraft = useRef<{ text: string; mentions: MessageMention[] } | null>(null);
+  const flushDraft = () => {
+    if (draftTimer.current) { clearTimeout(draftTimer.current); draftTimer.current = null; }
+    const pending = pendingDraft.current;
+    pendingDraft.current = null;
+    if (pending) void saveChatDraft(pending.userId, pending.conversationId, pending.text, pending.mentions);
+  };
+  const flushDraftRef = useRef(flushDraft);
+  flushDraftRef.current = flushDraft;
+  const clearStoredDraft = (scope: typeof draftScope) => {
+    if (!scope) return;
+    if (draftTimer.current) { clearTimeout(draftTimer.current); draftTimer.current = null; }
+    pendingDraft.current = null;
+    void saveChatDraft(scope.userId, scope.conversationId, '', []);
+  };
+  useEffect(() => {
+    if (!draftScope) return;
+    const scope = draftScope;
+    hydratedDraftKey.current = null;
+    typedSinceOpen.current = false;
+    stashedDraft.current = null;
+    setDraft(''); setDraftMentions([]); setSelection({ start: 0, end: 0 });
+    let active = true;
+    void loadChatDraft(scope.userId, scope.conversationId).then((stored) => {
+      if (!active) return;
+      hydratedDraftKey.current = scope.key;
+      // A late load must never overwrite what the user already typed.
+      if (!stored || typedSinceOpen.current) return;
+      setDraft(stored.text);
+      setDraftMentions(stored.mentions);
+      setSelection({ start: stored.text.length, end: stored.text.length });
+    });
+    return () => { active = false; flushDraftRef.current(); };
+  }, [draftScope?.key]);
+  useEffect(() => {
+    if (!draftScope || editingMessage || hydratedDraftKey.current !== draftScope.key) return;
+    pendingDraft.current = { userId: draftScope.userId, conversationId: draftScope.conversationId, text: draft, mentions: draftMentions };
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => flushDraftRef.current(), CHAT_DRAFT_DEBOUNCE_MS);
+  }, [draft, draftMentions, draftScope?.key, editingMessage]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => { if (state !== 'active') flushDraftRef.current(); });
+    const onPageHide = () => flushDraftRef.current();
+    if (Platform.OS === 'web' && typeof window !== 'undefined') window.addEventListener('pagehide', onPageHide);
+    return () => {
+      subscription.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') window.removeEventListener('pagehide', onPageHide);
+    };
+  }, []);
+  const markTyped = () => {
+    typedSinceOpen.current = true;
+    if (draftScope && !hydratedDraftKey.current) hydratedDraftKey.current = draftScope.key;
+  };
   const send = async () => {
+    const sendScope = draftScope;
     const { text, mentions } = normalizeOutgoingMessage(draft, draftMentions);
     if (editingMessage) {
       if (!text || !id || editMessage.isPending) return;
@@ -287,9 +381,7 @@ export default function ChatScreen() {
         onSuccess: (updated) => {
           queryClient.setQueryData(messages.queryKey, (current: unknown) => ((current ?? []) as ChatMessage[]).map((message) => message.id === updated.id ? updated : message));
           void queryClient.invalidateQueries({ queryKey: chats.queryKey });
-          setDraft('');
-          setDraftMentions([]);
-          setSelection({ start: 0, end: 0 });
+          restoreStashedDraft();
           setEditingMessage(null);
         },
         onError: (error) => setSendError(loadErrorMessage(error)),
@@ -324,6 +416,7 @@ export default function ChatScreen() {
         queryClient.setQueryData(messages.queryKey, (current: unknown) => [...((current ?? []) as ChatMessage[]), created]);
         void queryClient.invalidateQueries({ queryKey: chats.queryKey });
         setDraft(''); setDraftMentions([]); setSelection({ start: 0, end: 0 }); setSelectedAttachments([]); setReplyingTo(null);
+        clearStoredDraft(sendScope);
       } catch (error) {
         if (typeof error === 'object' && error !== null && 'status' in error && Number(error.status) === 409) {
           refreshConversation();
@@ -340,11 +433,13 @@ export default function ChatScreen() {
         setDraftMentions([]);
         setSelection({ start: 0, end: 0 });
         setReplyingTo(null);
+        clearStoredDraft(sendScope);
       },
       onError: (error) => setSendError(loadErrorMessage(error)),
     });
   };
   const updateDraft = (nextDraft: string) => {
+    if (!editingMessage) markTyped();
     const collapsed = collapseMentionLastName(draft, nextDraft, draftMentions, selection,
       (userId) => conversationPeople.find((person) => person.id === userId)?.fullName);
     setDraftMentions(collapsed ? collapsed.mentions : reconcileMentions(draft, nextDraft, draftMentions));
@@ -354,6 +449,7 @@ export default function ChatScreen() {
   const updateSelection = (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => setSelection(event.nativeEvent.selection);
   const insertMention = (person: { id: string; fullName: string }) => {
     if (!activeMention) return;
+    if (!editingMessage) markTyped();
     const token = `@${person.fullName}`;
     const suffix = draft.slice(activeMention.end);
     const separator = suffix.startsWith(' ') ? '' : ' ';
@@ -363,7 +459,20 @@ export default function ChatScreen() {
     setDraftMentions((current) => [...current.filter((mention) => mention.end <= activeMention.start || mention.start >= activeMention.end), { userId: person.id, displayName: person.fullName, start: activeMention.start, end }].sort((a, b) => a.start - b.start));
     setSelection({ start: end + separator.length, end: end + separator.length });
   };
+  const restoreStashedDraft = () => {
+    const stash = stashedDraft.current;
+    stashedDraft.current = null;
+    setDraft(stash?.text ?? '');
+    setDraftMentions(stash?.mentions ?? []);
+    const end = stash?.text.length ?? 0;
+    setSelection({ start: end, end });
+  };
   const beginEdit = (message: ChatMessage) => {
+    // Editing borrows the composer; keep the ordinary draft safe and restore it afterwards.
+    if (!editingMessage) {
+      stashedDraft.current = { text: draft, mentions: draftMentions };
+      flushDraft();
+    }
     setEditingMessage(message);
     setReplyingTo(null);
     setSelectedAttachments([]);
@@ -374,9 +483,7 @@ export default function ChatScreen() {
   };
   const cancelEdit = () => {
     setEditingMessage(null);
-    setDraft('');
-    setDraftMentions([]);
-    setSelection({ start: 0, end: 0 });
+    restoreStashedDraft();
     setSendError('');
   };
   // A deletion on another device must also clear any open history and draft quote.
@@ -486,12 +593,22 @@ export default function ChatScreen() {
   };
   const highlightDraftMentions = draftMentions.some((mention) => draft.slice(mention.start, mention.end) === `@${mention.displayName}`);
   return <KeyboardAvoidingView onTouchStart={dismissReactionMenu} onPointerDown={dismissReactionMenu} style={[styles.container, { backgroundColor: colors.background }]} behavior="padding" keyboardVerticalOffset={0}>
-    <View style={{ paddingTop: insets.top + 10 }}><View style={styles.header}><Pressable onPress={() => router.back()}><Feather name="arrow-left" size={22} color={colors.foreground} /></Pressable><Text numberOfLines={1} style={[styles.title, { color: colors.foreground }]}>{chat?.name ?? 'Conversation'}</Text><View style={styles.headerActions}>{chat?.type === 'group' || canManage ? <Pressable testID="manage-participants" accessibilityLabel="Group chat info" onPress={() => setShowParticipants((visible) => !visible)}><Feather name="users" size={21} color={colors.primary} /></Pressable> : null}{canDeleteChat ? <Pressable testID="delete-chat" disabled={deleteChat.isPending} onPress={confirmDeleteChat}><Feather name="trash-2" size={20} color={colors.destructive} /></Pressable> : null}{!canManage && chat?.type !== 'group' && !canDeleteChat ? <View style={{ width: 22 }} /> : null}</View></View></View>
+    <View style={{ paddingTop: insets.top + 10 }}><View style={styles.header}><Pressable onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/messages')}><Feather name="arrow-left" size={22} color={colors.foreground} /></Pressable>{chat?.type === 'group' ? <GroupChatAvatar name={chat.name} photoUri={groupPhotoUri} size={32} radius={11} /> : null}<Text numberOfLines={1} style={[styles.title, { color: colors.foreground }]}>{chat?.name ?? 'Conversation'}</Text><View style={styles.headerActions}>{chat?.type === 'group' || canManage ? <Pressable testID="manage-participants" accessibilityLabel="Group chat info" onPress={() => setShowParticipants((visible) => !visible)}><Feather name="users" size={21} color={colors.primary} /></Pressable> : null}{canDeleteChat ? <Pressable testID="delete-chat" disabled={deleteChat.isPending} onPress={confirmDeleteChat}><Feather name="trash-2" size={20} color={colors.destructive} /></Pressable> : null}{!canManage && chat?.type !== 'group' && !canDeleteChat ? <View style={{ width: 22 }} /> : null}</View></View></View>
     {showParticipants && chat ? <View style={[styles.participantPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.participantHeading}>
+        {chat.type === 'group' ? <View style={{ flex: 1 }}><GroupChatPhotoEditor key={chat.id} conversationId={chat.id} name={chat.name} photoUri={groupPhotoUri} canEdit={canChangeGroupPhoto(chat, role)} onChanged={updateGroupPhoto} /></View> : null}
         {chat.type !== 'group' ? <Text style={[styles.participantTitle, { color: colors.foreground }]}>Participants · {chat.members.length}</Text> : null}
         <Pressable onPress={() => setShowParticipants(false)} accessibilityLabel="Close group info" style={{ marginLeft: 'auto' }}><Feather name="x" size={17} color={colors.mutedForeground} /></Pressable>
       </View>
+       {chat.type === 'group' && canManageGroupChats(role) ? <GroupChatRename
+         key={chat.id}
+         conversationId={chat.id}
+         name={chat.name}
+         onRenamed={(updated) => {
+           queryClient.setQueryData(chats.queryKey, (current: unknown) => ((current ?? []) as Array<{ id: string; name: string }>).map(item => item.id === updated.id ? { ...item, name: updated.name } : item));
+           void queryClient.invalidateQueries({ queryKey: chats.queryKey });
+         }}
+       /> : null}
        {chat.type === 'group' ? <View>
          <Text style={[muteStyles.heading, { color: colors.foreground }]}>Group notifications</Text>
          {([
@@ -542,6 +659,7 @@ export default function ChatScreen() {
             />
             {participantQuery ? <Pressable onPress={() => setParticipantQuery('')} accessibilityLabel="Clear participant search" hitSlop={8}><Feather name="x" size={15} color={colors.mutedForeground} /></Pressable> : null}
           </View>
+          <GroupChatMemberFilters selectedRoles={participantRoles} onRolesChange={setParticipantRoles} />
           {filteredAvailablePeople.map((person) => <View key={person.id} style={styles.participantRow}>
             <View style={memberTagStyles.person}>
               <View style={[styles.mentionAvatar, memberTagStyles.avatar, { backgroundColor: `${colors.primary}20` }]}>
@@ -557,7 +675,7 @@ export default function ChatScreen() {
             </View>
             <Pressable testID={`add-member-${person.id}`} accessibilityRole="button" accessibilityLabel={`Add ${person.fullName}`} disabled={addMember.isPending} onPress={() => addParticipant(person.id)} style={memberTagStyles.addAction}><Text style={[styles.addText, { color: colors.primary }]}>{addMember.isPending ? 'Adding…' : 'Add'}</Text></Pressable>
           </View>)}
-          {!people.isLoading && !people.isError && filteredAvailablePeople.length === 0 ? <Text style={[memberTagStyles.empty, { color: colors.mutedForeground }]}>{participantQuery.trim() ? 'No matching people.' : 'Everyone is already in this conversation.'}</Text> : null}
+          {!people.isLoading && !people.isError && filteredAvailablePeople.length === 0 ? <Text style={[memberTagStyles.empty, { color: colors.mutedForeground }]}>{participantQuery.trim() || participantRoles.length ? 'No people match this search and role filter.' : 'Everyone is already in this conversation.'}</Text> : null}
           {people.isError ? <Pressable onPress={() => void people.refetch()} accessibilityRole="button"><Text style={[memberTagStyles.empty, { color: colors.destructive }]}>Could not load people. Tap to retry.</Text></Pressable> : null}
         </> : null}
       </ScrollView>
@@ -583,7 +701,10 @@ export default function ChatScreen() {
       />}
        <View style={[styles.composer, { backgroundColor: colors.card, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 10) }]}>
          {mentionSuggestions.length ? <View testID="mention-suggestions" style={[styles.mentionSuggestions, { backgroundColor: colors.card, borderColor: colors.border }]}>
-           {mentionSuggestions.map((person) => <Pressable key={person.id} testID={`mention-suggestion-${person.id}`} onPress={() => insertMention(person)} style={styles.mentionSuggestion}>
+           {mentionSuggestions.map((person) => isEveryoneMention(person.id) ? <Pressable key={person.id} testID="mention-suggestion-everyone" accessibilityLabel="Mention everyone in this group" onPress={() => insertMention(person)} style={[styles.mentionSuggestion, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+             <View style={[styles.mentionAvatar, { backgroundColor: colors.primary }]}><Feather name="users" size={15} color="#fff" /></View>
+              <View style={styles.mentionSuggestionText}><Text style={[styles.mentionName, { color: colors.primary }]}>@everyone</Text><Text style={[styles.mentionRole, { color: colors.mutedForeground }]}>Alerts unmuted and mention-only members</Text></View>
+           </Pressable> : <Pressable key={person.id} testID={`mention-suggestion-${person.id}`} onPress={() => insertMention(person)} style={styles.mentionSuggestion}>
              <View style={[styles.mentionAvatar, { backgroundColor: `${colors.primary}20` }]}>{person.profilePhotoUri ? <CachedImage source={{ uri: person.profilePhotoUri }} style={styles.mentionAvatarImage} /> : <Text style={[styles.mentionAvatarText, { color: colors.primary }]}>{person.fullName.charAt(0).toUpperCase()}</Text>}</View>
              <View style={styles.mentionSuggestionText}><Text style={[styles.mentionName, { color: colors.foreground }]}>{person.fullName}</Text><Text style={[styles.mentionRole, { color: colors.mutedForeground }]}>{roleLabel(person.role)}</Text></View>
            </Pressable>)}
@@ -596,11 +717,24 @@ export default function ChatScreen() {
            <Pressable testID="cancel-reply" accessibilityLabel="Cancel reply" onPress={() => setReplyingTo(null)} style={styles.cancelReply}><Feather name="x" size={17} color={colors.mutedForeground} /></Pressable>
          </View> : null}
          {selectedAttachments.length ? <View style={styles.attachmentQueue}>{selectedAttachments.map((attachment, index) => <Pressable key={`${attachment.uri}-${index}`} onPress={() => setSelectedAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} style={[styles.queuedAttachment, { backgroundColor: `${colors.primary}18` }]}><Feather name={attachment.contentType.startsWith('image/') ? 'image' : 'paperclip'} size={13} color={colors.primary} /><Text numberOfLines={1} style={[styles.queuedAttachmentText, { color: colors.primary }]}>{attachment.fileName}</Text><Feather name="x" size={13} color={colors.primary} /></Pressable>)}</View> : null}
-         <View style={styles.composerRow}>
-           <Pressable testID="add-attachment" onPress={chooseAttachment} disabled={uploading || Boolean(editingMessage)} style={[styles.attach, { borderColor: colors.border, opacity: editingMessage ? 0.4 : 1 }]}><Feather name="paperclip" size={18} color={colors.primary} /></Pressable>
+          <View style={styles.composerRow}>
+           {canAttach ? <Pressable testID="add-attachment" onPress={chooseAttachment} disabled={uploading || Boolean(editingMessage)} style={[styles.attach, { borderColor: colors.border, opacity: editingMessage ? 0.4 : 1 }]}><Feather name="paperclip" size={18} color={colors.primary} /></Pressable> : null}
            <View style={draftMentionStyles.composerInput}>
-             <TextInput testID="message-composer" value={draft} selection={selection} selectionColor={colors.primary} onChangeText={updateDraft} onSelectionChange={updateSelection} placeholder={editingMessage ? 'Edit your message...' : replyingTo ? 'Write a reply...' : 'Write a message...'} placeholderTextColor={colors.mutedForeground} style={[styles.input, draftMentionStyles.inputText, { color: highlightDraftMentions ? 'transparent' : colors.foreground, borderColor: colors.border }]} onSubmitEditing={() => void send()} returnKeyType="send" />
-             {highlightDraftMentions ? <DraftMentionHighlight text={draft} mentions={draftMentions} color={colors.foreground} mentionColor={colors.primary} /> : null}
+             <TextInput testID="message-composer" value={draft} selection={selection} selectionColor={colors.primary} onChangeText={updateDraft} onSelectionChange={updateSelection} placeholder={editingMessage ? 'Edit your message...' : replyingTo ? 'Write a reply...' : 'Write a message...'} placeholderTextColor={colors.mutedForeground} style={[styles.input, draftMentionStyles.inputText, { height: visibleInputHeight, color: highlightDraftMentions ? 'transparent' : colors.foreground, borderColor: colors.border }]}
+               multiline
+               editable={!uploading && !sendMessage.isPending && !editMessage.isPending}
+               submitBehavior="newline"
+               scrollEnabled={visibleInputHeight >= COMPOSER_MAX_HEIGHT}
+               textAlignVertical="top"
+               onKeyPress={(event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
+                 if (!shouldSendOnWebKey(event.nativeEvent as TextInputKeyPressEventData & { shiftKey?: boolean; isComposing?: boolean; keyCode?: number }, Platform.OS)) return;
+                 (event as unknown as { preventDefault?: () => void }).preventDefault?.();
+                 void send();
+               }}
+               onContentSizeChange={(event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => setInputHeight(composerHeight(event.nativeEvent.contentSize.height, 0))}
+               onScroll={(event) => setInputScroll(event.nativeEvent.contentOffset?.y ?? 0)}
+             />
+             {highlightDraftMentions ? <DraftMentionHighlight text={draft} mentions={draftMentions} color={colors.foreground} mentionColor={colors.primary} scrollOffset={visibleInputHeight >= COMPOSER_MAX_HEIGHT ? inputScroll : 0} /> : null}
            </View>
            <Pressable testID="send-message" onPress={() => void send()} disabled={sendMessage.isPending || editMessage.isPending || uploading || (!draft.trim() && !selectedAttachments.length)} style={[styles.send, { backgroundColor: (draft.trim() || selectedAttachments.length) && !sendMessage.isPending && !editMessage.isPending && !uploading ? colors.primary : colors.muted }]}><Feather name={sendMessage.isPending || editMessage.isPending || uploading ? 'clock' : editingMessage ? 'check' : 'arrow-up'} size={18} color="#fff" /></Pressable>
          </View>
@@ -655,7 +789,7 @@ function SwipeableMessage({ item, mine, viewerId, colors, onOpenProfile, onOpenM
     <View style={styles.messageGroup}>
     <Pressable
       testID={`long-press-message-${item.id}`}
-      accessibilityRole="button"
+      accessibilityRole={Platform.OS === 'web' ? undefined : 'button'}
       accessibilityLabel={`Message from ${mine ? 'you' : item.senderName}`}
       onTouchStart={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
@@ -700,7 +834,7 @@ function MentionText({ text, mentions, mine, colors, onOpenMention }: { text: st
   let cursor = 0;
   validMentions.forEach((mention) => {
     if (mention.start > cursor) parts.push(text.slice(cursor, mention.start));
-    parts.push(<Text key={`${mention.userId}-${mention.start}`} accessibilityRole="link" onPress={() => onOpenMention(mention.userId, mention.displayName)} style={{ color: mine ? '#fff' : colors.primary }}>{text.slice(mention.start, mention.end)}</Text>);
+    parts.push(<Text key={`${mention.userId}-${mention.start}`} accessibilityRole={isEveryoneMention(mention.userId) ? 'text' : 'link'} onPress={isEveryoneMention(mention.userId) ? undefined : () => onOpenMention(mention.userId, mention.displayName)} style={{ color: mine ? '#fff' : colors.primary }}>{text.slice(mention.start, mention.end)}</Text>);
     cursor = mention.end;
   });
   if (cursor < text.length) parts.push(text.slice(cursor));
@@ -709,8 +843,8 @@ function MentionText({ text, mentions, mine, colors, onOpenMention }: { text: st
 
 const draftMentionStyles = StyleSheet.create({
   composerInput: { flex: 1, position: 'relative' },
-  inputText: { paddingVertical: 0, lineHeight: 18 },
-  overlay: { position: 'absolute', top: 0, bottom: 0, left: 14, right: 14, justifyContent: 'center' },
+  inputText: { flex: 0, width: '100%', paddingTop: 12, paddingBottom: 12, lineHeight: 18, maxHeight: COMPOSER_MAX_HEIGHT },
+  overlay: { position: 'absolute', top: 0, bottom: 0, left: 14, right: 14, paddingTop: 12, paddingBottom: 12, overflow: 'hidden', justifyContent: 'flex-start' },
   text: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18 },
 });
 
@@ -790,15 +924,34 @@ function formatMessageTime(value: string) {
 function AttachmentCard({ attachment, conversationId, mine, colors }: { attachment: MessageAttachment; conversationId: string; mine: boolean; colors: ReturnType<typeof useColors> }) {
   const [url, setUrl] = useState('');
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     if (!attachment.id) return;
+    let active = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    setUrl(''); setLoadError('');
     void customFetch<{ url: string }>(`/api/chats/${conversationId}/attachments/${attachment.id}/access-url`, {
       responseType: 'json',
       suppressUnauthorizedHandler: true,
-    }).then((value) => setUrl(value.url)).catch(() => undefined);
-  }, [attachment.id, conversationId]);
+      signal: controller.signal,
+    }).then((value) => {
+      if (!active) return;
+      if (typeof value.url !== 'string' || !/^https?:\/\//i.test(value.url)) throw new Error('Invalid photo link');
+      setUrl(value.url);
+    }).catch(() => {
+      if (active) setLoadError('Could not load this attachment. Tap to retry.');
+    }).finally(() => clearTimeout(timeout));
+    return () => { active = false; clearTimeout(timeout); controller.abort(); };
+  }, [attachment.id, conversationId, retry]);
   const foreground = mine ? '#fff' : colors.foreground;
-  if (attachment.contentType.startsWith('image/')) return url ? <><Pressable testID={`open-photo-${attachment.id}`} accessibilityLabel={`Open ${attachment.fileName}`} onPress={() => setViewerOpen(true)}><Image source={{ uri: url }} accessibilityLabel={attachment.fileName} style={styles.attachmentImage} /></Pressable><MessagePhotoViewer visible={viewerOpen} url={url} fileName={attachment.fileName} contentType={attachment.contentType} downloadPath={`/api/chats/${conversationId}/attachments/${attachment.id}`} onClose={() => setViewerOpen(false)} /></> : <Text style={[styles.attachmentLoading, { color: foreground }]}>Loading image…</Text>;
+  if (loadError) return <Pressable testID={`retry-attachment-${attachment.id}`} accessibilityRole="button"
+    accessibilityLabel={`Retry loading ${attachment.fileName}`} onPress={() => setRetry(value => value + 1)}
+    style={[styles.fileAttachment, { borderColor: mine ? '#ffffff66' : colors.border }]}>
+    <Feather name="refresh-cw" size={17} color={foreground} /><Text style={[styles.fileAttachmentName, { color: foreground }]}>{loadError}</Text>
+  </Pressable>;
+  if (attachment.contentType.startsWith('image/')) return url ? <><Pressable testID={`open-photo-${attachment.id}`} accessibilityLabel={`Open ${attachment.fileName}`} onPress={() => setViewerOpen(true)}><Image source={{ uri: url }} onError={() => setLoadError('This photo could not be displayed. Tap to retry.')} accessibilityLabel={attachment.fileName} style={styles.attachmentImage} /></Pressable><MessagePhotoViewer visible={viewerOpen} url={url} fileName={attachment.fileName} contentType={attachment.contentType} downloadPath={`/api/chats/${conversationId}/attachments/${attachment.id}`} onClose={() => setViewerOpen(false)} /></> : <Text style={[styles.attachmentLoading, { color: foreground }]}>Loading image…</Text>;
   return <Pressable onPress={() => url ? void Linking.openURL(url) : undefined} style={[styles.fileAttachment, { borderColor: mine ? '#ffffff66' : colors.border }]}><Feather name="file-text" size={17} color={foreground} /><Text numberOfLines={1} style={[styles.fileAttachmentName, { color: foreground }]}>{attachment.fileName}</Text><Feather name="download" size={15} color={foreground} /></Pressable>;
 }
 
@@ -815,5 +968,5 @@ const styles = StyleSheet.create({
   deleteCancelText: { fontSize: 19, fontFamily: 'Inter_600SemiBold', color: '#007AFF' },
   deleteToast: { position: 'absolute', bottom: 96, left: 20, right: 20, alignSelf: 'center', backgroundColor: '#26262B', paddingHorizontal: 18, paddingVertical: 14, borderRadius: 14, elevation: 10 },
   deleteToastText: { color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 13, textAlign: 'center' },
-  container: { flex: 1 }, header: { height: 48, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 }, headerActions: { minWidth: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 13 }, title: { flex: 1, textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 17 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 7 }, error: { fontFamily: 'Inter_700Bold', fontSize: 15 }, retry: { marginTop: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 }, retryText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, participantPanel: { marginHorizontal: 16, marginTop: 3, borderWidth: 1, borderRadius: 15, padding: 12, gap: 8 }, participantHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, participantTitle: { fontFamily: 'Inter_700Bold', fontSize: 13 }, participantRow: { minHeight: 29, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, participantName: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 12 }, removeText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, addLabel: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 1, marginTop: 5 }, addText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, swipeContainer: { maxWidth: '92%', borderRadius: 16 }, webMessageRow: { maxWidth: '92%', gap: 5 }, messageLayout: { maxWidth: '100%', flexDirection: 'row', alignItems: 'flex-end', gap: 7 }, messageGroup: { maxWidth: '100%', flexShrink: 1 }, messageAvatar: { width: 30, height: 30, borderRadius: 15, marginBottom: 4 }, messageAvatarFallback: { alignItems: 'center', justifyContent: 'center' }, messageAvatarText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, bubble: { maxWidth: '100%', borderRadius: 16, padding: 11 }, messageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }, messageMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 }, sender: { fontFamily: 'Inter_600SemiBold', fontSize: 10 }, timestamp: { fontFamily: 'Inter_400Regular', fontSize: 9 }, edited: { fontFamily: 'Inter_400Regular', fontSize: 9 }, message: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 }, deletedMessage: { fontFamily: 'Inter_400Regular', fontSize: 13, fontStyle: 'italic', lineHeight: 19 }, mentionText: { fontFamily: 'Inter_700Bold', textDecorationLine: 'underline' }, replyPreview: { borderLeftWidth: 3, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 6, marginBottom: 7 }, replyName: { fontFamily: 'Inter_700Bold', fontSize: 10, marginBottom: 2 }, replyText: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15 }, messageActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 }, replyAction: { alignSelf: 'flex-start', minHeight: 34, marginTop: 4, borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 5 }, replyActionText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, profileOverlay: { flex: 1, backgroundColor: '#00000066', alignItems: 'center', justifyContent: 'center', padding: 24 }, profileCard: { width: '100%', maxWidth: 340, borderRadius: 22, borderWidth: 1, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, profileClose: { position: 'absolute', top: 12, right: 12, width: 32, height: 32, alignItems: 'center', justifyContent: 'center', zIndex: 1 }, profileImage: { width: 128, height: 128, borderRadius: 64, marginBottom: 15 }, profileImageFallback: { alignItems: 'center', justifyContent: 'center' }, profileInitials: { fontFamily: 'Inter_700Bold', fontSize: 30 }, profileName: { fontFamily: 'Inter_700Bold', fontSize: 20, textAlign: 'center' }, profileRole: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 5 }, profileError: { fontFamily: 'Inter_500Medium', fontSize: 11, textAlign: 'center', marginTop: 12 }, profileMessageButton: { minHeight: 44, alignSelf: 'stretch', borderRadius: 13, marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, profileMessageText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 12 }, composer: { borderTopWidth: 1, paddingHorizontal: 12, paddingTop: 10 }, mentionSuggestions: { maxHeight: 220, marginBottom: 8, borderWidth: 1, borderRadius: 13, paddingVertical: 4, overflow: 'hidden' }, mentionSuggestion: { minHeight: 44, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 9 }, mentionAvatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, mentionAvatarImage: { width: 30, height: 30 }, mentionAvatarText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, mentionSuggestionText: { flex: 1 }, mentionName: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, mentionRole: { fontFamily: 'Inter_400Regular', fontSize: 10, marginTop: 1 }, replyComposer: { borderLeftWidth: 3, borderRadius: 9, marginBottom: 8, paddingLeft: 9, paddingRight: 5, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 8 }, editComposer: { borderLeftWidth: 3, borderRadius: 9, marginBottom: 8, paddingLeft: 9, paddingRight: 5, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 8 }, replyComposerText: { flex: 1 }, replyComposerName: { fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 2 }, replyComposerPreview: { fontFamily: 'Inter_400Regular', fontSize: 11 }, cancelReply: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }, composerRow: { flexDirection: 'row', gap: 8, alignItems: 'center' }, attach: { width: 38, height: 42, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, input: { flex: 1, height: 42, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontFamily: 'Inter_400Regular', fontSize: 13 }, send: { width: 42, height: 42, borderRadius: 14, justifyContent: 'center', alignItems: 'center' }, attachmentQueue: { gap: 5, marginBottom: 8 }, queuedAttachment: { height: 30, borderRadius: 9, paddingHorizontal: 9, flexDirection: 'row', gap: 6, alignItems: 'center' }, queuedAttachmentText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 11 }, attachmentImage: { width: 210, height: 150, borderRadius: 10, marginTop: 7, backgroundColor: '#00000018' }, attachmentLoading: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 7 }, fileAttachment: { borderWidth: 1, borderRadius: 10, marginTop: 7, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: 240 }, fileAttachmentName: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 11 }, failure: { position: 'absolute', bottom: 70, alignSelf: 'center', paddingHorizontal: 18, paddingVertical: 8 }, actionFailure: { position: 'absolute', top: 65, alignSelf: 'center', paddingHorizontal: 18, paddingVertical: 8 }, failureText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textAlign: 'center' },
+  container: { flex: 1 }, header: { height: 48, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 }, headerActions: { minWidth: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 13 }, title: { flex: 1, textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 17 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 7 }, error: { fontFamily: 'Inter_700Bold', fontSize: 15 }, retry: { marginTop: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 }, retryText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, participantPanel: { marginHorizontal: 16, marginTop: 3, borderWidth: 1, borderRadius: 15, padding: 12, gap: 8 }, participantHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, participantTitle: { fontFamily: 'Inter_700Bold', fontSize: 13 }, participantRow: { minHeight: 29, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, participantName: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 12 }, removeText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, addLabel: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 1, marginTop: 5 }, addText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, swipeContainer: { maxWidth: '92%', borderRadius: 16 }, webMessageRow: { maxWidth: '92%', gap: 5 }, messageLayout: { maxWidth: '100%', flexDirection: 'row', alignItems: 'flex-end', gap: 7 }, messageGroup: { maxWidth: '100%', flexShrink: 1 }, messageAvatar: { width: 30, height: 30, borderRadius: 15, marginBottom: 4 }, messageAvatarFallback: { alignItems: 'center', justifyContent: 'center' }, messageAvatarText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, bubble: { maxWidth: '100%', borderRadius: 16, padding: 11 }, messageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }, messageMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 }, sender: { fontFamily: 'Inter_600SemiBold', fontSize: 10 }, timestamp: { fontFamily: 'Inter_400Regular', fontSize: 9 }, edited: { fontFamily: 'Inter_400Regular', fontSize: 9 }, message: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 }, deletedMessage: { fontFamily: 'Inter_400Regular', fontSize: 13, fontStyle: 'italic', lineHeight: 19 }, mentionText: { fontFamily: 'Inter_700Bold', textDecorationLine: 'underline' }, replyPreview: { borderLeftWidth: 3, borderRadius: 7, paddingHorizontal: 8, paddingVertical: 6, marginBottom: 7 }, replyName: { fontFamily: 'Inter_700Bold', fontSize: 10, marginBottom: 2 }, replyText: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15 }, messageActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 5 }, replyAction: { alignSelf: 'flex-start', minHeight: 34, marginTop: 4, borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 5 }, replyActionText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, profileOverlay: { flex: 1, backgroundColor: '#00000066', alignItems: 'center', justifyContent: 'center', padding: 24 }, profileCard: { width: '100%', maxWidth: 340, borderRadius: 22, borderWidth: 1, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, profileClose: { position: 'absolute', top: 12, right: 12, width: 32, height: 32, alignItems: 'center', justifyContent: 'center', zIndex: 1 }, profileImage: { width: 128, height: 128, borderRadius: 64, marginBottom: 15 }, profileImageFallback: { alignItems: 'center', justifyContent: 'center' }, profileInitials: { fontFamily: 'Inter_700Bold', fontSize: 30 }, profileName: { fontFamily: 'Inter_700Bold', fontSize: 20, textAlign: 'center' }, profileRole: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 5 }, profileError: { fontFamily: 'Inter_500Medium', fontSize: 11, textAlign: 'center', marginTop: 12 }, profileMessageButton: { minHeight: 44, alignSelf: 'stretch', borderRadius: 13, marginTop: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, profileMessageText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 12 }, composer: { borderTopWidth: 1, paddingHorizontal: 12, paddingTop: 10 }, mentionSuggestions: { maxHeight: 220, marginBottom: 8, borderWidth: 1, borderRadius: 13, paddingVertical: 4, overflow: 'hidden' }, mentionSuggestion: { minHeight: 44, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 9 }, mentionAvatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, mentionAvatarImage: { width: 30, height: 30 }, mentionAvatarText: { fontFamily: 'Inter_700Bold', fontSize: 11 }, mentionSuggestionText: { flex: 1 }, mentionName: { fontFamily: 'Inter_600SemiBold', fontSize: 12 }, mentionRole: { fontFamily: 'Inter_400Regular', fontSize: 10, marginTop: 1 }, replyComposer: { borderLeftWidth: 3, borderRadius: 9, marginBottom: 8, paddingLeft: 9, paddingRight: 5, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 8 }, editComposer: { borderLeftWidth: 3, borderRadius: 9, marginBottom: 8, paddingLeft: 9, paddingRight: 5, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 8 }, replyComposerText: { flex: 1 }, replyComposerName: { fontFamily: 'Inter_700Bold', fontSize: 11, marginBottom: 2 }, replyComposerPreview: { fontFamily: 'Inter_400Regular', fontSize: 11 }, cancelReply: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }, composerRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-end' }, attach: { width: 38, height: 42, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, input: { flex: 1, height: 42, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, fontFamily: 'Inter_400Regular', fontSize: 13 }, send: { width: 42, height: 42, borderRadius: 14, justifyContent: 'center', alignItems: 'center' }, attachmentQueue: { gap: 5, marginBottom: 8 }, queuedAttachment: { height: 30, borderRadius: 9, paddingHorizontal: 9, flexDirection: 'row', gap: 6, alignItems: 'center' }, queuedAttachmentText: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 11 }, attachmentImage: { width: 210, height: 150, borderRadius: 10, marginTop: 7, backgroundColor: '#00000018' }, attachmentLoading: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 7 }, fileAttachment: { borderWidth: 1, borderRadius: 10, marginTop: 7, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 7, maxWidth: 240 }, fileAttachmentName: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 11 }, failure: { position: 'absolute', bottom: 70, alignSelf: 'center', paddingHorizontal: 18, paddingVertical: 8 }, actionFailure: { position: 'absolute', top: 65, alignSelf: 'center', paddingHorizontal: 18, paddingVertical: 8 }, failureText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, textAlign: 'center' },
 });
