@@ -2,7 +2,7 @@
   "expo": {
     "name": "LPA",
     "slug": "lpa",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/images/lpa-outlaws-mark.png",
     "scheme": "lpa",
@@ -10,9 +10,11 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.lpa",
-      "buildNumber": "24",
+      "buildNumber": "29",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       },
       "entitlements": {
         "aps-environment": "production"
@@ -20,7 +22,8 @@
     },
     "android": {
       "package": "com.legendaryprepacademy.lpa",
-      "versionCode": 6
+      "versionCode": 8,
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/images/lpa-outlaws-mark.png"
@@ -64,7 +67,8 @@
           "color": "#C47A44"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
