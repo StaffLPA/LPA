@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as ImagePicker from 'expo-image-picker';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { CachedImage as Image } from '@/components/CachedImage';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
@@ -22,20 +22,28 @@ import {
   useRevokeInvite,
   useUpdateUserRole, updateUserTeams, customFetch,
   useCreateTagOption, useRenameTagOption, useDeleteTagOption, useUpdateUserRoleTag,
+  useListGroupTags, useUpdateUserGroupTag, usePreviewGroupAssignments, useApplyGroupAssignments,
+  type GroupTag, type GroupAssignmentInput, type GroupAssignmentUpdate, type GroupAssignmentPreviewResponse,
   useListAdminGroupChats, useUpdateGroupChatPin,
 } from '@workspace/api-client-react';
 import { useApp, useLiveSync } from '@/context/AppContext';
+import { GroupChatMemberFilters } from '@/components/GroupChatMemberFilters';
+import { matchesMemberGroup } from '@/lib/groupChatMembers';
 import { AccountLockAction } from '@/components/AccountLockAction';
 import { UserIdentityEditor } from '@/components/UserIdentityEditor';
 import { useColors } from '@/hooks/useColors';
 import { CALENDAR_TEAM_COLORS, CALENDAR_TEAMS, LPA_TEAMS, getCalendarTeamColor, teamEventAliases } from '@/constants/teams';
 import { AdminAnnouncementsPanel } from '@/components/AdminAnnouncementsPanel';
+import { CalendarLocationPicker } from '@/components/CalendarLocationPicker';
+import { CalendarTimeField } from '@/components/CalendarTimePicker';
+import { normalizeCalendarTime } from '@/lib/calendarTime';
 import { useTagCatalog } from '@/hooks/useTagCatalog';
 import { tagLabel, canonicalTeam, teamMatches, getTeamColor, type TagCatalog } from '@/constants/tagCatalog';
+import { canManageGroupChats, groupChatCreationProblem } from '@/lib/groupChatPermissions';
 
 type Section = 'Overview' | 'Roster' | 'Calendar' | 'Group Chats' | 'Schedule Images' | 'Family Links' | 'Announcements' | 'Tagging';
 type Role = 'Admin' | 'Staff-Coach' | 'Parent-Athlete' | 'Athlete';
-type UserRow = { id: string; fullName: string; email?: string | null; phone?: string | null; role: Role; roleTag?: string | null; status: string; teams: string[]; gradYear?: string | null; profilePhotoUri?: string | null };
+type UserRow = { id: string; fullName: string; email?: string | null; phone?: string | null; role: Role; roleTag?: string | null; groupTag?: string | null; status: string; teams: string[]; gradYear?: string | null; profilePhotoUri?: string | null };
 type EventRow = { id: string; title: string; date: string; time: string; location: string; locationAddress?: string | null; notes?: string | null; team: string; repeatSeriesId?: string | null; repeatUntil?: string | null };
 type GuardianLink = { id: string; athlete: Pick<UserRow, 'id' | 'fullName' | 'teams' | 'gradYear' | 'profilePhotoUri'>; guardian: Pick<UserRow, 'id' | 'fullName' | 'profilePhotoUri'>; createdAt: string };
 const roles: Role[] = ['Admin', 'Staff-Coach', 'Parent-Athlete', 'Athlete'];
@@ -96,9 +104,12 @@ function AdminDashboardContent() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { signOut, user: currentUser } = useApp();
+  const canManageGroups = canManageGroupChats(currentUser?.role);
   const { isSyncing, lastSyncedAt, syncError, syncSharedData } = useLiveSync();
   const tagCatalogQuery = useTagCatalog();
   const tagCatalog = tagCatalogQuery.data as TagCatalog;
+  const groupTagsQuery = useListGroupTags({ query: { enabled: currentUser?.role === 'Admin' || currentUser?.role === 'Staff-Coach' } });
+  const groupTags = groupTagsQuery.data ?? [];
   teams = ['All Teams', ...tagCatalog.teams.map((option) => option.label)];
   const [section, setSection] = useState<Section>('Overview');
   const [search, setSearch] = useState('');
@@ -121,8 +132,16 @@ function AdminDashboardContent() {
   const [invite, setInvite] = useState({ fullName: '', email: '', phone: '', role: 'Parent-Athlete' as Role, roleTag: '', teams: [] as string[], gradYear: '' });
   const [groupName, setGroupName] = useState('');
   const [groupParticipants, setGroupParticipants] = useState<string[]>([]);
+  const [groupCreationError, setGroupCreationError] = useState('');
+  const dashboardScrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    dashboardScrollRef.current?.scrollTo({ y: 0, animated: false });
+    setGroupCreationError('');
+  }, [section]);
   const [rosterTeamFilters, setRosterTeamFilters] = useState<string[]>([]);
+  const [rosterGroupFilter, setRosterGroupFilter] = useState<string | null>(null);
   const [groupTeamFilters, setGroupTeamFilters] = useState<string[]>([]);
+  const [groupMemberGroup, setGroupMemberGroup] = useState<string | null>(null);
   const [groupRoleFilters, setGroupRoleFilters] = useState<Role[]>([]);
   const [groupParticipantSearch, setGroupParticipantSearch] = useState('');
   const [uploadingUserPhoto, setUploadingUserPhoto] = useState<string | null>(null);
@@ -132,7 +151,10 @@ function AdminDashboardContent() {
   const [familySearch, setFamilySearch] = useState('');
   const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
   const [selectedGuardianId, setSelectedGuardianId] = useState<string | null>(null);
+  const [deletingFamilyLinkId, setDeletingFamilyLinkId] = useState<string | null>(null);
   const [tagError, setTagError] = useState('');
+  const [groupTagError, setGroupTagError] = useState('');
+  const [groupMenuId, setGroupMenuId] = useState<string | null>(null);
   const [groupPinError, setGroupPinError] = useState('');
   const users = useListUsers(undefined, { query: { queryKey: ['/api/admin/users', 'live'] } });
   const groupChats = useListAdminGroupChats({ query: { queryKey: ['/api/admin/group-chats'], enabled: currentUser?.role === 'Admin' } });
@@ -158,6 +180,26 @@ function AdminDashboardContent() {
   const renameTag = useRenameTagOption({ mutation: { onSuccess: invalidateTagCatalog, onError: tagMutationError } });
   const deleteTag = useDeleteTagOption({ mutation: { onSuccess: invalidateTagCatalog, onError: tagMutationError } });
   const updateRoleTag = useUpdateUserRoleTag({ mutation: { onSuccess: refreshAdminData, onError: (error) => Alert.alert('Could not update role label', error.message) } });
+  const updateUserGroupTag = useUpdateUserGroupTag({ mutation: {
+    onSuccess: () => {
+      setGroupTagError('');
+      setGroupMenuId(null);
+      void queryClient.invalidateQueries({ queryKey: ['/api/admin/users', 'live'] });
+      refreshAdminData();
+    },
+    onError: (error) => setGroupTagError(error.message || 'Could not update the athlete group.'),
+  } });
+  const previewGroupAssignments = usePreviewGroupAssignments({ mutation: {
+    onError: (error) => setGroupTagError(error.message || 'Could not preview the assignments.'),
+  } });
+  const applyGroupAssignments = useApplyGroupAssignments({ mutation: {
+    onSuccess: () => {
+      setGroupTagError('');
+      void queryClient.invalidateQueries({ queryKey: ['/api/admin/users', 'live'] });
+      refreshAdminData();
+    },
+    onError: (error) => setGroupTagError(error.message || 'Could not apply the assignments.'),
+  } });
   const updateGroupChatPin = useUpdateGroupChatPin({ mutation: { onSuccess: async () => {
     setGroupPinError('');
     await Promise.all([
@@ -174,7 +216,7 @@ function AdminDashboardContent() {
     await updateUserTeams(id, { teams: selectedTeams });
     refreshAdminData();
   };
-  const updateGradYear = async (id: string, gradYear: string) => {
+  const updateGradYear = async (id: string, gradYear: string | null) => {
     try {
       await customFetch(`/api/admin/users/${id}/grad-year`, { method: 'PATCH', body: JSON.stringify({ gradYear }) });
       setGradYearMenuId(null); refreshAdminData();
@@ -192,7 +234,7 @@ function AdminDashboardContent() {
   const createEvent = useCreateCalendarEvent({ mutation: { onSuccess: invalidateCalendars } });
   const createRepeatedEvents = useCreateRepeatedCalendarEvents({ mutation: { onSuccess: invalidateCalendars } });
   const deleteEvent = useDeleteCalendarEvent({ mutation: { onSuccess: invalidateCalendars } });
-  const createGroupChat = useCreateChat({ mutation: { onSuccess: (conversation) => { setGroupName(''); setGroupParticipants([]); void queryClient.invalidateQueries({ queryKey: ['/api/chats'] }); router.push(('/chat/' + conversation.id) as never); }, onError: (error) => Alert.alert('Could not create group chat', error.message) } });
+  const createGroupChat = useCreateChat({ mutation: { onSuccess: (conversation) => { setGroupCreationError(''); setGroupName(''); setGroupParticipants([]); void queryClient.invalidateQueries({ queryKey: ['chats'] }); router.push(('/chat/' + conversation.id) as never); }, onError: (error) => { setGroupCreationError(error.message || 'Could not create the group chat. Please retry.'); Alert.alert('Could not create group chat', error.message); } } });
   const createGuardianLink = useCreateGuardianLink({ mutation: { onSuccess: () => { setSelectedAthleteId(null); setSelectedGuardianId(null); void queryClient.invalidateQueries({ queryKey: guardianLinks.queryKey }); } } });
   const deleteGuardianLink = useDeleteGuardianLink({ mutation: { onSuccess: () => void queryClient.invalidateQueries({ queryKey: guardianLinks.queryKey }) } });
   const loadScheduleImages = async () => {
@@ -263,6 +305,7 @@ function AdminDashboardContent() {
   }), [users.data, search, tagCatalog]);
   const filteredRosterRows = Array.from(new Map(rows
     .filter((person) => !rosterTeamFilters.length || person.teams.some((team) => rosterTeamFilters.some((filter) => teamMatches(tagCatalog, team, filter))))
+    .filter((person) => !rosterGroupFilter || (person.role === 'Athlete' && (rosterGroupFilter === '__unassigned__' ? !person.groupTag : person.groupTag === rosterGroupFilter)))
     .map((person) => [person.id, person])).values());
   const events = (calendar.data ?? []) as EventRow[];
   const activeUsers = rows.filter((user) => user.status === 'active').length;
@@ -274,6 +317,7 @@ function AdminDashboardContent() {
   const guardianCandidates = familyCandidates.filter((person) => person.role === 'Parent-Athlete');
   const filteredGroupUsers = Array.from(new Map(activeGroupUsers
     .filter((person) => matchesGroupChatRole(person.role, groupRoleFilters))
+    .filter((person) => groupMemberGroup !== null && guardianLinks.isError ? false : matchesMemberGroup(person, groupMemberGroup, (users.data ?? []) as UserRow[], guardianLinks.data ?? []))
     .filter((person) => !groupTeamFilters.length || person.teams.some((team) => groupTeamFilters.some((filter) => teamMatches(tagCatalog, team, filter))))
     .filter((person) => {
       const teamSearch = person.teams.flatMap((team) => {
@@ -293,6 +337,12 @@ function AdminDashboardContent() {
   const handleInvite = () => createInvite.mutate({ data: { fullName: invite.fullName, email: invite.email || undefined, phone: invite.phone || undefined, role: invite.role, roleTag: invite.roleTag || null, teams: invite.teams.length ? invite.teams : undefined, gradYear: invite.gradYear || undefined } }, { onError: (error) => Alert.alert('Invite not sent', error.message) });
   const saveEvent = async (repeatDaily = false, repeatUntil = '', applyToRemainingRepeatEvents = false) => {
     if (!eventTitle.trim() || !eventDate.trim() || !eventTime.trim()) return;
+    const normalizedStartTime = normalizeCalendarTime(eventTime);
+    const normalizedEndTime = eventEndTime.trim() ? normalizeCalendarTime(eventEndTime) : '';
+    if (!normalizedStartTime || (eventEndTime.trim() && !normalizedEndTime)) {
+      Alert.alert('Enter a valid time', 'Use a time such as 4:15 PM or 16:15.');
+      return;
+    }
     const date = apiDate(eventDate);
     if (!validApiDate(date)) {
       Alert.alert('Enter a valid date', 'Use MM-DD-YYYY, for example 08-20-2026.');
@@ -307,7 +357,7 @@ function AdminDashboardContent() {
       Alert.alert('Repeat range is too long', 'Daily repeating events can span up to one year.');
       return;
     }
-    const data = { title: eventTitle, date, time: eventEndTime.trim() ? `${eventTime.trim()} - ${eventEndTime.trim()}` : eventTime.trim(), location: eventLocation || 'LPA Campus', locationAddress: eventAddress.trim() || null, notes: eventNotes.trim() || null, team: eventFormTeam };
+    const data = { title: eventTitle, date, time: normalizedEndTime ? `${normalizedStartTime} - ${normalizedEndTime}` : normalizedStartTime, location: eventLocation || 'LPA Campus', locationAddress: eventAddress.trim() || null, notes: eventNotes.trim() || null, team: eventFormTeam };
     setSavingEvents(true);
     try {
       if (editingEvent) {
@@ -330,7 +380,10 @@ function AdminDashboardContent() {
     }
   };
   const createGroup = () => {
-    if (!groupName.trim() || !groupParticipants.length || createGroupChat.isPending) return;
+    if (createGroupChat.isPending) return;
+    const problem = groupChatCreationProblem({ role: currentUser?.role, name: groupName, participantCount: groupParticipants.length, rosterLoading: users.isLoading, rosterFailed: users.isError });
+    if (problem) { setGroupCreationError(problem); return; }
+    setGroupCreationError('');
     createGroupChat.mutate({ data: { type: 'group', name: groupName.trim(), userIds: groupParticipants } });
   };
   const resetEventForm = () => { setEditingEvent(null); setEventTitle(''); setEventDate(''); setEventTime(''); setEventEndTime(''); setEventLocation(''); setEventAddress(''); setEventNotes(''); setEventFormTeam('LPA Events'); setEventFormRevision((revision) => revision + 1); };
@@ -347,7 +400,7 @@ function AdminDashboardContent() {
   };
 
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
-    <ScrollView contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === 'web' ? Math.max(insets.top, 67) : insets.top) + 18, paddingBottom: Math.max(insets.bottom, 34) + 36 }]} showsVerticalScrollIndicator={false}>
+    <ScrollView ref={dashboardScrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === 'web' ? Math.max(insets.top, 67) : insets.top) + 18, paddingBottom: Math.max(insets.bottom, 34) + 36 }]} showsVerticalScrollIndicator={false}>
       <View style={styles.header}><View style={styles.headerLeft}><Pressable testID="admin-dashboard-back" accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="arrow-left" size={17} color={colors.primary} /></Pressable><View style={{ flex: 1 }}><Text style={[styles.kicker, { color: colors.primary }]}>LEGENDARY PREP ACADEMY</Text><Text style={[styles.title, { color: colors.foreground }]}>Admin dashboard</Text><Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Manage your LPA community from one place.</Text><Pressable testID="retry-admin-live-sync" disabled={isSyncing} onPress={refreshAdminData} style={styles.syncStatus}><View style={[styles.syncDot, { backgroundColor: syncError ? colors.destructive : isSyncing || users.isFetching || calendar.isFetching ? colors.primary : colors.accent }]} /><Text style={[styles.syncText, { color: colors.mutedForeground }]}>{syncError ? 'Live sync needs attention · tap to retry' : isSyncing || users.isFetching || calendar.isFetching ? 'Syncing live data…' : lastSyncedAt ? `Live · synced ${lastSyncedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Live sync ready'}</Text></Pressable></View></View><View style={styles.headerActions}><Pressable testID="refresh-admin-dashboard" accessibilityRole="button" onPress={refreshAdminData} style={[styles.iconButton, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="refresh-cw" size={17} color={colors.primary} /></Pressable><Pressable testID="dashboard-sign-out" accessibilityRole="button" accessibilityLabel="Log out" onPress={logOut} style={[Platform.OS === 'web' ? styles.logoutButton : styles.iconButton, { backgroundColor: Platform.OS === 'web' ? `${colors.destructive}12` : colors.card, borderColor: Platform.OS === 'web' ? `${colors.destructive}40` : colors.border }]}><Feather name="log-out" size={16} color={colors.destructive} />{Platform.OS === 'web' ? <Text style={[styles.logoutText, { color: colors.destructive }]}>Log out</Text> : null}</Pressable></View></View>
 
        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.nav, { backgroundColor: colors.muted }]} contentContainerStyle={styles.navContent}>{(['Overview', 'Announcements', 'Roster', 'Calendar', 'Group Chats', 'Schedule Images', 'Family Links', 'Tagging'] as Section[]).map((item) => <Pressable key={item} testID={`admin-section-${item.toLowerCase().replaceAll(' ', '-')}`} onPress={() => setSection(item)} style={[styles.navButton, section === item && { backgroundColor: colors.card }]}><Text style={[styles.navText, { color: section === item ? colors.foreground : colors.mutedForeground }]}>{item}</Text></Pressable>)}</ScrollView>
@@ -363,7 +416,17 @@ function AdminDashboardContent() {
         <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput testID="dashboard-roster-search" value={search} onChangeText={setSearch} placeholder="Search name, email, role, team, or grad year" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>
         <Text style={[styles.formLabel, { color: colors.mutedForeground, marginBottom: 7 }]}>FILTER BY TEAM · ANY SELECTED TEAM</Text>
         <TeamMultiFilter catalog={tagCatalog} selected={rosterTeamFilters} onChange={setRosterTeamFilters} colors={colors} testIDPrefix="roster-team-filter" />
-        {users.isLoading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 45 }} /> : <View style={styles.roster}>{filteredRosterRows.map((user) => <RosterCard key={user.id} user={user} colors={colors} roleMenuOpen={roleMenuId === user.id} teamMenuOpen={teamMenuId === user.id} gradYearMenuOpen={gradYearMenuId === user.id} uploadingPhoto={uploadingUserPhoto === user.id} deletingProfile={deletingUserId === user.id} canDeleteProfile={(currentUser?.role === 'Admin' || currentUser?.role === 'Staff-Coach') && user.id !== currentUser.id} onPhotoChange={() => void uploadUserPhoto(user)} onToggleRole={() => { setRoleMenuId(roleMenuId === user.id ? null : user.id); setTeamMenuId(null); setGradYearMenuId(null); }} onToggleTeam={(open) => { setTeamMenuId(open ? user.id : null); if (open) { setRoleMenuId(null); setGradYearMenuId(null); } }} onToggleGradYear={() => { setGradYearMenuId(gradYearMenuId === user.id ? null : user.id); setRoleMenuId(null); setTeamMenuId(null); }} onRoleChange={(role) => updateRole.mutate({ id: user.id, data: { role } }, { onError: (error) => Alert.alert('Could not update role', error.message) })} onTeamChange={(teams) => updateTeam(user.id, teams)} onGradYearChange={(gradYear) => void updateGradYear(user.id, gradYear)} onResend={() => resendInvite.mutate({ id: user.id }, { onError: (error) => Alert.alert('Could not resend invite', error.message) })} onRevoke={() => revokeInvite.mutate({ id: user.id }, { onError: (error) => Alert.alert('Could not revoke invite', error.message) })} onDeleteProfile={() => confirmDeleteProfile(user)} />)}</View>}
+        <Text style={[styles.formLabel, { color: colors.mutedForeground, marginTop: 15, marginBottom: 7 }]}>FILTER ATHLETES BY GROUP</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.teamFilters}>
+          {[{ id: null, label: 'All' }, { id: '__unassigned__', label: 'Unassigned' }, ...groupTags].map((option) => {
+            const selected = rosterGroupFilter === option.id;
+            return <Pressable key={option.id ?? 'all'} testID={`roster-group-filter-${option.id ?? 'all'}`} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => setRosterGroupFilter(option.id)} style={[styles.teamPill, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+              <Text style={[styles.teamText, { color: selected ? '#fff' : colors.foreground }]}>{option.label}</Text>
+            </Pressable>;
+          })}
+        </ScrollView>
+        {groupTagError ? <Text accessibilityRole="alert" style={{ color: colors.destructive, marginTop: 8 }}>{groupTagError}</Text> : null}
+        {users.isLoading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 45 }} /> : <View style={styles.roster}>{filteredRosterRows.map((user) => <RosterCard key={user.id} user={user} colors={colors} groupTags={groupTags} roleMenuOpen={roleMenuId === user.id} teamMenuOpen={teamMenuId === user.id} gradYearMenuOpen={gradYearMenuId === user.id} groupMenuOpen={groupMenuId === user.id} savingGroup={updateUserGroupTag.isPending} uploadingPhoto={uploadingUserPhoto === user.id} deletingProfile={deletingUserId === user.id} canDeleteProfile={(currentUser?.role === 'Admin' || currentUser?.role === 'Staff-Coach') && user.id !== currentUser.id} onPhotoChange={() => void uploadUserPhoto(user)} onToggleRole={() => { setRoleMenuId(roleMenuId === user.id ? null : user.id); setTeamMenuId(null); setGradYearMenuId(null); setGroupMenuId(null); }} onToggleTeam={(open) => { setTeamMenuId(open ? user.id : null); if (open) { setRoleMenuId(null); setGradYearMenuId(null); setGroupMenuId(null); } }} onToggleGradYear={() => { setGradYearMenuId(gradYearMenuId === user.id ? null : user.id); setRoleMenuId(null); setTeamMenuId(null); setGroupMenuId(null); }} onToggleGroup={() => { setGroupMenuId(groupMenuId === user.id ? null : user.id); setRoleMenuId(null); setTeamMenuId(null); setGradYearMenuId(null); }} onGroupChange={(groupTag) => updateUserGroupTag.mutate({ id: user.id, data: { groupTag } })} onRoleChange={(role) => updateRole.mutate({ id: user.id, data: { role } }, { onError: (error) => Alert.alert('Could not update role', error.message) })} onTeamChange={(teams) => updateTeam(user.id, teams)} onGradYearChange={(gradYear) => void updateGradYear(user.id, gradYear)} onResend={() => resendInvite.mutate({ id: user.id }, { onError: (error) => Alert.alert('Could not resend invite', error.message) })} onRevoke={() => revokeInvite.mutate({ id: user.id }, { onError: (error) => Alert.alert('Could not revoke invite', error.message) })} onDeleteProfile={() => confirmDeleteProfile(user)} />)}</View>}
       </> : null}
 
       {section === 'Calendar' ? <><View style={styles.sectionHeader}><View><Text style={[styles.sectionTitle, { color: colors.foreground }]}>Calendar events</Text><Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>Create and manage shared LPA events.</Text></View></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.teamFilters}>{teams.map((team) => <Pressable key={team} onPress={() => setEventTeam(team)} style={[styles.teamPill, { backgroundColor: eventTeam === team ? CALENDAR_TEAM_COLORS[team] : colors.card, borderColor: eventTeam === team ? CALENDAR_TEAM_COLORS[team] : colors.border }]}><View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: CALENDAR_TEAM_COLORS[team] }} /><Text style={[styles.teamText, { color: eventTeam === team && team === 'LPA Events' ? colors.accentForeground : eventTeam === team ? '#fff' : colors.foreground }]}>{team}</Text></Pressable>)}</ScrollView><View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={styles.panelHeader}><View><Text style={[styles.panelTitle, { color: colors.foreground }]}>{editingEvent ? 'Edit event' : 'Add an event'}</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>{editingEvent ? 'Changes publish immediately.' : 'Visible to the selected LPA team.'}</Text></View>{editingEvent ? <Pressable onPress={resetEventForm}><Text style={[styles.cancel, { color: colors.primary }]}>Cancel</Text></Pressable> : null}</View><EventForm key={`${eventFormRevision}-${editingEvent?.id ?? 'new'}`} title={eventTitle} setTitle={setEventTitle} date={eventDate} setDate={setEventDate} time={eventTime} setTime={setEventTime} endTime={eventEndTime} setEndTime={setEventEndTime} location={eventLocation} setLocation={setEventLocation} address={eventAddress} setAddress={setEventAddress} notes={eventNotes} setNotes={setEventNotes} team={eventFormTeam} setTeam={setEventFormTeam} repeatUntil={editingEvent?.repeatUntil} onSubmit={saveEvent} loading={savingEvents || createEvent.isPending || createRepeatedEvents.isPending} edit={Boolean(editingEvent)} colors={colors} /></View>{calendar.isLoading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 34 }} /> : <View style={styles.eventList}>{events.map((event) => { const eventColor = getCalendarTeamColor(event.team); return <View key={event.id} style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, backgroundColor: eventColor }} /><View style={[styles.eventDate, { backgroundColor: `${eventColor}18` }]}><Text style={[styles.eventDay, { color: eventColor }]}>{displayDate(event.date)}</Text></View><View style={{ flex: 1 }}><Text style={[styles.eventTitle, { color: colors.foreground }]}>{event.title}</Text><Text style={[styles.eventMeta, { color: colors.mutedForeground }]}>{event.time} · {event.location}</Text><Text style={[styles.eventTeam, { color: eventColor }]}>{event.team}</Text>{event.repeatUntil ? <Text style={[styles.repeatSeriesMeta, { color: colors.mutedForeground }]}>Daily repeat · through {displayDate(event.repeatUntil)}</Text> : null}</View><View style={styles.eventActions}><Pressable testID={`edit-event-${event.id}`} onPress={() => openEdit(event)}><Feather name="edit-2" size={16} color={eventColor} /></Pressable><Pressable testID={`delete-event-${event.id}`} onPress={() => deleteEvent.mutate({ id: event.id }, { onError: (error) => Alert.alert('Could not delete event', error.message) })}><Feather name="trash-2" size={16} color={colors.destructive} /></Pressable></View></View>; })}</View>}</> : null}
@@ -371,6 +434,7 @@ function AdminDashboardContent() {
        {section === 'Family Links' ? <FamilyLinksPanel
          colors={colors}
          isFullAdmin={currentUser?.role === 'Admin' || currentUser?.role === 'Staff-Coach'}
+          accountsLoading={users.isLoading}
          search={familySearch}
          setSearch={setFamilySearch}
          athletes={athleteCandidates}
@@ -381,18 +445,25 @@ function AdminDashboardContent() {
          onSelectGuardian={setSelectedGuardianId}
          links={(guardianLinks.data ?? []) as GuardianLink[]}
          loading={guardianLinks.isLoading}
+          deletingLinkId={deletingFamilyLinkId}
          saving={createGuardianLink.isPending}
          onLink={() => {
            if (!selectedAthleteId || !selectedGuardianId) return;
            createGuardianLink.mutate({ data: { athleteId: selectedAthleteId, guardianId: selectedGuardianId } }, { onError: (error) => Alert.alert('Could not link family accounts', error.message) });
          }}
-         onUnlink={(id) => deleteGuardianLink.mutate({ id }, { onError: (error) => Alert.alert('Could not unlink family accounts', error.message) })}
+          onUnlink={(id) => {
+            setDeletingFamilyLinkId(id);
+            deleteGuardianLink.mutate({ id }, {
+              onError: (error) => Alert.alert('Could not unlink family accounts', error.message),
+              onSettled: () => setDeletingFamilyLinkId(null),
+            });
+          }}
        /> : null}
       {section === 'Group Chats' ? <>
         <View style={styles.sectionHeader}><View><Text style={[styles.sectionTitle, { color: colors.foreground }]}>Group chats</Text><Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>Create a shared conversation and manage its participants from the chat.</Text></View></View>
         <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.panelTitle, { color: colors.foreground }]}>Create a group chat</Text>
-          <TextInput testID="group-chat-name" value={groupName} onChangeText={setGroupName} placeholder="Group name" placeholderTextColor={colors.mutedForeground} style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, marginTop: 12 }]} />
+          <TextInput testID="group-chat-name" value={groupName} onChangeText={setGroupName} placeholder="Group name" placeholderTextColor={colors.mutedForeground} maxLength={100} style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground, marginTop: 12 }]} />
            <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>FILTER PARTICIPANTS BY ROLE · ANY SELECTED ROLE</Text>
            <View style={groupChatFilterStyles.roleFilters}>
              <Pressable testID="group-role-filter-all" accessibilityRole="checkbox" accessibilityState={{ checked: groupRoleFilters.length === 0 }} onPress={() => setGroupRoleFilters([])} style={[groupChatFilterStyles.roleChip, { backgroundColor: groupRoleFilters.length === 0 ? colors.primary : colors.card, borderColor: groupRoleFilters.length === 0 ? colors.primary : colors.border }]}><Text style={[groupChatFilterStyles.roleChipText, { color: groupRoleFilters.length === 0 ? '#fff' : colors.foreground }]}>All roles</Text></Pressable>
@@ -403,12 +474,16 @@ function AdminDashboardContent() {
            </View>
           <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>FILTER PARTICIPANTS BY TEAM · ANY SELECTED TEAM</Text>
           <TeamMultiFilter catalog={tagCatalog} selected={groupTeamFilters} onChange={setGroupTeamFilters} colors={colors} testIDPrefix="group-team-filter" />
+          <GroupChatMemberFilters groups={groupTags} selectedGroup={groupMemberGroup} onGroupChange={setGroupMemberGroup} />
+          {groupTagsQuery.isError || (groupMemberGroup !== null && guardianLinks.isError) ? <Text style={[styles.panelCopy, { color: colors.warning }]}>Group filters could not fully load. Refresh before choosing members.</Text> : null}
           <Text style={[styles.formLabel, { color: colors.mutedForeground, marginTop: 9 }]}>SEARCH PARTICIPANTS</Text>
           <View style={[styles.search, { backgroundColor: colors.background, borderColor: colors.border, marginTop: 5, marginBottom: 10 }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput testID="group-participant-search" value={groupParticipantSearch} onChangeText={setGroupParticipantSearch} placeholder="Search name, email, or team" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>
           <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>PARTICIPANTS · {groupParticipants.length} SELECTED</Text>
            <Pressable testID="select-all-filtered-group-users" accessibilityRole="button" accessibilityLabel={allVisibleGroupParticipantsSelected ? `Remove ${visibleGroupParticipantIds.length} filtered users` : `Select all ${visibleGroupParticipantIds.length} filtered users`} disabled={!visibleGroupParticipantIds.length} onPress={toggleVisibleGroupParticipants} style={[groupChatFilterStyles.bulkSelect, { backgroundColor: colors.background, borderColor: colors.border, opacity: visibleGroupParticipantIds.length ? 1 : 0.5 }]}><Feather name={allVisibleGroupParticipantsSelected ? 'minus-square' : 'check-square'} size={15} color={colors.primary} /><Text style={[groupChatFilterStyles.bulkSelectText, { color: colors.primary }]}>{allVisibleGroupParticipantsSelected ? `Remove ${visibleGroupParticipantIds.length} filtered users` : `Select all ${visibleGroupParticipantIds.length} filtered users`}</Text></Pressable>
           <View style={styles.groupPeople}>
-            {filteredGroupUsers.map((person) => {
+            {users.isLoading ? <ActivityIndicator testID="group-chat-roster-loading" color={colors.primary} /> : users.isError
+              ? <Pressable testID="retry-group-chat-roster" accessibilityRole="button" onPress={() => void users.refetch()}><Text accessibilityRole="alert" style={[styles.panelCopy, { color: colors.destructive }]}>Could not load group members. Tap to retry.</Text></Pressable>
+              : filteredGroupUsers.map((person) => {
               const isSelf = person.id === currentUser?.id;
               const selected = isSelf || groupParticipants.includes(person.id);
               return <Pressable testID={`group-participant-${person.id}`} key={person.id} disabled={isSelf} onPress={() => setGroupParticipants((current) => selected ? current.filter((id) => id !== person.id) : [...current, person.id])} style={[styles.groupPerson, { backgroundColor: selected ? `${colors.primary}18` : colors.background, borderColor: selected ? colors.primary : colors.border }]}>
@@ -422,8 +497,9 @@ function AdminDashboardContent() {
               </Pressable>;
             })}
           </View>
-          {!filteredGroupUsers.length ? <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>No active members match these filters.</Text> : null}
-          <Pressable testID="create-group-chat" onPress={createGroup} disabled={!groupName.trim() || !groupParticipants.length || createGroupChat.isPending} style={[styles.submit, { backgroundColor: groupName.trim() && groupParticipants.length ? colors.primary : colors.muted, marginTop: 14 }]}>{createGroupChat.isPending ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitText}>Create group chat</Text><Feather name="message-square" size={16} color="#fff" /></>}</Pressable>
+          {!users.isLoading && !users.isError && !filteredGroupUsers.length ? <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>No active members match these filters.</Text> : null}
+          {groupCreationError ? <Text testID="group-chat-create-error" accessibilityRole="alert" style={[styles.panelCopy, { color: colors.destructive, marginTop: 12 }]}>{groupCreationError}</Text> : null}
+          <Pressable testID="create-group-chat" accessibilityRole="button" onPress={createGroup} disabled={!canManageGroups || createGroupChat.isPending} style={[styles.submit, { backgroundColor: canManageGroups && groupName.trim() && groupName.trim().length <= 100 && groupParticipants.length && !users.isLoading && !users.isError ? colors.primary : colors.muted, marginTop: 14 }]}>{createGroupChat.isPending ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitText}>Create group chat</Text><Feather name="message-square" size={16} color="#fff" /></>}</Pressable>
         </View>
         <GroupChatPinManagement
           role={currentUser?.role}
@@ -441,7 +517,19 @@ function AdminDashboardContent() {
       </> : null}
 
       {section === 'Announcements' ? <AdminAnnouncementsPanel colors={colors} catalog={tagCatalog} /> : null}
-      {section === 'Tagging' ? <TagCatalogPanel colors={colors} catalog={tagCatalog} unavailable={tagApiUnavailable} busy={createTag.isPending || renameTag.isPending || deleteTag.isPending} savingVisibility={renameTag.isPending} error={tagApiUnavailable ? 'Tag editing is not available on this server yet. Publish the updated API server, then try again.' : tagError} onCreate={(kind, label) => createTag.mutate({ kind, data: { label } })} onUpdate={(kind, id, label, hidden, onSaved) => renameTag.mutate({ kind, id, data: { label, ...(hidden === undefined ? {} : { hidden }) } }, { onSuccess: () => onSaved?.() })} onDelete={(kind, id) => deleteTag.mutate({ kind, id })} /> : null}
+      {section === 'Tagging' ? <>
+        <TagCatalogPanel colors={colors} catalog={tagCatalog} unavailable={tagApiUnavailable} busy={createTag.isPending || renameTag.isPending || deleteTag.isPending} savingVisibility={renameTag.isPending} error={tagApiUnavailable ? 'Tag editing is not available on this server yet. Publish the updated API server, then try again.' : tagError} onCreate={(kind, label) => createTag.mutate({ kind, data: { label } })} onUpdate={(kind, id, label, hidden, onSaved) => renameTag.mutate({ kind, id, data: { label, ...(hidden === undefined ? {} : { hidden }) } }, { onSuccess: () => onSaved?.() })} onDelete={(kind, id) => deleteTag.mutate({ kind, id })} />
+        <GroupAssignmentPanel
+          colors={colors}
+          groupTags={groupTags}
+          loading={groupTagsQuery.isLoading}
+          error={groupTagError}
+          previewing={previewGroupAssignments.isPending}
+          applying={applyGroupAssignments.isPending}
+          onPreview={(assignments) => previewGroupAssignments.mutateAsync({ data: { assignments } })}
+          onApply={async (assignments) => { await applyGroupAssignments.mutateAsync({ data: { assignments } }); }}
+        />
+      </> : null}
 
     </ScrollView>
   </View>;
@@ -497,21 +585,73 @@ function GroupChatPinManagement({ role, colors, chats, isLoading, isError, pinEr
 
 function Stat({ label, value, icon, colors }: { label: string; value: number; icon: keyof typeof Feather.glyphMap; colors: ReturnType<typeof useColors> }) { return <View style={[styles.stat, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={[styles.statIcon, { backgroundColor: `${colors.primary}18` }]}><Feather name={icon} size={16} color={colors.primary} /></View><Text style={[styles.statValue, { color: colors.foreground }]}>{value}</Text><Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{label}</Text></View>; }
 function QuickAction({ label, icon, onPress, colors }: { label: string; icon: keyof typeof Feather.glyphMap; onPress: () => void; colors: ReturnType<typeof useColors> }) { return <Pressable onPress={onPress} style={[styles.quickAction, { backgroundColor: colors.muted }]}><Feather name={icon} size={17} color={colors.primary} /><Text style={[styles.quickActionText, { color: colors.foreground }]}>{label}</Text><Feather name="arrow-up-right" size={15} color={colors.mutedForeground} /></Pressable>; }
-function FamilyLinksPanel({ colors, isFullAdmin, search, setSearch, athletes, guardians, selectedAthleteId, selectedGuardianId, onSelectAthlete, onSelectGuardian, links, loading, saving, onLink, onUnlink }: { colors: ReturnType<typeof useColors>; isFullAdmin: boolean; search: string; setSearch: (value: string) => void; athletes: UserRow[]; guardians: UserRow[]; selectedAthleteId: string | null; selectedGuardianId: string | null; onSelectAthlete: (id: string) => void; onSelectGuardian: (id: string) => void; links: GuardianLink[]; loading: boolean; saving: boolean; onLink: () => void; onUnlink: (id: string) => void }) {
-  if (!isFullAdmin) return <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="shield" size={22} color={colors.primary} /><Text style={[styles.panelTitle, { color: colors.foreground, marginTop: 10 }]}>Family links are Admin-only</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>Staff-Coaches can manage the dashboard, but only full Admins can link athlete and parent/guardian accounts.</Text></View>;
+function FamilyLinksPanel({ colors, isFullAdmin, accountsLoading, search, setSearch, athletes, guardians, selectedAthleteId, selectedGuardianId, onSelectAthlete, onSelectGuardian, links, loading, deletingLinkId, saving, onLink, onUnlink }: { colors: ReturnType<typeof useColors>; isFullAdmin: boolean; accountsLoading: boolean; search: string; setSearch: (value: string) => void; athletes: UserRow[]; guardians: UserRow[]; selectedAthleteId: string | null; selectedGuardianId: string | null; onSelectAthlete: (id: string) => void; onSelectGuardian: (id: string) => void; links: GuardianLink[]; loading: boolean; deletingLinkId: string | null; saving: boolean; onLink: () => void; onUnlink: (id: string) => void }) {
+  if (!isFullAdmin) return <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="shield" size={22} color={colors.primary} /><Text style={[styles.panelTitle, { color: colors.foreground, marginTop: 10 }]}>Family links are Admin-only</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>Only Admins and Staff-Coaches can create or remove athlete and parent/guardian links.</Text></View>;
   const selectedAthlete = athletes.find((person) => person.id === selectedAthleteId);
   const selectedGuardian = guardians.find((person) => person.id === selectedGuardianId);
+  const linkedAthleteIds = new Set(links.map((link) => link.athlete.id));
+  const linkedGuardianIds = new Set(links.map((link) => link.guardian.id));
+  const unlinkedAthletes = athletes.filter((person) => !linkedAthleteIds.has(person.id));
+  const unlinkedGuardians = guardians.filter((person) => !linkedGuardianIds.has(person.id));
   const confirmUnlink = (link: GuardianLink) => {
-    const message = `Remove the family link between ${link.athlete.fullName} and ${link.guardian.fullName}? Their messages and other private data remain separate.`;
+    const message = `Remove the link between ${link.athlete.fullName} and ${link.guardian.fullName}? This removes the parent's access to this athlete's family profile, schedule, and published reports. Neither account nor any messages will be deleted. You can create a new link later.`;
     if (Platform.OS === 'web') {
       if (typeof window !== 'undefined' && window.confirm(message)) onUnlink(link.id);
       return;
     }
     Alert.alert('Remove family link?', message, [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove link', style: 'destructive', onPress: () => onUnlink(link.id) }]);
   };
-  return <><View style={styles.sectionHeader}><View><Text style={[styles.sectionTitle, { color: colors.foreground }]}>Family links</Text><Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>Link active athlete accounts with active parent/guardian accounts. Links only share basic profile and schedule access.</Text></View></View><View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.panelTitle, { color: colors.foreground }]}>Link a family</Text><View style={[styles.search, { backgroundColor: colors.background, borderColor: colors.border, marginHorizontal: 0, marginTop: 12 }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput testID="family-links-search" value={search} onChangeText={setSearch} placeholder="Search active athletes or parents" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View><Text style={[styles.formLabel, { color: colors.mutedForeground }]}>SELECT ATHLETE</Text><View style={styles.groupPeople}>{athletes.slice(0, 12).map((person) => <Pressable testID={`family-athlete-${person.id}`} key={person.id} onPress={() => onSelectAthlete(person.id)} style={[styles.groupPerson, { backgroundColor: selectedAthleteId === person.id ? `${colors.primary}18` : colors.background, borderColor: selectedAthleteId === person.id ? colors.primary : colors.border }]}><View><Text style={[styles.groupPersonName, { color: colors.foreground }]}>{person.fullName}</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>{person.teams.join(' · ') || 'No team assigned'}</Text></View><Feather name={selectedAthleteId === person.id ? 'check-circle' : 'circle'} size={17} color={selectedAthleteId === person.id ? colors.primary : colors.mutedForeground} /></Pressable>)}</View>{!athletes.length ? <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>No active athlete accounts match this search.</Text> : null}<Text style={[styles.formLabel, { color: colors.mutedForeground, marginTop: 14 }]}>SELECT PARENT / GUARDIAN</Text><View style={styles.groupPeople}>{guardians.slice(0, 12).map((person) => <Pressable testID={`family-guardian-${person.id}`} key={person.id} onPress={() => onSelectGuardian(person.id)} style={[styles.groupPerson, { backgroundColor: selectedGuardianId === person.id ? `${colors.primary}18` : colors.background, borderColor: selectedGuardianId === person.id ? colors.primary : colors.border }]}><Text style={[styles.groupPersonName, { color: colors.foreground }]}>{person.fullName}</Text><Feather name={selectedGuardianId === person.id ? 'check-circle' : 'circle'} size={17} color={selectedGuardianId === person.id ? colors.primary : colors.mutedForeground} /></Pressable>)}</View>{!guardians.length ? <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>No active parent/guardian accounts match this search.</Text> : null}<View style={[styles.callout, { backgroundColor: colors.secondary, marginTop: 14 }]}><Feather name="link" size={16} color={colors.primary} /><Text style={[styles.calloutText, { color: colors.foreground }]}>{selectedAthlete && selectedGuardian ? `${selectedAthlete.fullName} ↔ ${selectedGuardian.fullName}` : 'Select one athlete and one parent/guardian'}</Text></View><Pressable testID="create-family-link" disabled={!selectedAthleteId || !selectedGuardianId || saving} onPress={onLink} style={[styles.submit, { backgroundColor: selectedAthleteId && selectedGuardianId ? colors.primary : colors.muted, marginTop: 14 }]}>{saving ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitText}>Create family link</Text><Feather name="link" size={16} color="#fff" /></>}</Pressable></View><View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}><Text style={[styles.panelTitle, { color: colors.foreground }]}>Current links</Text>{loading ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 18 }} /> : links.length ? <View style={[styles.groupPeople, { marginTop: 12 }]}>{links.map((link) => <View key={link.id} style={[styles.groupPerson, { backgroundColor: colors.background, borderColor: colors.border }]}><View style={{ flex: 1 }}><Text style={[styles.groupPersonName, { color: colors.foreground }]}>{link.athlete.fullName}</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>Parent/Guardian · {link.guardian.fullName}</Text></View><Pressable testID={`remove-family-link-${link.id}`} accessibilityLabel={`Remove family link for ${link.athlete.fullName}`} onPress={() => confirmUnlink(link)}><Feather name="unlink" size={17} color={colors.destructive} /></Pressable></View>)}</View> : <Text style={[styles.panelCopy, { color: colors.mutedForeground, marginTop: 8 }]}>No athlete and parent/guardian accounts are linked yet.</Text>}</View></>;
+  const unlinkedList = (title: string, people: UserRow[], role: 'athlete' | 'guardian') => (
+    <View style={{ marginTop: 12 }}>
+      <Text style={[styles.formLabel, { color: colors.mutedForeground, marginBottom: 8 }]}>{title} · {people.length}</Text>
+      {people.length ? <View style={styles.groupPeople}>{people.map((person) => (
+        <View key={person.id} testID={`unlinked-${role}-${person.id}`} style={[styles.groupPerson, { backgroundColor: colors.background, borderColor: colors.border }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.groupPersonName, { color: colors.foreground }]}>{person.fullName}</Text>
+            <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>{role === 'athlete' ? person.teams.join(' · ') || 'No team assigned' : person.email || person.phone || 'No contact details'}</Text>
+          </View>
+          <Feather name="link-2" size={15} color={colors.mutedForeground} />
+        </View>
+      ))}</View> : <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>No unlinked {role === 'athlete' ? 'active athletes' : 'active parents/guardians'} match this search.</Text>}
+    </View>
+  );
+  return <>
+    <View style={styles.sectionHeader}>
+      <View>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Family links</Text>
+        <Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>Connect active athlete profiles with parent/guardian accounts, review unlinked accounts, and manage access.</Text>
+      </View>
+    </View>
+    <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.panelTitle, { color: colors.foreground }]}>Link a family</Text>
+      <View style={[styles.search, { backgroundColor: colors.background, borderColor: colors.border, marginHorizontal: 0, marginTop: 12 }]}>
+        <Feather name="search" size={16} color={colors.mutedForeground} />
+        <TextInput testID="family-links-search" value={search} onChangeText={setSearch} placeholder="Search active athletes or parents" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} />
+      </View>
+      <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>SELECT ATHLETE</Text>
+      <View style={styles.groupPeople}>{athletes.slice(0, 12).map((person) => <Pressable testID={`family-athlete-${person.id}`} key={person.id} onPress={() => onSelectAthlete(person.id)} style={[styles.groupPerson, { backgroundColor: selectedAthleteId === person.id ? `${colors.primary}18` : colors.background, borderColor: selectedAthleteId === person.id ? colors.primary : colors.border }]}><View><Text style={[styles.groupPersonName, { color: colors.foreground }]}>{person.fullName}</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>{person.teams.join(' · ') || 'No team assigned'}</Text></View><Feather name={selectedAthleteId === person.id ? 'check-circle' : 'circle'} size={17} color={selectedAthleteId === person.id ? colors.primary : colors.mutedForeground} /></Pressable>)}</View>
+      {!athletes.length ? <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>No active athlete accounts match this search.</Text> : null}
+      <Text style={[styles.formLabel, { color: colors.mutedForeground, marginTop: 14 }]}>SELECT PARENT / GUARDIAN</Text>
+      <View style={styles.groupPeople}>{guardians.slice(0, 12).map((person) => <Pressable testID={`family-guardian-${person.id}`} key={person.id} onPress={() => onSelectGuardian(person.id)} style={[styles.groupPerson, { backgroundColor: selectedGuardianId === person.id ? `${colors.primary}18` : colors.background, borderColor: selectedGuardianId === person.id ? colors.primary : colors.border }]}><Text style={[styles.groupPersonName, { color: colors.foreground }]}>{person.fullName}</Text><Feather name={selectedGuardianId === person.id ? 'check-circle' : 'circle'} size={17} color={selectedGuardianId === person.id ? colors.primary : colors.mutedForeground} /></Pressable>)}</View>
+      {!guardians.length ? <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>No active parent/guardian accounts match this search.</Text> : null}
+      <View style={[styles.callout, { backgroundColor: colors.secondary, marginTop: 14 }]}><Feather name="link" size={16} color={colors.primary} /><Text style={[styles.calloutText, { color: colors.foreground }]}>{selectedAthlete && selectedGuardian ? `${selectedAthlete.fullName} ↔ ${selectedGuardian.fullName}` : 'Select one athlete and one parent/guardian'}</Text></View>
+      <Pressable testID="create-family-link" disabled={!selectedAthleteId || !selectedGuardianId || saving} onPress={onLink} style={[styles.submit, { backgroundColor: selectedAthleteId && selectedGuardianId ? colors.primary : colors.muted, marginTop: 14 }]}>{saving ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitText}>Create family link</Text><Feather name="link" size={16} color="#fff" /></>}</Pressable>
+    </View>
+    <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.panelTitle, { color: colors.foreground }]}>Active accounts without a family link</Text>
+      <Text style={[styles.panelCopy, { color: colors.mutedForeground, marginTop: 5 }]}>Lists reflect the current search. Accounts already linked to at least one family member are not listed here.</Text>
+      {accountsLoading || loading ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 18 }} /> : <>
+        {unlinkedList('ATHLETES', unlinkedAthletes, 'athlete')}
+        {unlinkedList('PARENTS / GUARDIANS', unlinkedGuardians, 'guardian')}
+      </>}
+    </View>
+    <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.panelTitle, { color: colors.foreground }]}>Current links</Text>
+      {loading ? <ActivityIndicator color={colors.primary} style={{ marginVertical: 18 }} /> : links.length ? <View style={[styles.groupPeople, { marginTop: 12 }]}>{links.map((link) => <View key={link.id} style={[styles.groupPerson, { backgroundColor: colors.background, borderColor: colors.border }]}><View style={{ flex: 1 }}><Text style={[styles.groupPersonName, { color: colors.foreground }]}>{link.athlete.fullName}</Text><Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>Parent/Guardian · {link.guardian.fullName}</Text></View><Pressable testID={`remove-family-link-${link.id}`} accessibilityRole="button" accessibilityLabel={`Remove family link between ${link.athlete.fullName} and ${link.guardian.fullName}`} disabled={deletingLinkId === link.id} onPress={() => confirmUnlink(link)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingLeft: 8 }}><Feather name="unlink" size={16} color={colors.destructive} /><Text style={{ color: colors.destructive, fontFamily: 'Inter_600SemiBold', fontSize: 11 }}>{deletingLinkId === link.id ? 'Removing…' : 'Remove link'}</Text></Pressable></View>)}</View> : <Text style={[styles.panelCopy, { color: colors.mutedForeground, marginTop: 8 }]}>No athlete and parent/guardian accounts are linked yet.</Text>}
+    </View>
+  </>;
 }
-function RosterCard({ user, colors, roleMenuOpen, teamMenuOpen, gradYearMenuOpen, uploadingPhoto, deletingProfile, canDeleteProfile, onPhotoChange, onToggleRole, onToggleTeam, onToggleGradYear, onRoleChange, onTeamChange, onGradYearChange, onResend, onRevoke, onDeleteProfile }: { user: UserRow; colors: ReturnType<typeof useColors>; roleMenuOpen: boolean; teamMenuOpen: boolean; gradYearMenuOpen: boolean; uploadingPhoto: boolean; deletingProfile: boolean; canDeleteProfile: boolean; onPhotoChange: () => void; onToggleRole: () => void; onToggleTeam: (open: boolean) => void; onToggleGradYear: () => void; onRoleChange: (role: Role) => void; onTeamChange: (teams: string[]) => Promise<void>; onGradYearChange: (gradYear: string) => void; onResend: () => void; onRevoke: () => void; onDeleteProfile: () => void }) {
+function RosterCard({ user, colors, groupTags, roleMenuOpen, teamMenuOpen, gradYearMenuOpen, groupMenuOpen, savingGroup, uploadingPhoto, deletingProfile, canDeleteProfile, onPhotoChange, onToggleRole, onToggleTeam, onToggleGradYear, onToggleGroup, onGroupChange, onRoleChange, onTeamChange, onGradYearChange, onResend, onRevoke, onDeleteProfile }: { user: UserRow; colors: ReturnType<typeof useColors>; groupTags: GroupTag[]; roleMenuOpen: boolean; teamMenuOpen: boolean; gradYearMenuOpen: boolean; groupMenuOpen: boolean; savingGroup: boolean; uploadingPhoto: boolean; deletingProfile: boolean; canDeleteProfile: boolean; onPhotoChange: () => void; onToggleRole: () => void; onToggleTeam: (open: boolean) => void; onToggleGradYear: () => void; onToggleGroup: () => void; onGroupChange: (groupTag: string | null) => void; onRoleChange: (role: Role) => void; onTeamChange: (teams: string[]) => Promise<void>; onGradYearChange: (gradYear: string | null) => void; onResend: () => void; onRevoke: () => void; onDeleteProfile: () => void }) {
   const catalog = useTagCatalog().data;
   const queryClient = useQueryClient();
   const [roleTagOpen, setRoleTagOpen] = useState(false);
@@ -550,13 +690,29 @@ function RosterCard({ user, colors, roleMenuOpen, teamMenuOpen, gradYearMenuOpen
       <UserIdentityEditor user={user} />
       <View style={styles.userFooter}><Text style={[styles.status, { color: user.status === 'active' ? colors.accent : colors.primary }]}>{user.status}</Text><Pressable testID={`role-menu-${user.id}`} onPress={onToggleRole}><Text style={[styles.roleText, { color: colors.primary }]}>Access: {roleLabel(user.role)} <Feather name="chevron-down" size={12} /></Text></Pressable><Pressable testID={`role-tag-menu-${user.id}`} onPress={() => setRoleTagOpen((open) => !open)}><Text style={[styles.roleText, { color: colors.primary }]}>Label: {displayRole} <Feather name={roleTagOpen ? "chevron-up" : "chevron-down"} size={12} /></Text></Pressable></View>
       {roleMenuOpen ? menu(roles, 'roles', user.role, (value) => value && onRoleChange(value as Role)) : null}
+      {user.role === 'Athlete' ? <>
+        <Pressable testID={`group-menu-${user.id}`} accessibilityRole="button" accessibilityLabel={`Set group for ${user.fullName}`} disabled={savingGroup} onPress={onToggleGroup} style={[styles.inlineTeamMenu, { borderColor: colors.border, marginTop: 8, opacity: savingGroup ? 0.55 : 1 }]}>
+          <Text style={[styles.inlineTeamText, { color: colors.primary }]}>Group: {groupTags.find((tag) => tag.id === user.groupTag)?.label ?? 'Unassigned'}</Text>
+          <Feather name={groupMenuOpen ? 'chevron-up' : 'chevron-down'} size={12} color={colors.primary} />
+        </Pressable>
+        {groupMenuOpen ? <View style={[styles.roleMenu, { borderColor: colors.border, backgroundColor: colors.muted }]}>
+          {groupTags.map((tag) => <Pressable key={tag.id} testID={`assign-${tag.id.toLowerCase().replaceAll(' ', '-')}-${user.id}`} disabled={savingGroup} accessibilityRole="radio" accessibilityState={{ selected: tag.id === user.groupTag, disabled: savingGroup }} onPress={() => onGroupChange(tag.id)} style={styles.roleOption}>
+            <Text style={[styles.roleOptionText, { color: tag.id === user.groupTag ? colors.primary : colors.foreground }]}>{tag.label}</Text>
+            {tag.id === user.groupTag ? <Feather name="check" size={14} color={colors.primary} /> : null}
+          </Pressable>)}
+          {user.groupTag ? <Pressable testID={`clear-group-${user.id}`} disabled={savingGroup} onPress={() => onGroupChange(null)} style={styles.roleOption}><Text style={[styles.roleOptionText, { color: colors.destructive }]}>Clear group</Text></Pressable> : null}
+        </View> : null}
+      </> : null}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 8 }}>
         {user.teams.length ? user.teams.map((team) => <View key={team} style={[styles.inlineTeamMenu, { borderColor: colors.border, marginTop: 0 }]}><Text style={[styles.inlineTeamText, { color: colors.primary }]}>{tagLabel(catalog, 'teams', team)}</Text></View>) : <Text style={[styles.userMeta, { color: colors.mutedForeground }]}>No teams assigned</Text>}
         <Pressable testID={`team-menu-${user.id}`} accessibilityRole="button" accessibilityLabel={`Manage teams for ${user.fullName}`} disabled={savingTeams} onPress={openTeamEditor} style={[styles.inlineTeamMenu, { borderColor: colors.border, marginTop: 0, opacity: savingTeams ? 0.55 : 1 }]}><Text style={[styles.inlineTeamText, { color: colors.primary }]}>Manage teams</Text><Feather name="chevron-down" size={12} color={colors.primary} /></Pressable>
       </View>
       {teamMenuOpen ? <View style={[styles.roleMenu, { borderColor: colors.border, backgroundColor: colors.muted }]}>{catalog.teams.map((option) => { const selected = teamDraft.some((team) => teamMatches(catalog, team, option.id)); return <Pressable key={option.id} disabled={savingTeams} accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: savingTeams }} onPress={() => setTeamDraft((current) => selected ? current.filter((team) => !teamMatches(catalog, team, option.id)) : [...current, option.id])} style={[styles.roleOption, savingTeams && { opacity: 0.55 }]}><Text style={[styles.roleOptionText, { color: selected ? colors.primary : colors.foreground }]}>{option.label}</Text>{selected ? <Feather name="check" size={14} color={colors.primary} /> : null}</Pressable>; })}<View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, padding: 9 }}><Pressable testID={`cancel-team-edit-${user.id}`} disabled={savingTeams} onPress={cancelTeamEditor} style={[styles.smallButton, { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, opacity: savingTeams ? 0.55 : 1 }]}><Text style={[styles.roleOptionText, { color: colors.foreground }]}>Cancel</Text></Pressable><Pressable testID={`save-team-edit-${user.id}`} disabled={savingTeams} onPress={() => void saveTeamEditor()} style={[styles.smallButton, { backgroundColor: savingTeams ? colors.muted : colors.primary }]}>{savingTeams ? <ActivityIndicator size="small" color="#fff" /> : <Text style={[styles.roleOptionText, { color: '#fff' }]}>Save</Text>}</Pressable></View>{teamSaveError ? <Text accessibilityRole="alert" style={[styles.panelCopy, { color: colors.destructive, paddingHorizontal: 10, paddingBottom: 8 }]}>{teamSaveError}</Text> : null}</View> : null}
       <Pressable testID={`grad-year-menu-${user.id}`} onPress={onToggleGradYear} style={[styles.inlineTeamMenu, { borderColor: colors.border }]}><Text style={[styles.inlineTeamText, { color: colors.primary }]}>Grad year: {user.gradYear ? tagLabel(catalog, 'gradYears', user.gradYear) : 'Assign'}</Text></Pressable>
-      {gradYearMenuOpen ? <View style={[styles.roleMenu, { borderColor: colors.border, backgroundColor: colors.muted }]}>{catalog.gradYears.map((option) => <Pressable key={option.id} onPress={() => onGradYearChange(option.id)} style={styles.roleOption}><Text style={[styles.roleOptionText, { color: option.id === user.gradYear ? colors.primary : colors.foreground }]}>{option.label}</Text></Pressable>)}</View> : null}
+      {gradYearMenuOpen ? <View style={[styles.roleMenu, { borderColor: colors.border, backgroundColor: colors.muted }]}>
+        {user.gradYear ? <Pressable testID={`clear-grad-year-${user.id}`} accessibilityRole="button" onPress={() => onGradYearChange(null)} style={styles.roleOption}><Text style={[styles.roleOptionText, { color: colors.destructive }]}>Clear graduation year</Text></Pressable> : null}
+        {catalog.gradYears.map((option) => <Pressable key={option.id} onPress={() => onGradYearChange(option.id)} style={styles.roleOption}><Text style={[styles.roleOptionText, { color: option.id === user.gradYear ? colors.primary : colors.foreground }]}>{option.label}</Text></Pressable>)}
+      </View> : null}
       {roleTagOpen ? <View style={styles.roleMenu}><Text style={[styles.formLabel, { color: colors.mutedForeground }]}>ROLE LABEL · DOES NOT CHANGE ACCESS</Text>{catalog.roles.map((option) => <Pressable key={option.id} onPress={() => saveRoleTag(option.id)} disabled={roleTagMutation.isPending} style={styles.roleOption}><Text style={[styles.roleOptionText, { color: option.id === user.roleTag ? colors.primary : colors.foreground }]}>{option.label}</Text></Pressable>)}<Pressable onPress={() => saveRoleTag(null)} disabled={roleTagMutation.isPending} style={styles.roleOption}><Text style={[styles.roleOptionText, { color: !user.roleTag ? colors.primary : colors.mutedForeground }]}>Use access role</Text></Pressable></View> : null}
       {canDeleteProfile ? <Pressable testID={`delete-profile-${user.id}`} accessibilityRole="button" accessibilityLabel={`Delete ${user.fullName}'s profile`} disabled={deletingProfile} onPress={onDeleteProfile} style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 11, paddingVertical: 4 }}><Feather name="trash-2" size={13} color={colors.destructive} /><Text style={{ color: colors.destructive, fontFamily: 'Inter_700Bold', fontSize: 11 }}>{deletingProfile ? 'Deleting profile…' : 'Delete profile'}</Text></Pressable> : null}
       <AccountLockAction target={user} />
@@ -589,7 +745,6 @@ function InviteForm({ invite, setInvite, onSubmit, loading, colors }: { invite: 
 }
 function EventForm({ title, setTitle, date, setDate, time, setTime, endTime, setEndTime, location, setLocation, address, setAddress, notes, setNotes, team, setTeam, repeatUntil: currentRepeatUntil, onSubmit, loading, edit, colors }: { title: string; setTitle: (value: string) => void; date: string; setDate: (value: string) => void; time: string; setTime: (value: string) => void; endTime: string; setEndTime: (value: string) => void; location: string; setLocation: (value: string) => void; address: string; setAddress: (value: string) => void; notes: string; setNotes: (value: string) => void; team: string; setTeam: (value: string) => void; repeatUntil?: string | null; onSubmit: (repeatDaily: boolean, repeatUntil: string, applyToRemainingRepeatEvents: boolean) => void; loading: boolean; edit: boolean; colors: ReturnType<typeof useColors> }) {
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const [timePicker, setTimePicker] = useState<'start' | 'end' | null>(null);
   const [repeatDaily, setRepeatDaily] = useState(false);
   const [repeatUntil, setRepeatUntil] = useState('');
   const [repeatDatePickerOpen, setRepeatDatePickerOpen] = useState(false);
@@ -602,26 +757,18 @@ function EventForm({ title, setTitle, date, setDate, time, setTime, endTime, set
       <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
     </Pressable>
     <View style={{ flexDirection: 'row', gap: 8 }}>
-      <Pressable testID="dashboard-event-start-time" accessibilityRole="button" accessibilityLabel="Choose start time" onPress={() => setTimePicker('start')} style={[styles.pickerButton, styles.halfPicker, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Feather name="clock" size={15} color={time ? colors.primary : colors.mutedForeground} />
-        <Text style={[styles.pickerButtonText, { color: time ? colors.foreground : colors.mutedForeground }]}>{time || 'Start time'}</Text>
-      </Pressable>
-      <Pressable testID="dashboard-event-end-time" accessibilityRole="button" accessibilityLabel="Choose end time" onPress={() => setTimePicker('end')} style={[styles.pickerButton, styles.halfPicker, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Feather name="clock" size={15} color={endTime ? colors.primary : colors.mutedForeground} />
-        <Text style={[styles.pickerButtonText, { color: endTime ? colors.foreground : colors.mutedForeground }]}>{endTime || 'End time'}</Text>
-      </Pressable>
+      <CalendarTimeField testIDPrefix="dashboard-event-start-time" title="Start time" value={time} onChange={setTime} />
+      <CalendarTimeField testIDPrefix="dashboard-event-end-time" title="End time" value={endTime} onChange={setEndTime} />
     </View>
-    <Field value={location} onChangeText={setLocation} placeholder="Location name" colors={colors} />
-    <Field value={address} onChangeText={setAddress} placeholder="Location address" colors={colors} maxLength={1000} />
+    <CalendarLocationPicker location={location} address={address} onLocationChange={setLocation} onAddressChange={setAddress} testIDPrefix="dashboard-event-location" />
     <Field value={notes} onChangeText={setNotes} placeholder="Notes" colors={colors} multiline maxLength={10000} />
     {!edit ? <><Pressable testID="dashboard-event-repeat-daily" accessibilityRole="checkbox" accessibilityState={{ checked: repeatDaily }} onPress={() => setRepeatDaily((enabled) => !enabled)} style={[styles.repeatRow, { backgroundColor: repeatDaily ? `${colors.primary}18` : colors.background, borderColor: repeatDaily ? colors.primary : colors.border }]}><View style={[styles.repeatCheckbox, { borderColor: repeatDaily ? colors.primary : colors.mutedForeground, backgroundColor: repeatDaily ? colors.primary : 'transparent' }]}>{repeatDaily ? <Feather name="check" size={13} color="#fff" /> : null}</View><View style={{ flex: 1 }}><Text style={[styles.repeatTitle, { color: colors.foreground }]}>Multi-day event</Text><Text style={[styles.repeatCopy, { color: colors.mutedForeground }]}>Show one event from its start date through its end date.</Text></View><Feather name={repeatDaily ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} /></Pressable>{repeatDaily ? <Pressable testID="dashboard-event-repeat-until" accessibilityRole="button" accessibilityLabel="Choose event end date" onPress={() => setRepeatDatePickerOpen(true)} style={[styles.pickerButton, { backgroundColor: colors.background, borderColor: colors.border }]}><Feather name="calendar" size={16} color={repeatUntil ? colors.primary : colors.mutedForeground} /><Text style={[styles.pickerButtonText, { color: repeatUntil ? colors.foreground : colors.mutedForeground }]}>{repeatUntil || 'End date (MM-DD-YYYY)'}</Text><Feather name="chevron-down" size={16} color={colors.mutedForeground} /></Pressable> : null}</> : null}
      {edit && currentRepeatUntil ? <Pressable testID="dashboard-event-apply-repeat-updates" accessibilityRole="checkbox" accessibilityState={{ checked: applyToRemainingRepeatEvents }} onPress={() => setApplyToRemainingRepeatEvents((enabled) => !enabled)} style={[styles.repeatRow, { backgroundColor: applyToRemainingRepeatEvents ? `${colors.primary}18` : colors.background, borderColor: applyToRemainingRepeatEvents ? colors.primary : colors.border }]}><View style={[styles.repeatCheckbox, { borderColor: applyToRemainingRepeatEvents ? colors.primary : colors.mutedForeground, backgroundColor: applyToRemainingRepeatEvents ? colors.primary : 'transparent' }]}>{applyToRemainingRepeatEvents ? <Feather name="check" size={13} color="#fff" /> : null}</View><View style={{ flex: 1 }}><Text style={[styles.repeatTitle, { color: colors.foreground }]}>Apply to all remaining repeat events</Text><Text style={[styles.repeatCopy, { color: colors.mutedForeground }]}>Updates this event and every later event in the repeat through the Until date ({displayDate(currentRepeatUntil)}).</Text></View></Pressable> : null}
     <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>TEAM</Text>
      <CalendarChoiceRow options={teams.filter((item) => item !== 'All Teams')} value={team} onChange={setTeam} colors={colors} />
-    <Pressable testID="dashboard-save-event" onPress={() => onSubmit(repeatDaily, repeatUntil, applyToRemainingRepeatEvents)} disabled={loading || !title || !date || !time || (repeatDaily && !repeatUntil)} style={[styles.submit, { backgroundColor: title && date && time && (!repeatDaily || repeatUntil) ? colors.primary : colors.muted }]}>{loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitText}>{edit ? 'Save changes' : 'Create event'}</Text><Feather name="calendar" size={16} color="#fff" /></>}</Pressable>
+    <Pressable testID="dashboard-save-event" onPress={() => onSubmit(repeatDaily, repeatUntil, applyToRemainingRepeatEvents)} disabled={loading || !title || !date || !normalizeCalendarTime(time) || (endTime.trim() && !normalizeCalendarTime(endTime)) || (repeatDaily && !repeatUntil)} style={[styles.submit, { backgroundColor: title && date && normalizeCalendarTime(time) && (!endTime.trim() || normalizeCalendarTime(endTime)) && (!repeatDaily || repeatUntil) ? colors.primary : colors.muted }]}>{loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitText}>{edit ? 'Save changes' : 'Create event'}</Text><Feather name="calendar" size={16} color="#fff" /></>}</Pressable>
     <DatePickerModal visible={datePickerOpen} value={date} onClose={() => setDatePickerOpen(false)} onChange={setDate} colors={colors} />
      <DatePickerModal visible={repeatDatePickerOpen} value={repeatUntil} initialDate={date} onClose={() => setRepeatDatePickerOpen(false)} onChange={setRepeatUntil} colors={colors} />
-    <TimePickerModal visible={timePicker !== null} value={timePicker === 'end' ? endTime : time} title={timePicker === 'end' ? 'Choose end time' : 'Choose start time'} onClose={() => setTimePicker(null)} onChange={timePicker === 'end' ? setEndTime : setTime} colors={colors} />
   </View>;
 }
 
@@ -656,16 +803,6 @@ function DatePickerModal({ visible, value, initialDate, onClose, onChange, color
   return <PickerSheet visible={visible} title="Choose event date" onClose={onClose} colors={colors}><View style={styles.monthPickerHeader}><Pressable testID="date-picker-previous-month" onPress={() => setMonthStart(new Date(year, month - 1, 1))} style={styles.pickerIcon}><Feather name="chevron-left" size={18} color={colors.primary} /></Pressable><Text style={[styles.monthPickerTitle, { color: colors.foreground }]}>{monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</Text><Pressable testID="date-picker-next-month" onPress={() => setMonthStart(new Date(year, month + 1, 1))} style={styles.pickerIcon}><Feather name="chevron-right" size={18} color={colors.primary} /></Pressable></View><View style={styles.weekdayPickerRow}>{['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((day) => <Text key={day} style={[styles.weekdayPickerText, { color: colors.mutedForeground }]}>{day}</Text>)}</View><View style={styles.datePickerGrid}>{cells.map((day, index) => { const active = day > 0 && day <= daysInMonth; const date = active ? new Date(year, month, day) : null; const isSelected = Boolean(date && selected && date.getFullYear() === selected.getFullYear() && date.getMonth() === selected.getMonth() && date.getDate() === selected.getDate()); return <Pressable key={`${year}-${month}-${index}`} disabled={!active} testID={active ? `date-picker-day-${day}` : undefined} onPress={() => { if (date) { onChange(displayDateFromParts(date)); onClose(); } }} style={[styles.datePickerCell, isSelected && { backgroundColor: colors.primary }]}><Text style={[styles.datePickerDay, { color: isSelected ? '#fff' : active ? colors.foreground : colors.muted }]}>{active ? day : ''}</Text></Pressable>; })}</View><Pressable onPress={() => { onChange(displayDateFromParts(today)); onClose(); }} style={[styles.todayButton, { borderColor: colors.border }]}><Text style={[styles.todayButtonText, { color: colors.primary }]}>Today</Text></Pressable></PickerSheet>;
 }
 
-function TimePickerModal({ visible, value, title, onClose, onChange, colors }: { visible: boolean; value: string; title: string; onClose: () => void; onChange: (value: string) => void; colors: ReturnType<typeof useColors> }) {
-  const slots = Array.from({ length: 48 }, (_, index) => {
-    const hour24 = Math.floor(index / 2);
-    const minute = index % 2 === 0 ? '00' : '30';
-    const suffix = hour24 >= 12 ? 'PM' : 'AM';
-    const hour12 = hour24 % 12 || 12;
-    return `${hour12}:${minute} ${suffix}`;
-  });
-  return <PickerSheet visible={visible} title={title} onClose={onClose} colors={colors}><ScrollView style={styles.timePickerList} showsVerticalScrollIndicator={false}>{slots.map((slot) => <Pressable key={slot} testID={`time-picker-${slot.replace(/[: ]/g, '-')}`} onPress={() => { onChange(slot); onClose(); }} style={[styles.timePickerOption, { borderBottomColor: colors.border }, slot === value && { backgroundColor: `${colors.primary}18` }]}><Text style={[styles.timePickerText, { color: slot === value ? colors.primary : colors.foreground }]}>{slot}</Text>{slot === value ? <Feather name="check" size={17} color={colors.primary} /> : null}</Pressable>)}</ScrollView></PickerSheet>;
-}
 function Field({ value, onChangeText, placeholder, colors, autoCapitalize, multiline, maxLength }: { multiline?: boolean; maxLength?: number; value: string; onChangeText: (value: string) => void; placeholder: string; colors: ReturnType<typeof useColors>; autoCapitalize?: 'none' }) { return <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.mutedForeground} autoCapitalize={autoCapitalize} multiline={multiline} maxLength={maxLength} textAlignVertical={multiline ? 'top' : undefined} style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }, multiline && { height: undefined, minHeight: 96, paddingTop: 12 }]} />; }
 function TeamDropdown({ value, onChange, colors, testID }: { value: string; onChange: (value: string) => void; colors: ReturnType<typeof useColors>; testID: string }) {
   const [open, setOpen] = useState(false);
@@ -687,6 +824,144 @@ function CalendarChoiceRow({ options, value, onChange, colors }: { options: read
   const dynamic = catalog.teams.map((option) => option.id);
   return <View style={styles.choiceRow}>{dynamic.map((option) => { const selected = canonicalTeam(catalog, value) === option; const optionColor = getTeamColor(catalog, option); const label = tagLabel(catalog, 'teams', option); return <Pressable key={option} onPress={() => onChange(option)} style={[styles.choice, { backgroundColor: selected ? optionColor : colors.muted, borderColor: selected ? optionColor : colors.border, flexDirection: 'row', alignItems: 'center', gap: 6 }]}><View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: optionColor }} /><Text style={[styles.choiceText, { color: selected && option === 'LPA' ? colors.accentForeground : selected ? '#fff' : colors.foreground }]}>{label}</Text></Pressable>; })}</View>;
 }
+function parseGroupAssignmentRows(text: string, groupTags: GroupTag[]): GroupAssignmentInput[] {
+  let currentGroup = '';
+  const normalize = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+  const groupByLabel = (value: string) => groupTags.find((tag) => normalize(tag.label) === normalize(value));
+  const rows: GroupAssignmentInput[] = [];
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim().replace(/^\|/, '').replace(/\|$/, '').replace(/^(?:[-*]|\d+[.)])\s+/, '').trim();
+    if (!line) continue;
+    const cells = line.split(/\t|\|/).map((cell) => cell.trim()).filter(Boolean);
+    if (cells.length >= 2) {
+      if (/^(student|athlete|name|full name)$/i.test(cells[0]) && /^(group|group tag)$/i.test(cells[cells.length - 1])) continue;
+      const group = groupByLabel(cells[cells.length - 1]);
+      rows.push({ fullName: cells.slice(0, -1).join(' ').trim(), groupTag: group?.id ?? cells[cells.length - 1] });
+      continue;
+    }
+    const heading = line.replace(/[:：]$/, '').trim();
+    const headingGroup = groupByLabel(heading);
+    if (headingGroup) {
+      currentGroup = headingGroup.id;
+      continue;
+    }
+    const suffixGroup = groupTags.find((tag) => normalize(line).endsWith(normalize(tag.label)));
+    if (suffixGroup) {
+      const fullName = line.slice(0, line.length - suffixGroup.label.length).replace(/[\s,:;|–—-]+$/, '').trim();
+      if (fullName) rows.push({ fullName, groupTag: suffixGroup.id });
+      continue;
+    }
+    rows.push({ fullName: line, groupTag: currentGroup });
+  }
+  return rows;
+}
+
+function GroupAssignmentPanel({ colors, groupTags, loading, error, previewing, applying, onPreview, onApply }: {
+  colors: ReturnType<typeof useColors>;
+  groupTags: GroupTag[];
+  loading: boolean;
+  error: string;
+  previewing: boolean;
+  applying: boolean;
+  onPreview: (assignments: GroupAssignmentInput[]) => Promise<GroupAssignmentPreviewResponse>;
+  onApply: (assignments: GroupAssignmentUpdate[]) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState('');
+  const [preview, setPreview] = useState<GroupAssignmentPreviewResponse | null>(null);
+  const [localError, setLocalError] = useState('');
+  const [success, setSuccess] = useState('');
+  const assignments = parseGroupAssignmentRows(draft, groupTags);
+  const matchedRows = preview?.rows.filter((row) => row.status === 'matched' && row.matchedUserId) ?? [];
+
+  const runPreview = async () => {
+    setLocalError('');
+    setSuccess('');
+    if (loading || !groupTags.length) {
+      setLocalError('Group tags are not available. Please refresh and try again.');
+      return;
+    }
+    if (!assignments.length) {
+      setLocalError('Paste at least one student and group row.');
+      return;
+    }
+    try {
+      setPreview(await onPreview(assignments));
+    } catch {
+      setPreview(null);
+    }
+  };
+
+  const applyMatches = async () => {
+    if (!matchedRows.length) return;
+    setLocalError('');
+    setSuccess('');
+    try {
+      await onApply(matchedRows.map((row) => ({ userId: row.matchedUserId!, groupTag: row.groupTag as GroupAssignmentUpdate['groupTag'] })));
+      setSuccess(`Applied ${matchedRows.length} group assignment${matchedRows.length === 1 ? '' : 's'}.`);
+      setPreview(null);
+      setDraft('');
+    } catch {
+      setLocalError('Assignments were not applied. Review the error above and preview again.');
+    }
+  };
+
+  const statusLabel: Record<string, string> = {
+    matched: 'Exact match',
+    unmatched: 'No account match',
+    ambiguous: 'Multiple accounts',
+    invalid_group: 'Invalid group',
+    duplicate: 'Duplicate row',
+  };
+
+  return <View style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <Text style={[styles.panelTitle, { color: colors.foreground }]}>Groups · staff only</Text>
+    <Text style={[styles.panelCopy, { color: colors.mutedForeground, marginTop: 5 }]}>Group tags are visible only to Admin and Staff-Coach. They are not included in athlete or parent data.</Text>
+    <View style={[styles.groupPeople, { marginTop: 12 }]}>
+      {groupTags.map((tag) => <View key={tag.id} style={[styles.inlineTeamMenu, { borderColor: colors.border, marginTop: 0 }]}><Text style={[styles.inlineTeamText, { color: colors.primary }]}>{tag.label}</Text></View>)}
+    </View>
+    <Text style={[styles.panelTitle, { color: colors.foreground, marginTop: 17 }]}>Bulk assign athletes</Text>
+    <Text style={[styles.panelCopy, { color: colors.mutedForeground, marginTop: 5 }]}>Paste one student and group per line, such as “Jordan Lee — Group 1”. You can also paste two columns, or a list under Group 1, Group 2, Group 3, and Group 4 headings.</Text>
+    <TextInput
+      testID="group-assignment-input"
+      accessibilityLabel="Paste student names and group tags"
+      value={draft}
+      onChangeText={(value) => { setDraft(value); setPreview(null); setLocalError(''); setSuccess(''); }}
+      placeholder={'Student name — Group 1\nAnother student — Group 2'}
+      placeholderTextColor={colors.mutedForeground}
+      multiline
+      textAlignVertical="top"
+      style={[styles.input, { minHeight: 140, marginTop: 11, paddingTop: 11, backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
+    />
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 11 }}>
+      <Pressable testID="preview-group-assignments" accessibilityRole="button" disabled={previewing || applying || !draft.trim()} onPress={() => void runPreview()} style={[styles.smallButton, { backgroundColor: colors.primary, opacity: previewing || applying || !draft.trim() ? 0.55 : 1 }]}>
+        {previewing ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.smallButtonText}>Preview matches</Text>}
+      </Pressable>
+      {preview ? <Pressable testID="apply-group-assignments" accessibilityRole="button" disabled={applying || !matchedRows.length} onPress={() => void applyMatches()} style={[styles.smallButton, { backgroundColor: colors.accent, opacity: applying || !matchedRows.length ? 0.55 : 1 }]}>
+        {applying ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.smallButtonText}>Apply {matchedRows.length} matched</Text>}
+      </Pressable> : null}
+    </View>
+    {error ? <Text accessibilityRole="alert" style={{ color: colors.destructive, marginTop: 9 }}>{error}</Text> : null}
+    {localError ? <Text accessibilityRole="alert" style={{ color: colors.destructive, marginTop: 9 }}>{localError}</Text> : null}
+    {success ? <Text accessibilityRole="status" style={{ color: colors.accent, marginTop: 9 }}>{success}</Text> : null}
+    {preview ? <>
+      <Text style={[styles.panelCopy, { color: colors.foreground, marginTop: 14 }]}>
+        {preview.matched} exact matches · {preview.unmatched} unmatched · {preview.ambiguous} ambiguous · {preview.duplicate} duplicate · {preview.invalidGroup} invalid group
+      </Text>
+      <Text style={[styles.panelCopy, { color: colors.mutedForeground, marginTop: 4 }]}>Only unique exact matches will be applied. Other rows and existing assignments stay unchanged.</Text>
+      <View style={{ marginTop: 8 }}>
+        {preview.rows.map((row) => <View key={`${row.row}-${row.fullName}`} style={[styles.roleOption, { borderBottomWidth: 1, borderBottomColor: colors.border, alignItems: 'flex-start' }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.roleOptionText, { color: colors.foreground }]}>{row.fullName}</Text>
+            <Text style={[styles.panelCopy, { color: colors.mutedForeground }]}>{row.status === 'matched' ? `${row.matchedUserName} · ${row.groupTag}${row.currentGroupTag && row.currentGroupTag !== row.groupTag ? ` (replaces ${row.currentGroupTag})` : ''}` : `${row.groupTag || 'No group'} · ${statusLabel[row.status] ?? row.status}`}</Text>
+          </View>
+          <Text style={{ color: row.status === 'matched' ? colors.accent : colors.destructive, fontFamily: 'Inter_700Bold', fontSize: 11 }}>{statusLabel[row.status] ?? row.status}</Text>
+        </View>)}
+      </View>
+    </> : null}
+  </View>;
+}
+
 type EditableTagKind = 'roles' | 'teams' | 'gradYears';
 type PendingTagChange = { action: 'rename' | 'delete'; kind: EditableTagKind; id: string; oldLabel: string; newLabel?: string };
 
@@ -833,22 +1108,19 @@ Object.assign(styles, StyleSheet.create({
   repeatTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   repeatCopy: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   pickerBackdrop: { flex: 1, backgroundColor: '#00000088', justifyContent: 'flex-end' },
-  pickerSheet: { borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 22, paddingTop: 20, paddingBottom: 30, maxHeight: '88%' },
-  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 19 },
-  pickerTitle: { fontFamily: 'Inter_700Bold', fontSize: 22, marginTop: 4 },
+  pickerSheet: { width: '100%', maxWidth: 360, alignSelf: 'center', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 24, maxHeight: '80%' },
+  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  pickerTitle: { fontFamily: 'Inter_700Bold', fontSize: 18, marginTop: 4 },
   pickerIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  monthPickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  monthPickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   monthPickerTitle: { fontFamily: 'Inter_700Bold', fontSize: 16 },
   weekdayPickerRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
   weekdayPickerText: { width: '14.2857%', textAlign: 'center', fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 0.5 },
   datePickerGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  datePickerCell: { width: '14.2857%', height: 43, alignItems: 'center', justifyContent: 'center', borderRadius: 13 },
+  datePickerCell: { width: '14.2857%', height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   datePickerDay: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   todayButton: { minHeight: 43, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   todayButtonText: { fontFamily: 'Inter_700Bold', fontSize: 12 },
-  timePickerList: { maxHeight: 410 },
-  timePickerOption: { minHeight: 47, borderBottomWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  timePickerText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   inlineTeamMenu: { borderWidth: 1, borderRadius: 9, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 2 },
   inlineTeamText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
   teamSelect: { minHeight: 46, borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
