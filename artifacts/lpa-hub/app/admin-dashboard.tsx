@@ -62,7 +62,7 @@ function toggleVisibleGroupChatParticipants(selectedIds: string[], visibleIds: s
 let teams: string[] = [...CALENDAR_TEAMS];
 const legacyEventTeam = (catalog: TagCatalog, value: string) => {
   const canonical = canonicalTeam(catalog, value);
-  return canonical === 'LPA 14U' ? '14u' : canonical === 'LPA 15U' ? '15u' : canonical === 'LPA JV' ? 'Junior Varsity' : canonical === 'LPA Varsity' ? 'Varsity' : canonical === 'LPA' ? 'LPA Events' : value;
+  return canonical === 'LPA 13U' ? '13u' : canonical === 'LPA 14U' ? '14u' : canonical === 'LPA 15U' ? '15u' : canonical === 'LPA JV' ? 'Junior Varsity' : canonical === 'LPA Varsity' ? 'Varsity' : canonical === 'LPA' ? 'LPA Events' : value;
 };
 const roleLabel = (role: string) => role === 'Parent-Athlete' ? 'Parent/Guardian' : role;
 const displayDate = (iso: string) => {
@@ -337,9 +337,10 @@ function AdminDashboardContent() {
   const handleInvite = () => createInvite.mutate({ data: { fullName: invite.fullName, email: invite.email || undefined, phone: invite.phone || undefined, role: invite.role, roleTag: invite.roleTag || null, teams: invite.teams.length ? invite.teams : undefined, gradYear: invite.gradYear || undefined } }, { onError: (error) => Alert.alert('Invite not sent', error.message) });
   const saveEvent = async (repeatDaily = false, repeatUntil = '', applyToRemainingRepeatEvents = false) => {
     if (!eventTitle.trim() || !eventDate.trim() || !eventTime.trim()) return;
-    const normalizedStartTime = normalizeCalendarTime(eventTime);
-    const normalizedEndTime = eventEndTime.trim() ? normalizeCalendarTime(eventEndTime) : '';
-    if (!normalizedStartTime || (eventEndTime.trim() && !normalizedEndTime)) {
+    const allDay = eventTime === 'All Day';
+    const normalizedStartTime = allDay ? '' : normalizeCalendarTime(eventTime);
+    const normalizedEndTime = !allDay && eventEndTime.trim() ? normalizeCalendarTime(eventEndTime) : '';
+    if ((!allDay && !normalizedStartTime) || (!allDay && eventEndTime.trim() && !normalizedEndTime)) {
       Alert.alert('Enter a valid time', 'Use a time such as 4:15 PM or 16:15.');
       return;
     }
@@ -357,7 +358,7 @@ function AdminDashboardContent() {
       Alert.alert('Repeat range is too long', 'Daily repeating events can span up to one year.');
       return;
     }
-    const data = { title: eventTitle, date, time: normalizedEndTime ? `${normalizedStartTime} - ${normalizedEndTime}` : normalizedStartTime, location: eventLocation || 'LPA Campus', locationAddress: eventAddress.trim() || null, notes: eventNotes.trim() || null, team: eventFormTeam };
+    const data = { title: eventTitle, date, time: allDay ? 'All Day' : normalizedEndTime ? `${normalizedStartTime} - ${normalizedEndTime}` : normalizedStartTime, location: eventLocation || 'LPA Campus', locationAddress: eventAddress.trim() || null, notes: eventNotes.trim() || null, team: eventFormTeam };
     setSavingEvents(true);
     try {
       if (editingEvent) {
@@ -744,6 +745,7 @@ function InviteForm({ invite, setInvite, onSubmit, loading, colors }: { invite: 
   </View>;
 }
 function EventForm({ title, setTitle, date, setDate, time, setTime, endTime, setEndTime, location, setLocation, address, setAddress, notes, setNotes, team, setTeam, repeatUntil: currentRepeatUntil, onSubmit, loading, edit, colors }: { title: string; setTitle: (value: string) => void; date: string; setDate: (value: string) => void; time: string; setTime: (value: string) => void; endTime: string; setEndTime: (value: string) => void; location: string; setLocation: (value: string) => void; address: string; setAddress: (value: string) => void; notes: string; setNotes: (value: string) => void; team: string; setTeam: (value: string) => void; repeatUntil?: string | null; onSubmit: (repeatDaily: boolean, repeatUntil: string, applyToRemainingRepeatEvents: boolean) => void; loading: boolean; edit: boolean; colors: ReturnType<typeof useColors> }) {
+  const allDay = time === 'All Day';
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [repeatDaily, setRepeatDaily] = useState(false);
   const [repeatUntil, setRepeatUntil] = useState('');
@@ -756,17 +758,23 @@ function EventForm({ title, setTitle, date, setDate, time, setTime, endTime, set
       <Text style={[styles.pickerButtonText, { color: date ? colors.foreground : colors.mutedForeground }]}>{date || 'Date (MM-DD-YYYY)'}</Text>
       <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
     </Pressable>
-    <View style={{ flexDirection: 'row', gap: 8 }}>
+    <Pressable testID="dashboard-event-all-day" accessibilityRole="checkbox" accessibilityState={{ checked: allDay }}
+      onPress={() => { setTime(allDay ? '9:00 AM' : 'All Day'); setEndTime(''); }}
+      style={[styles.repeatRow, { backgroundColor: allDay ? `${colors.primary}18` : colors.background, borderColor: allDay ? colors.primary : colors.border }]}>
+      <View style={[styles.repeatCheckbox, { borderColor: allDay ? colors.primary : colors.mutedForeground, backgroundColor: allDay ? colors.primary : 'transparent' }]}>{allDay ? <Feather name="check" size={13} color={colors.primaryForeground} /> : null}</View>
+      <View style={{ flex: 1 }}><Text style={[styles.repeatTitle, { color: colors.foreground }]}>All-day event</Text><Text style={[styles.repeatCopy, { color: colors.mutedForeground }]}>Show this event without a start or end time.</Text></View>
+    </Pressable>
+    {allDay ? <Text style={[styles.sectionCopy, { color: colors.mutedForeground }]}>This event will appear as an all-day calendar item.</Text> : <View style={{ flexDirection: 'row', gap: 8 }}>
       <CalendarTimeField testIDPrefix="dashboard-event-start-time" title="Start time" value={time} onChange={setTime} />
       <CalendarTimeField testIDPrefix="dashboard-event-end-time" title="End time" value={endTime} onChange={setEndTime} />
-    </View>
+    </View>}
     <CalendarLocationPicker location={location} address={address} onLocationChange={setLocation} onAddressChange={setAddress} testIDPrefix="dashboard-event-location" />
     <Field value={notes} onChangeText={setNotes} placeholder="Notes" colors={colors} multiline maxLength={10000} />
     {!edit ? <><Pressable testID="dashboard-event-repeat-daily" accessibilityRole="checkbox" accessibilityState={{ checked: repeatDaily }} onPress={() => setRepeatDaily((enabled) => !enabled)} style={[styles.repeatRow, { backgroundColor: repeatDaily ? `${colors.primary}18` : colors.background, borderColor: repeatDaily ? colors.primary : colors.border }]}><View style={[styles.repeatCheckbox, { borderColor: repeatDaily ? colors.primary : colors.mutedForeground, backgroundColor: repeatDaily ? colors.primary : 'transparent' }]}>{repeatDaily ? <Feather name="check" size={13} color="#fff" /> : null}</View><View style={{ flex: 1 }}><Text style={[styles.repeatTitle, { color: colors.foreground }]}>Multi-day event</Text><Text style={[styles.repeatCopy, { color: colors.mutedForeground }]}>Show one event from its start date through its end date.</Text></View><Feather name={repeatDaily ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedForeground} /></Pressable>{repeatDaily ? <Pressable testID="dashboard-event-repeat-until" accessibilityRole="button" accessibilityLabel="Choose event end date" onPress={() => setRepeatDatePickerOpen(true)} style={[styles.pickerButton, { backgroundColor: colors.background, borderColor: colors.border }]}><Feather name="calendar" size={16} color={repeatUntil ? colors.primary : colors.mutedForeground} /><Text style={[styles.pickerButtonText, { color: repeatUntil ? colors.foreground : colors.mutedForeground }]}>{repeatUntil || 'End date (MM-DD-YYYY)'}</Text><Feather name="chevron-down" size={16} color={colors.mutedForeground} /></Pressable> : null}</> : null}
      {edit && currentRepeatUntil ? <Pressable testID="dashboard-event-apply-repeat-updates" accessibilityRole="checkbox" accessibilityState={{ checked: applyToRemainingRepeatEvents }} onPress={() => setApplyToRemainingRepeatEvents((enabled) => !enabled)} style={[styles.repeatRow, { backgroundColor: applyToRemainingRepeatEvents ? `${colors.primary}18` : colors.background, borderColor: applyToRemainingRepeatEvents ? colors.primary : colors.border }]}><View style={[styles.repeatCheckbox, { borderColor: applyToRemainingRepeatEvents ? colors.primary : colors.mutedForeground, backgroundColor: applyToRemainingRepeatEvents ? colors.primary : 'transparent' }]}>{applyToRemainingRepeatEvents ? <Feather name="check" size={13} color="#fff" /> : null}</View><View style={{ flex: 1 }}><Text style={[styles.repeatTitle, { color: colors.foreground }]}>Apply to all remaining repeat events</Text><Text style={[styles.repeatCopy, { color: colors.mutedForeground }]}>Updates this event and every later event in the repeat through the Until date ({displayDate(currentRepeatUntil)}).</Text></View></Pressable> : null}
     <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>TEAM</Text>
      <CalendarChoiceRow options={teams.filter((item) => item !== 'All Teams')} value={team} onChange={setTeam} colors={colors} />
-    <Pressable testID="dashboard-save-event" onPress={() => onSubmit(repeatDaily, repeatUntil, applyToRemainingRepeatEvents)} disabled={loading || !title || !date || !normalizeCalendarTime(time) || (endTime.trim() && !normalizeCalendarTime(endTime)) || (repeatDaily && !repeatUntil)} style={[styles.submit, { backgroundColor: title && date && normalizeCalendarTime(time) && (!endTime.trim() || normalizeCalendarTime(endTime)) && (!repeatDaily || repeatUntil) ? colors.primary : colors.muted }]}>{loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitText}>{edit ? 'Save changes' : 'Create event'}</Text><Feather name="calendar" size={16} color="#fff" /></>}</Pressable>
+    <Pressable testID="dashboard-save-event" onPress={() => onSubmit(repeatDaily, repeatUntil, applyToRemainingRepeatEvents)} disabled={loading || !title || !date || (!allDay && !normalizeCalendarTime(time)) || (!allDay && endTime.trim() && !normalizeCalendarTime(endTime)) || (repeatDaily && !repeatUntil)} style={[styles.submit, { backgroundColor: title && date && (allDay || normalizeCalendarTime(time)) && (allDay || !endTime.trim() || normalizeCalendarTime(endTime)) && (!repeatDaily || repeatUntil) ? colors.primary : colors.muted }]}>{loading ? <ActivityIndicator color={colors.primaryForeground} /> : <><Text style={[styles.submitText, { color: colors.primaryForeground }]}>{edit ? 'Save changes' : 'Create event'}</Text><Feather name="calendar" size={16} color={colors.primaryForeground} /></>}</Pressable>
     <DatePickerModal visible={datePickerOpen} value={date} onClose={() => setDatePickerOpen(false)} onChange={setDate} colors={colors} />
      <DatePickerModal visible={repeatDatePickerOpen} value={repeatUntil} initialDate={date} onClose={() => setRepeatDatePickerOpen(false)} onChange={setRepeatUntil} colors={colors} />
   </View>;
