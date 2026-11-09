@@ -12,6 +12,7 @@ export const DEFAULT_TAG_CATALOG: TagCatalog = {
     { id: 'Athlete', label: 'Athlete' },
   ],
   teams: [
+    { id: 'LPA 13U', label: 'LPA 13U', aliases: ['13u'] },
     { id: 'LPA 14U', label: 'LPA 14U', aliases: ['14u'] },
     { id: 'LPA 15U', label: 'LPA 15U', aliases: ['15u'] },
     { id: 'LPA JV', label: 'LPA JV', aliases: ['JV', 'Junior Varsity'] },
@@ -47,6 +48,7 @@ export function teamMatches(catalog: TagCatalog, left: string, right: string) {
 
 export function getTeamColor(catalog: TagCatalog, team: string) {
   const canonical = canonicalTeam(catalog, team);
+  if (canonical === 'LPA 13U') return CALENDAR_TEAM_COLORS['13u'];
   if (canonical === 'LPA JV') return CALENDAR_TEAM_COLORS['Junior Varsity'];
   if (canonical === 'LPA Varsity') return CALENDAR_TEAM_COLORS.Varsity;
   if (canonical === 'LPA 14U') return CALENDAR_TEAM_COLORS['14u'];
