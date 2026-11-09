@@ -2,7 +2,7 @@
   "expo": {
     "name": "LPA",
     "slug": "lpa",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "orientation": "portrait",
     "icon": "./assets/images/lpa-outlaws-mark.png",
     "scheme": "lpa",
