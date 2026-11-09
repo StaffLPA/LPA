@@ -1,7 +1,7 @@
-export const LPA_TEAMS = ["LPA 14U", "LPA 15U", "LPA JV", "LPA Varsity", "LPA"] as const;
+export const LPA_TEAMS = ["LPA 13U", "LPA 14U", "LPA 15U", "LPA JV", "LPA Varsity", "LPA"] as const;
 export type LpaTeam = (typeof LPA_TEAMS)[number];
 
-export const CALENDAR_TEAMS = ["All Teams", "Varsity", "Junior Varsity", "14u", "15u", "LPA Events"] as const;
+export const CALENDAR_TEAMS = ["All Teams", "Varsity", "Junior Varsity", "14u", "13u", "15u", "LPA Events"] as const;
 export type CalendarTeam = (typeof CALENDAR_TEAMS)[number];
 
 export const CALENDAR_TEAM_COLORS: Record<CalendarTeam, string> = {
@@ -9,11 +9,13 @@ export const CALENDAR_TEAM_COLORS: Record<CalendarTeam, string> = {
   Varsity: "#F1604D",
   "Junior Varsity": "#5B8C85",
   "14u": "#8E78B8",
+  "13u": "#A66F9B",
   "15u": "#4D8DB8",
   "LPA Events": "#F5C85B",
 };
 
 export const teamEventAliases: Record<LpaTeam, string[]> = {
+  "LPA 13U": ["LPA 13U", "13u"],
   "LPA 14U": ["LPA 14U", "14u"],
   "LPA 15U": ["LPA 15U", "15u"],
   "LPA JV": ["LPA JV", "JV", "Junior Varsity"],
@@ -29,6 +31,7 @@ export function getCalendarTeamColor(team: string) {
     teamEventAliases[key].some((alias) => normalizedTeam(alias) === normalizedTeam(team))
   );
   if (canonical === "LPA 14U") return CALENDAR_TEAM_COLORS["14u"];
+  if (canonical === "LPA 13U") return CALENDAR_TEAM_COLORS["13u"];
   if (canonical === "LPA 15U") return CALENDAR_TEAM_COLORS["15u"];
   if (canonical === "LPA JV") return CALENDAR_TEAM_COLORS["Junior Varsity"];
   if (canonical === "LPA Varsity") return CALENDAR_TEAM_COLORS.Varsity;
