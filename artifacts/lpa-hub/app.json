@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.legendaryprepacademy.lpa",
-      "versionCode": 9,
+      "versionCode": 10,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
