@@ -1,15 +1,16 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useApp } from '@/context/AppContext';
 import { CalendarQuickAddModal } from '@/components/CalendarQuickAddModal';
 import { useColors } from '@/hooks/useColors';
-import { useGetCalendarFeed } from '@workspace/api-client-react';
+import { getGetCalendarSubscriptionQueryKey, useGetCalendarFeed, useGetCalendarSubscription } from '@workspace/api-client-react';
 import { useTagCatalog } from '@/hooks/useTagCatalog';
 import { canonicalTeam, getTeamColor, isTeamHidden, tagLabel } from '@/constants/tagCatalog';
 import { CalendarEventDetails } from '@/components/CalendarEventDetails';
+import { CalendarSubscriptionModal } from '@/components/CalendarSubscriptionModal';
 import { dateFromKey, dateRangeLabel, filterCalendarEventsByTeamVisibility, mergeEvents, parseIcsEvents, timeRangeLabel, type CalendarEvent } from '@/lib/calendarEvents';
 
 type ViewMode = 'Week' | 'Month';
@@ -50,16 +51,20 @@ export default function CalendarScreen() {
   const [weekDayFilter, setWeekDayFilter] = useState<string | null>(null);
   const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showCalendarSubscription, setShowCalendarSubscription] = useState(false);
   const [view, setView] = useState<ViewMode>('Week');
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
   const [showTeamMenu, setShowTeamMenu] = useState(false);
   const [isCalendarFocused, setIsCalendarFocused] = useState(false);
+  const { eventId } = useLocalSearchParams<{ eventId?: string }>();
+  const router = useRouter();
   useFocusEffect(useCallback(() => {
     setIsCalendarFocused(true);
     return () => setIsCalendarFocused(false);
   }, []));
   const catalogQuery = useTagCatalog();
   const catalog = catalogQuery.data;
+  const calendarSubscription = useGetCalendarSubscription({ query: { queryKey: getGetCalendarSubscriptionQueryKey(), enabled: isCalendarFocused } });
   const teamOptions = useMemo(() => [{ id: 'all', label: 'All Teams' }, ...(catalog?.teams ?? []).filter((team) => team.hidden !== true)], [catalog?.teams]);
   const visibleSelectedTeam = selectedTeam === 'all' || teamOptions.some((team) => team.id === canonicalTeam(catalog, selectedTeam))
     ? selectedTeam
@@ -73,6 +78,7 @@ export default function CalendarScreen() {
   const varsityFeed = useGetCalendarFeed({ team: 'varsity' }, feedOptions('varsity'));
   const juniorVarsityFeed = useGetCalendarFeed({ team: 'lpa-jv' }, feedOptions('lpa-jv'));
   const fourteenFeed = useGetCalendarFeed({ team: '14u' }, feedOptions('14u'));
+  const thirteenFeed = useGetCalendarFeed({ team: '13u' }, feedOptions('13u'));
   const fifteenFeed = useGetCalendarFeed({ team: '15u' }, feedOptions('15u'));
   const lpaFeed = useGetCalendarFeed({ team: 'lpa-events' }, feedOptions('lpa-events'));
   const events = useMemo(() => {
@@ -82,6 +88,7 @@ export default function CalendarScreen() {
       [varsityFeed.data, 'LPA Varsity'],
       [juniorVarsityFeed.data, 'LPA JV'],
       [fourteenFeed.data, 'LPA 14U'],
+      [thirteenFeed.data, 'LPA 13U'],
       [fifteenFeed.data, 'LPA 15U'],
       [lpaFeed.data, 'LPA'],
       [calendarFeed.data, ''],
@@ -89,8 +96,16 @@ export default function CalendarScreen() {
       lists.push(parseIcsEvents(feed, resolver, team));
     }
     return filterCalendarEventsByTeamVisibility(mergeEvents(lists), (team) => isTeamHidden(catalog, team));
-  }, [calendarFeed.data, varsityFeed.data, juniorVarsityFeed.data, fourteenFeed.data, fifteenFeed.data, lpaFeed.data, catalog]);
-  const feedsUnavailable = calendarFeed.isError && varsityFeed.isError && juniorVarsityFeed.isError && fourteenFeed.isError && fifteenFeed.isError && lpaFeed.isError;
+  }, [calendarFeed.data, varsityFeed.data, juniorVarsityFeed.data, fourteenFeed.data, thirteenFeed.data, fifteenFeed.data, lpaFeed.data, catalog]);
+  const feedsUnavailable = calendarFeed.isError && varsityFeed.isError && juniorVarsityFeed.isError && fourteenFeed.isError && thirteenFeed.isError && fifteenFeed.isError && lpaFeed.isError;
+  useEffect(() => {
+    if (typeof eventId !== 'string') return;
+    const linkedEvent = events.find((event) => event.id === eventId);
+    if (linkedEvent) {
+      setDetailEvent(linkedEvent);
+      router.setParams({ eventId: undefined });
+    }
+  }, [eventId, events, router]);
   const monthLabel = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
   const days = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
@@ -152,6 +167,15 @@ export default function CalendarScreen() {
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
     <ScrollView contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 115 }} showsVerticalScrollIndicator={false}>
        <View style={styles.header}><View><Text style={[styles.eyebrow, { color: colors.primary }]}>{monthLabel.toUpperCase()}</Text><Text style={[styles.title, { color: colors.foreground }]}>Calendar</Text></View>{canCreateEvents ? <Pressable testID="calendar-add-event" accessibilityRole="button" accessibilityLabel="Add calendar event" onPress={() => setShowQuickAdd(true)} style={[styles.add, { backgroundColor: colors.primary }]}><Feather name="plus" size={21} color="#fff" /></Pressable> : null}</View>
+      <Pressable testID="calendar-sync-calendar" accessibilityRole="button" onPress={() => setShowCalendarSubscription(true)}
+        style={[styles.syncCallout, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.syncIcon, { backgroundColor: `${colors.primary}20` }]}><Feather name="calendar" size={17} color={colors.primary} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.syncTitle, { color: colors.foreground }]}>{calendarSubscription.data?.active ? 'Manage Synced Calendars' : 'Sync Calendar'}</Text>
+          <Text style={[styles.syncCopy, { color: colors.mutedForeground }]}>{calendarSubscription.data?.active ? 'Update your selection or manage your subscription' : 'Subscribe to LPA schedules in Apple or Google Calendar'}</Text>
+        </View>
+        <Feather name="chevron-right" size={17} color={colors.mutedForeground} />
+      </Pressable>
         <View style={styles.filterWrap}><Pressable testID="calendar-team-filter" onPress={() => setShowTeamMenu((visible) => !visible)} style={[styles.filterSelect, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={[styles.filterDot, { backgroundColor: visibleSelectedTeam === 'all' ? colors.primary : getTeamColor(catalog, visibleSelectedTeam) }]} /><Text style={[styles.filterText, { color: colors.foreground }]}>{teamOptions.find((team) => team.id === visibleSelectedTeam)?.label ?? visibleSelectedTeam}</Text><Feather name={showTeamMenu ? 'chevron-up' : 'chevron-down'} size={17} color={colors.mutedForeground} /></Pressable>{showTeamMenu ? <View style={[styles.filterMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>{teamOptions.map((team) => <Pressable key={team.id} testID={`calendar-filter-${team.id}`} onPress={() => { setSelectedTeam(team.id); setShowTeamMenu(false); }} style={styles.filterOption}><View style={[styles.filterDot, { backgroundColor: team.id === 'all' ? colors.primary : getTeamColor(catalog, team.id) }]} /><Text style={[styles.filterText, { color: colors.foreground, flex: 1 }]}>{team.label}</Text>{visibleSelectedTeam === team.id ? <Feather name="check" size={16} color={colors.primary} /> : null}</Pressable>)}</View> : null}</View>
       <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
          <View style={styles.monthRow}><Text style={[styles.month, { color: colors.foreground }]}>{monthLabel}</Text><View style={styles.arrows}><Pressable testID={view === 'Week' ? 'previous-week' : 'previous-month'} accessibilityLabel={view === 'Week' ? 'Previous week' : 'Previous month'} onPress={() => view === 'Week' ? moveWeek(-1) : moveMonth(-1)} hitSlop={10}><Feather name="chevron-left" size={19} color={colors.foreground} /></Pressable><Pressable testID={view === 'Week' ? 'next-week' : 'next-month'} accessibilityLabel={view === 'Week' ? 'Next week' : 'Next month'} onPress={() => view === 'Week' ? moveWeek(1) : moveMonth(1)} hitSlop={10}><Feather name="chevron-right" size={19} color={colors.foreground} /></Pressable></View></View>
@@ -164,6 +188,7 @@ export default function CalendarScreen() {
     </ScrollView>
      <CalendarEventDetails event={detailEvent && events.some((event) => event.id === detailEvent.id) ? detailEvent : null} onClose={() => setDetailEvent(null)} />
       {canCreateEvents ? <CalendarQuickAddModal visible={showQuickAdd} onClose={() => setShowQuickAdd(false)} /> : null}
+      <CalendarSubscriptionModal visible={showCalendarSubscription} onClose={() => setShowCalendarSubscription(false)} />
   </View>;
 }
 
@@ -219,6 +244,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  syncCallout: { marginHorizontal: 18, marginBottom: 14, minHeight: 64, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  syncIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  syncTitle: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  syncCopy: { fontFamily: 'Inter_400Regular', fontSize: 10, marginTop: 3 },
   filterWrap: {
     marginHorizontal: 18,
     marginBottom: 14,
