@@ -171,6 +171,7 @@ export function CalendarQuickAddModal({ visible, onClose }: { visible: boolean; 
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  const [allDay, setAllDay] = useState(false);
   const [location, setLocation] = useState('');
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
@@ -194,6 +195,7 @@ export function CalendarQuickAddModal({ visible, onClose }: { visible: boolean; 
     setDate('');
     setStartTime('');
     setEndTime('');
+    setAllDay(false);
     setLocation('');
     setAddress('');
     setNotes('');
@@ -205,10 +207,10 @@ export function CalendarQuickAddModal({ visible, onClose }: { visible: boolean; 
   };
   const close = () => { reset(); onClose(); };
   const save = async () => {
-    if (!title.trim() || !date || !startTime || (repeatDaily && !repeatUntil)) return;
-    const normalizedStartTime = normalizeCalendarTime(startTime);
-    const normalizedEndTime = endTime.trim() ? normalizeCalendarTime(endTime) : '';
-    if (!normalizedStartTime || (endTime.trim() && !normalizedEndTime)) {
+    if (!title.trim() || !date || (!allDay && !startTime) || (repeatDaily && !repeatUntil)) return;
+    const normalizedStartTime = allDay ? '' : normalizeCalendarTime(startTime);
+    const normalizedEndTime = !allDay && endTime.trim() ? normalizeCalendarTime(endTime) : '';
+    if ((!allDay && !normalizedStartTime) || (!allDay && endTime.trim() && !normalizedEndTime)) {
       Alert.alert('Enter a valid time', 'Use a time such as 4:15 PM or 16:15.');
       return;
     }
@@ -229,7 +231,7 @@ export function CalendarQuickAddModal({ visible, onClose }: { visible: boolean; 
     const data = {
       title: title.trim(),
       date: apiStartDate,
-      time: normalizedEndTime ? `${normalizedStartTime} - ${normalizedEndTime}` : normalizedStartTime,
+      time: allDay ? 'All Day' : normalizedEndTime ? `${normalizedStartTime} - ${normalizedEndTime}` : normalizedStartTime ?? '',
       location: location.trim() || 'LPA Campus',
       locationAddress: address.trim() || null,
       notes: notes.trim() || null,
@@ -267,10 +269,21 @@ export function CalendarQuickAddModal({ visible, onClose }: { visible: boolean; 
             <Text style={[styles.pickerText, { color: date ? colors.foreground : colors.mutedForeground }]}>{date || 'Date (MM-DD-YYYY)'}</Text>
             <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
           </Pressable>
-          <View style={styles.timeRow}>
+          <Pressable testID="calendar-quick-all-day" accessibilityRole="checkbox" accessibilityState={{ checked: allDay }}
+            onPress={() => { setAllDay((current) => !current); setEndTime(''); }}
+            style={[styles.repeatRow, { backgroundColor: allDay ? `${colors.primary}18` : colors.background, borderColor: allDay ? colors.primary : colors.border }]}>
+            <View style={[styles.repeatCheckbox, { borderColor: allDay ? colors.primary : colors.mutedForeground, backgroundColor: allDay ? colors.primary : 'transparent' }]}>
+              {allDay ? <Feather name="check" size={13} color={colors.primaryForeground} /> : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.repeatTitle, { color: colors.foreground }]}>All-day event</Text>
+              <Text style={[styles.repeatCopy, { color: colors.mutedForeground }]}>Show this event without a start or end time.</Text>
+            </View>
+          </Pressable>
+          {allDay ? <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>This will appear as an all-day calendar item.</Text> : <View style={styles.timeRow}>
             <CalendarTimeField testIDPrefix="calendar-quick-start-time" title="Start time" value={startTime} onChange={setStartTime} />
             <CalendarTimeField testIDPrefix="calendar-quick-end-time" title="End time" value={endTime} onChange={setEndTime} />
-          </View>
+          </View>}
           <CalendarLocationPicker
             location={location}
             address={address}
@@ -301,9 +314,9 @@ export function CalendarQuickAddModal({ visible, onClose }: { visible: boolean; 
           <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>TEAM</Text>
           {catalog ? <TeamChoices catalog={catalog} value={team} onChange={setTeam} colors={colors} /> : <ActivityIndicator color={colors.primary} />}
           <Pressable testID="calendar-quick-save" accessibilityRole="button" onPress={() => void save()}
-            disabled={loading || !title.trim() || !date || !normalizeCalendarTime(startTime) || (endTime.trim() && !normalizeCalendarTime(endTime)) || (repeatDaily && !repeatUntil)}
-            style={[styles.submit, { backgroundColor: title.trim() && date && normalizeCalendarTime(startTime) && (!endTime.trim() || normalizeCalendarTime(endTime)) && (!repeatDaily || repeatUntil) ? colors.primary : colors.muted }]}>
-            {loading ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitText}>Create event</Text><Feather name="calendar" size={16} color="#fff" /></>}
+            disabled={loading || !title.trim() || !date || (!allDay && !normalizeCalendarTime(startTime)) || (!allDay && endTime.trim() && !normalizeCalendarTime(endTime)) || (repeatDaily && !repeatUntil)}
+            style={[styles.submit, { backgroundColor: title.trim() && date && (allDay || normalizeCalendarTime(startTime)) && (allDay || !endTime.trim() || normalizeCalendarTime(endTime)) && (!repeatDaily || repeatUntil) ? colors.primary : colors.muted }]}>
+            {loading ? <ActivityIndicator color={colors.primaryForeground} /> : <><Text style={[styles.submitText, { color: colors.primaryForeground }]}>Create event</Text><Feather name="calendar" size={16} color={colors.primaryForeground} /></>}
           </Pressable>
         </KeyboardAwareScrollViewCompat>
       </View>
