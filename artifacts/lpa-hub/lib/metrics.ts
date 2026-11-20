@@ -145,9 +145,11 @@ export const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Please 
 export const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
 export type Group = { key: string; metric: PerformanceMetric; unit: string; protocol: string; summaries: PerformanceSummary[] };
-export function latestTeamAverage(ws: MetricsWorkspace | undefined, metricId: string, unit: string, protocol: string) {
+export function latestTeamAverage(ws: MetricsWorkspace | undefined, metricId: string, unit: string, protocol: string, teamId?: string) {
+  const teamAthletes = teamId ? new Set(ws?.athletes.filter((athlete) => athlete.teams.includes(teamId)).map((athlete) => athlete.id)) : undefined;
   const latestByAthlete = new Map<string, PerformanceSummary>();
   for (const summary of ws?.summaries ?? []) {
+    if (teamAthletes && !teamAthletes.has(summary.athleteId)) continue;
     if (summary.metricId !== metricId || summary.unit !== unit || summary.protocol !== protocol || summary.latest === null) continue;
     const current = latestByAthlete.get(summary.athleteId);
     if (!current || (summary.lastTestingDate ?? '') > (current.lastTestingDate ?? '')) {
@@ -156,10 +158,10 @@ export function latestTeamAverage(ws: MetricsWorkspace | undefined, metricId: st
   }
   return mean([...latestByAthlete.values()].map((summary) => summary.latest!));
 }
-export function selectedMetrics(ws: MetricsWorkspace | undefined) {
+export function selectedMetrics(ws: MetricsWorkspace | undefined, includeInactive = false) {
   if (!ws || ws.filters?.metricIds === 'none') return [];
   const ids = ws.filters?.metricIds?.split(',').filter(Boolean) ?? [];
-  return ws.metrics.filter((m) => (!ids.length || ids.includes(m.id)) &&
+  return ws.metrics.filter((m) => (includeInactive || m.active) && (!ids.length || ids.includes(m.id)) &&
     (!ws.filters?.category || m.category === ws.filters.category));
 }
 /** Separate groups per metric+unit+protocol; incompatible units never merge. */
