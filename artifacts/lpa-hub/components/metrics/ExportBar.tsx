@@ -3,16 +3,18 @@ import { Platform, View } from 'react-native';
 import { exportPerformanceMetrics } from '@workspace/api-client-react';
 import { Body, Btn, Card, H } from './ui';
 import { deliverExport, errMsg, openPrintable } from '@/lib/metrics';
+import { useValdReportSelection } from '@/lib/valdReportSelection';
 
 type Fmt = 'csv' | 'xlsx' | 'html';
 export function ExportBar({ params }: { params: Record<string, string> }) {
+  const [valdSelection] = useValdReportSelection();
   const [fmt, setFmt] = useState<Fmt | null>(null);
   const [print, setPrint] = useState(false);
   const [error, setError] = useState('');
   const run = async (f: Fmt, printIt = false) => {
     setFmt(f); setPrint(printIt); setError('');
     try {
-      const file = await exportPerformanceMetrics({ ...params, format: f });
+      const file = await exportPerformanceMetrics({ ...params, ...valdSelection, includeValdMeasurements: 'true', format: f });
       if (printIt && openPrintable(file)) return;
       await deliverExport(file);
     } catch (e) { setError(`Export failed: ${errMsg(e)}`); } finally { setFmt(null); setPrint(false); }
