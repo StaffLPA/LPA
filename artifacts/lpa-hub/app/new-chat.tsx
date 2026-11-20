@@ -5,13 +5,16 @@ import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
-import { customFetch, useCreateChat } from '@workspace/api-client-react';
+import { customFetch, useCreateChat, useListUsers, useListGroupTags, useListGuardianLinks } from '@workspace/api-client-react';
+import { GroupChatMemberFilters } from '@/components/GroupChatMemberFilters';
+import { matchesMemberGroup } from '@/lib/groupChatMembers';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { teamMatches } from '@/constants/tagCatalog';
 import { useTagCatalog } from '@/hooks/useTagCatalog';
+import { canManageGroupChats, groupChatCreationProblem } from '@/lib/groupChatPermissions';
 
-type Member = { id: string; fullName: string; role: string; status: string; teams: string[]; profilePhotoUri?: string | null };
+type Member = { id: string; fullName: string; role: string; status: string; teams: string[]; groupTag?: string | null; profilePhotoUri?: string | null };
 type ChatMode = 'direct' | 'group';
 
 export default function NewChatScreen() {
@@ -21,16 +24,33 @@ export default function NewChatScreen() {
   const queryClient = useQueryClient();
   const { user } = useApp();
   const tagCatalog = useTagCatalog();
-  const canCreateGroup = user?.role === 'Admin' || user?.role === 'Staff-Coach';
+  const canCreateGroup = canManageGroupChats(user?.role);
   const [people, setPeople] = useState<Member[]>([]);
-  const [peopleLoading, setPeopleLoading] = useState(true);
-  const [peopleError, setPeopleError] = useState(false);
+  const [directoryLoading, setPeopleLoading] = useState(true);
+  const [directoryError, setPeopleError] = useState(false);
   const createChat = useCreateChat();
   const [mode, setMode] = useState<ChatMode>('direct');
+  const groupFiltersEnabled = canCreateGroup && mode === 'group';
+  const adminRoster = useListUsers(undefined, { query: { queryKey: ['/api/admin/users', user?.id, 'group-members'], enabled: groupFiltersEnabled, refetchInterval: 30_000 } });
+  const groupTags = useListGroupTags({ query: { queryKey: ['/api/group-tags', user?.id], enabled: groupFiltersEnabled } });
+  const familyLinks = useListGuardianLinks({ query: { queryKey: ['/api/admin/guardian-links', user?.id, 'group-members'], enabled: groupFiltersEnabled } });
+  const peopleLoading = mode === 'group' ? adminRoster.isLoading : directoryLoading;
+  const peopleError = mode === 'group' ? adminRoster.isError : directoryError;
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
   const [groupName, setGroupName] = useState('');
+  const [formError, setFormError] = useState('');
+  useEffect(() => {
+    if (!canCreateGroup && mode === 'group') {
+      setMode('direct');
+      setSelected([]);
+      setSelectedGroup(null);
+      setSelectedRoles([]);
+    }
+  }, [canCreateGroup, mode]);
   useEffect(() => {
     let mounted = true;
     setPeopleLoading(true);
@@ -48,28 +68,38 @@ export default function NewChatScreen() {
   }, []);
   const members = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    return people.filter((person) => {
+    const candidates: Member[] = mode === 'group' ? adminRoster.data ?? [] : people;
+    return candidates.filter((person) => {
       if (person.id === user?.id || !person.fullName.toLocaleLowerCase().includes(normalizedQuery)) return false;
       if (mode === 'group') {
         if (person.status !== 'active') return false;
+        if (selectedRoles.length && !selectedRoles.includes(person.role)) return false;
+        if (selectedGroup !== null && familyLinks.isError) return false;
+        if (!matchesMemberGroup(person, selectedGroup, adminRoster.data ?? [], familyLinks.data ?? [])) return false;
         if (selectedTeams.length && !person.teams.some((team) => selectedTeams.some((selectedTeam) => teamMatches(tagCatalog.data, team, selectedTeam)))) return false;
       }
       return true;
     });
-  }, [mode, people, query, selectedTeams, tagCatalog.data, user?.id]);
+  }, [mode, people, query, selectedTeams, tagCatalog.data, user?.id, adminRoster.data, selectedRoles, selectedGroup, familyLinks.data, familyLinks.isError]);
   const toggle = (id: string) => setSelected((items) => {
     if (mode === 'direct') return items.includes(id) ? [] : [id];
     return items.includes(id) ? items.filter((item) => item !== id) : Array.from(new Set([...items, id]));
   });
   const toggleTeam = (id: string) => setSelectedTeams((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
   const changeMode = (nextMode: ChatMode) => {
+    setFormError('');
     setMode(nextMode);
     setSelected([]);
     setQuery('');
   };
   const canSubmit = mode === 'direct' ? selected.length === 1 : canCreateGroup && !!groupName.trim() && selected.length > 0;
   const submit = () => {
-    if (!canSubmit || createChat.isPending) return;
+    if (createChat.isPending) return;
+    const problem = mode === 'group'
+      ? groupChatCreationProblem({ role: user?.role, name: groupName, participantCount: selected.length, rosterLoading: adminRoster.isLoading, rosterFailed: adminRoster.isError })
+      : selected.length !== 1 ? 'Select one person to start a direct message.' : null;
+    if (problem) { setFormError(problem); return; }
+    setFormError('');
     const userIds = Array.from(new Set(selected));
     const data = mode === 'group'
       ? { type: 'group' as const, name: groupName.trim(), userIds }
@@ -77,17 +107,27 @@ export default function NewChatScreen() {
     createChat.mutate({ data }, { onSuccess: (conversation) => {
       void queryClient.invalidateQueries({ queryKey: ['chats'] });
       router.replace(('/chat/' + conversation.id) as never);
-    } });
+    }, onError: (error) => { setFormError(error.message || 'Could not create the conversation. Please retry.'); } });
   };
   return <View style={[styles.container, { backgroundColor: colors.background }]}>
-    <View style={{ paddingTop: insets.top + 13 }}><View style={styles.header}><Pressable onPress={() => router.back()}><Feather name="arrow-left" size={22} color={colors.foreground} /></Pressable><Text style={[styles.title, { color: colors.foreground }]}>{mode === 'group' ? 'New group' : 'New message'}</Text><Pressable disabled={!canSubmit || createChat.isPending} onPress={submit}><Text style={[styles.done, { color: canSubmit ? colors.accent : colors.mutedForeground }]}>{createChat.isPending ? 'Creating…' : mode === 'group' ? 'Create' : 'Message'}</Text></Pressable></View><Text style={[styles.copy, { color: colors.mutedForeground }]}>{mode === 'group' ? 'Create a shared conversation with active LPA members.' : 'Start a private direct message with any active LPA member.'}</Text></View>
-    <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 30 }}>
+    <View style={{ paddingTop: insets.top + 13 }}><View style={styles.header}><Pressable onPress={() => router.back()}><Feather name="arrow-left" size={22} color={colors.foreground} /></Pressable><Text style={[styles.title, { color: colors.foreground }]}>{mode === 'group' ? 'New group' : 'New message'}</Text><Pressable testID="create-chat-header" accessibilityRole="button" disabled={createChat.isPending} onPress={submit}><Text style={[styles.done, { color: canSubmit ? colors.accent : colors.mutedForeground }]}>{createChat.isPending ? 'Creating…' : mode === 'group' ? 'Create' : 'Message'}</Text></Pressable></View><Text style={[styles.copy, { color: colors.mutedForeground }]}>{mode === 'group' ? 'Create a shared conversation with active LPA members.' : 'Start a private direct message with any active LPA member.'}</Text>
+      {formError ? <Text testID="create-chat-validation" accessibilityRole="alert" style={[styles.failure, { color: colors.destructive, paddingHorizontal: 18 }]}>{formError}</Text> : null}
+    </View>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 30 }}>
       {canCreateGroup ? <View style={styles.modeTabs}>
         {(['direct', 'group'] as const).map((option) => <Pressable key={option} testID={`chat-mode-${option}`} onPress={() => changeMode(option)} style={[styles.modeTab, { backgroundColor: mode === option ? colors.primary : colors.card, borderColor: mode === option ? colors.primary : colors.border }]}><Text style={[styles.modeTabText, { color: mode === option ? '#fff' : colors.foreground }]}>{option === 'direct' ? 'Direct message' : 'Group chat'}</Text></Pressable>)}
       </View> : null}
-      {mode === 'group' ? <>
+      {mode === 'group' && canCreateGroup ? <>
         <Text style={[styles.label, { color: colors.foreground }]}>Group name</Text>
         <TextInput testID="group-chat-name" value={groupName} onChangeText={setGroupName} placeholder="Name this conversation" placeholderTextColor={colors.mutedForeground} maxLength={100} style={[styles.nameInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]} />
+        <GroupChatMemberFilters groups={groupTags.data ?? []} selectedGroup={selectedGroup} onGroupChange={setSelectedGroup} selectedRoles={selectedRoles} onRolesChange={setSelectedRoles} />
+        {adminRoster.isError || groupTags.isError || familyLinks.isError ? <View>
+          <Text style={[styles.failure, { color: colors.warning }]}>Member filters could not fully load.</Text>
+          <Pressable testID="retry-group-members" accessibilityRole="button" onPress={() => {
+            setFormError('');
+            void Promise.allSettled([adminRoster.refetch(), groupTags.refetch(), familyLinks.refetch()]);
+          }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primary, fontFamily: 'Inter_600SemiBold' }}>Retry members</Text></Pressable>
+        </View> : null}
         <Text style={[styles.label, { color: colors.foreground }]}>Filter by team</Text>
         {tagCatalog.isError ? <Text style={[styles.failure, { color: colors.primary }]}>Team filters could not load. Please try again.</Text> : null}
         <View style={styles.teamChips}>{tagCatalog.data.teams.map((team) => {
@@ -99,9 +139,10 @@ export default function NewChatScreen() {
        {mode === 'group' && selected.length ? <View style={styles.selectedPeople}>{people.filter((person) => selected.includes(person.id)).map((person) => <Pressable key={person.id} testID={`remove-selected-${person.id}`} onPress={() => toggle(person.id)} style={[styles.selectedPerson, { backgroundColor: `${colors.primary}18` }]}>{person.profilePhotoUri ? <Image source={{ uri: person.profilePhotoUri }} accessibilityLabel={`${person.fullName} profile picture`} style={styles.selectedPersonPhoto} /> : <View style={[styles.selectedPersonPhoto, styles.selectedPersonInitials, { backgroundColor: `${colors.primary}20` }]}><Text style={{ color: colors.primary, fontFamily: 'Inter_700Bold', fontSize: 8 }}>{person.fullName.trim().charAt(0).toUpperCase()}</Text></View>}<Text style={[styles.selectedPersonText, { color: colors.primary }]}>{person.fullName}</Text><Feather name="x" size={13} color={colors.primary} /></Pressable>)}</View> : null}
       <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}><Feather name="search" size={16} color={colors.mutedForeground} /><TextInput value={query} onChangeText={setQuery} placeholder="Search active members" placeholderTextColor={colors.mutedForeground} style={[styles.searchInput, { color: colors.foreground }]} /></View>
        {peopleLoading ? <ActivityIndicator color={colors.primary} /> : peopleError ? <Text style={[styles.failure, { color: colors.primary }]}>People could not load. Please try again.</Text> : members.map((person) => <Pressable key={person.id} testID={`chat-member-${person.id}`} onPress={() => toggle(person.id)} style={[styles.member, { backgroundColor: colors.card, borderColor: selected.includes(person.id) ? colors.primary : colors.border }]}><View style={[styles.memberIcon, { backgroundColor: `${colors.primary}20` }]}>{mode === 'group' && person.profilePhotoUri ? <Image source={{ uri: person.profilePhotoUri }} accessibilityLabel={`${person.fullName} profile picture`} resizeMode="cover" style={styles.memberPhoto} /> : <Text style={[styles.memberInitials, { color: colors.primary }]}>{person.fullName.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Text>}</View><View style={{ flex: 1 }}><Text style={[styles.memberName, { color: colors.foreground }]}>{person.fullName}</Text><Text style={[styles.memberMeta, { color: colors.mutedForeground }]}>{person.role} · {person.teams.join(', ') || 'LPA'}</Text></View><View style={[styles.check, { borderColor: selected.includes(person.id) ? colors.primary : colors.border, backgroundColor: selected.includes(person.id) ? colors.primary : 'transparent' }]}>{selected.includes(person.id) ? <Feather name="check" size={13} color="#fff" /> : null}</View></Pressable>)}
-      {!peopleLoading && !peopleError && members.length === 0 ? <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{mode === 'group' && selectedTeams.length ? 'No active members match the selected teams and search.' : 'No members match your search.'}</Text> : null}
-      {mode === 'group' ? <Pressable testID="create-group-chat" disabled={!canSubmit || createChat.isPending} onPress={submit} style={[styles.createButton, { backgroundColor: canSubmit ? colors.primary : colors.muted }]}>{createChat.isPending ? <ActivityIndicator color="#fff" /> : <><Text style={styles.createButtonText}>Create group chat</Text><Feather name="message-square" size={16} color="#fff" /></>}</Pressable> : null}
-      {createChat.isError ? <Text style={[styles.failure, { color: colors.primary }]}>Could not create the conversation. Please try again.</Text> : null}
+      {!peopleLoading && !peopleError && members.length === 0 ? <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{mode === 'group' ? 'No active members match these filters and search.' : 'No members match your search.'}</Text> : null}
+      {mode === 'group' && formError ? <Text testID="create-group-validation" accessibilityRole="alert" style={[styles.failure, { color: colors.destructive }]}>{formError}</Text> : null}
+      {mode === 'group' ? <Pressable testID="create-group-chat" accessibilityRole="button" disabled={createChat.isPending} onPress={submit} style={[styles.createButton, { backgroundColor: canSubmit ? colors.primary : colors.muted }]}>{createChat.isPending ? <ActivityIndicator color="#fff" /> : <><Text style={styles.createButtonText}>Create group chat</Text><Feather name="message-square" size={16} color="#fff" /></>}</Pressable> : null}
+      {createChat.isError ? <Text testID="create-chat-error" accessibilityRole="alert" style={[styles.failure, { color: colors.primary }]}>{createChat.error instanceof Error && createChat.error.message ? `Could not create the conversation: ${createChat.error.message}` : 'Could not create the conversation. Please try again.'}</Text> : null}
     </ScrollView>
   </View>;
 }
