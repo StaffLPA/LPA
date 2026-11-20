@@ -10,6 +10,7 @@ import { useColors } from '@/hooks/useColors';
 import { Shell } from '@/components/metrics/Shell';
 import { Body, Btn, Card, Empty, ErrorBox, H, Skeleton } from '@/components/metrics/ui';
 import { KpiCards } from '@/components/metrics/KpiCards';
+import { SavedValdMeasurements } from '@/components/metrics/SavedValdMeasurements';
 import { ResultCharts } from '@/components/metrics/TrendCharts';
 import { fmtDate, fixed, fmtPct, groupSummaries, plainChange } from '@/lib/metrics';
 
@@ -26,12 +27,12 @@ export default function ReportDetail() {
       <ReportExportBar id={rid} />
       <Body muted style={{ marginBottom: 10 }}>Snapshot created {fmtDate(r.createdAt)} · {ws.athletes.length} athlete{ws.athletes.length === 1 ? '' : 's'} · {ws.totalResults} results</Body>
       {(ws as any).filters ? <Body muted style={{ marginBottom: 10 }}>Period {fmtDate((ws as any).filters.start) === '-' ? 'all time' : `${fmtDate((ws as any).filters.start)} to ${fmtDate((ws as any).filters.end)}`}{(ws as any).filters.team ? ` · Team ${ws.teams.find((t) => t.id === (ws as any).filters.team)?.label ?? (ws as any).filters.team}` : ''}{(ws as any).filters.category ? ` · ${(ws as any).filters.category}` : ''}</Body> : null}
-      {r.athleteIds.length > ws.athletes.filter((a) => ws.results.some((x) => x.athleteId === a.id)).length ? <Body muted style={{ marginBottom: 10 }}>{ws.athletes.filter((a) => !ws.results.some((x) => x.athleteId === a.id)).map((a) => a.fullName).join(', ') || 'Some selected athletes'} had no results in this period.</Body> : null}
-      <KpiCards ws={ws} title="Summary" label="Group Average" />
+      {ws.athletes.some((a) => !ws.results.some((x) => x.athleteId === a.id) && !ws.valdMeasurements?.some((ex) => ex.results.some((x) => x.athleteId === a.id))) ? <Body muted style={{ marginBottom: 10 }}>{ws.athletes.filter((a) => !ws.results.some((x) => x.athleteId === a.id) && !ws.valdMeasurements?.some((ex) => ex.results.some((x) => x.athleteId === a.id))).map((a) => a.fullName).join(', ')} had no results in this period.</Body> : null}
+      <SavedValdMeasurements exercises={ws.valdMeasurements ?? []} />
+      {ws.metrics.length ? <KpiCards ws={ws} title="Summary" label="Group Average" snapshot /> : null}
       <View style={{ height: 14 }} />
-      <TeamCharts ws={ws} staff={false} />
-      <SummaryTable ws={ws} title="Summary" />
-      <Card>
+      {ws.metrics.length ? <><TeamCharts ws={ws} staff={false} /><SummaryTable ws={ws} title="Summary" /></> : null}
+      {groups.length || !ws.valdMeasurements?.length ? <Card>
         <H sub="First to latest result for each athlete and metric.">Athlete results</H>
         {!groups.length ? <Empty title="No results in this report" /> : ws.athletes.map((a) => {
           const rows = groups.flatMap((g) => g.summaries.filter((s) => s.athleteId === a.id).map((s) => ({ g, s })));
@@ -39,7 +40,7 @@ export default function ReportDetail() {
           return <View key={a.id} style={{ marginBottom: 12 }}><Text style={{ color: c.foreground, fontFamily: 'Inter_700Bold', fontSize: 14 }}>{a.fullName}</Text>
             {rows.map(({ g, s }) => <Body key={g.key} muted style={{ fontSize: 12 }}>{g.metric.name}: {plainChange(s.first, s.latest, s.overallPercentChange, g.metric.direction, s.unit, g.metric.decimals)}{s.personalBestInPeriod && g.metric.direction !== 'neutral' ? ' Personal best.' : ''}</Body>)}</View>;
         })}
-      </Card>
+      </Card> : null}
       {noted.length ? <Card><H>Coach notes</H>{noted.map((n) => <Body key={n.id} style={{ marginBottom: 6 }}>{ws.athletes.find((a) => a.id === n.athleteId)?.fullName}, {ws.metrics.find((m) => m.id === n.metricId)?.name} ({fmtDate(n.testingDate)}): {n.publicNotes}</Body>)}</Card> : null}
     </>}
   </Shell>;
