@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Linking, Text, View } from 'react-native';
 import { useIsMutating, useQueryClient } from '@tanstack/react-query';
-import { getGetMetricsSyncStatusQueryKey, getMetricsSyncBackup, useGetMetricsSyncStatus, useSyncMetricsExcel } from '@workspace/api-client-react';
-import type { MetricsSyncStatus } from '@workspace/api-client-react';
+import { getGetMetricsSyncStatusQueryKey, getGetValdSyncStatusQueryKey, getMetricsSyncBackup, useGetMetricsSyncStatus, useGetValdSyncStatus, useSyncConfiguredValdMetrics, useSyncMetricsExcel } from '@workspace/api-client-react';
+import type { MetricsSyncStatus, ValdSyncRunSummary } from '@workspace/api-client-react';
 import { useColors } from '@/hooks/useColors';
 import { Body, Btn, Chip, Sheet } from './ui';
 import { RestoreBackupControl } from './RestoreBackupControl';
@@ -12,15 +12,40 @@ const errText = (e: unknown) => {
   return x?.data?.error || x?.data?.message || x?.message || 'Sync failed.';
 };
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never');
+const whenVald = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown time');
+const valdRunCounts = (run: ValdSyncRunSummary) => {
+  const changed = run.imported !== null && run.updated !== null
+    ? `${run.imported} new · ${run.updated} updated`
+    : run.resultsChanged !== null ? `${run.resultsChanged} results changed` : null;
+  return [
+    changed,
+    run.testsSeen === null ? null : `${run.testsSeen} tests`,
+    run.skipped === null ? null : `${run.skipped} skipped`,
+    run.archivedTests === null ? null : `${run.archivedTests} archived`,
+    run.measurementValues === null ? null : `${run.measurementValues} measurements`,
+    run.unmappedProfiles ? `${run.unmappedProfiles} profiles need review` : null,
+  ].filter(Boolean).join(' · ') || 'Counts unavailable for this run.';
+};
+const valdRunLabel = (run: ValdSyncRunSummary) => {
+  switch (run.status) {
+    case 'running': return `VALD sync running since ${whenVald(run.startedAt)}`;
+    case 'complete': return `VALD sync complete · ${whenVald(run.completedAt ?? run.startedAt)}`;
+    case 'incomplete': return `VALD sync incomplete · ${whenVald(run.completedAt ?? run.startedAt)} · more history remains`;
+    case 'failed': return `Latest VALD sync failed · ${whenVald(run.completedAt ?? run.startedAt)}`;
+  }
+};
 
 export function SyncControl() {
   const c = useColors();
   const qc = useQueryClient();
   const status = useGetMetricsSyncStatus({ query: { queryKey: getGetMetricsSyncStatusQueryKey() } });
+  const valdStatus = useGetValdSyncStatus(undefined, { query: { queryKey: getGetValdSyncStatusQueryKey(), staleTime: 30_000 } });
   const mut = useSyncMetricsExcel({ mutation: { mutationKey: ['syncMetricsExcel'] } });
+  const valdMut = useSyncConfiguredValdMetrics({ mutation: { mutationKey: ['syncConfiguredValdMetrics'] } });
   const syncing = useIsMutating({ mutationKey: ['syncMetricsExcel'] }) > 0;
   const restoring = useIsMutating({ mutationKey: ['metricsRestore'] }) > 0;
-  const busy = syncing || restoring;
+  const valdSyncing = valdMut.isPending;
+  const busy = syncing || restoring || valdSyncing;
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoreAttention, setRestoreAttention] = useState(false);
   const [confirm, setConfirm] = useState(false);
@@ -30,6 +55,8 @@ export function SyncControl() {
   const [err, setErr] = useState<string | null>(null);
   const [choices, setChoices] = useState<Record<string, 'app' | 'excel'>>({});
   const [msg, setMsg] = useState<string | null>(null);
+  const [valdErr, setValdErr] = useState<string | null>(null);
+  const [valdMsg, setValdMsg] = useState<string | null>(null);
 
   const st: MetricsSyncStatus | undefined = status.data;
   const first = !!st && st.lastSyncedAt === null;
@@ -50,6 +77,22 @@ export function SyncControl() {
       else { setMsg('Sync complete.'); setResultsOpen(true); }
     } catch (e) { setErr(errText(e)); void status.refetch(); }
   };
+  const runValdSync = async () => {
+    if (busy) return;
+    setValdErr(null); setValdMsg(null);
+    try {
+      const res = await valdMut.mutateAsync();
+      void qc.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === 'string' && (q.queryKey[0] as string).startsWith('/api/metrics') });
+      const updates = `${res.imported} new · ${res.updated} updated`;
+      const unmatched = res.unmappedProfiles.length ? ` · ${res.unmappedProfiles.length} VALD profiles need review in Metrics Library` : '';
+      const outcome = res.partial ? 'incomplete · more history remains; sync again to continue' : 'complete';
+      setValdMsg(`VALD sync ${outcome} · ${updates}${unmatched}`);
+      void valdStatus.refetch();
+    } catch (e) {
+      setValdErr(errText(e));
+      void valdStatus.refetch();
+    }
+  };
   const openBackup = async () => {
     try { const b = await getMetricsSyncBackup(); await Linking.openURL(b.url); } catch (e) { setErr(errText(e)); }
   };
@@ -63,7 +106,10 @@ export function SyncControl() {
         <Text style={{ color: c.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 15 }}>Excel sync</Text>
         <Text style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 3 }}>Your metrics, connected to OneDrive.</Text>
       </View>
-      <Btn testID="sync-button" label="Sync" icon="refresh-cw" loading={syncing} disabled={busy || status.isLoading} onPress={() => setConfirm(true)} />
+       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+         <Btn testID="vald-sync-quick" label="VALD Sync" icon="refresh-cw" kind="ghost" loading={valdSyncing} disabled={busy || status.isLoading} onPress={() => void runValdSync()} />
+         <Btn testID="sync-button" label="Sync" icon="refresh-cw" loading={syncing} disabled={busy || status.isLoading} onPress={() => setConfirm(true)} />
+       </View>
     </View>
     <View style={{ borderTopWidth: 1, borderColor: c.border, marginTop: 12, paddingTop: 12 }}>
       {notConfigured ? <View accessibilityRole="alert">
@@ -71,11 +117,40 @@ export function SyncControl() {
         <Text style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 3 }}>Add the Workbook ID in Secrets to enable syncing.</Text>
       </View> : <Text style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18 }}>{status.isLoading ? 'Checking sync status…' : `Last synced ${when(st?.lastSyncedAt)}`}</Text>}
       {summary ? <Text style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 4 }}>{summary}</Text> : null}
+      {valdStatus.isLoading ? <Text style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 8 }}>Checking VALD sync history…</Text> : null}
+      {valdStatus.isError ? <View accessibilityRole="alert" style={{ marginTop: 8, alignItems: 'flex-start' }}>
+        <Text style={{ color: c.destructive, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18 }}>VALD sync history could not load.</Text>
+        <Btn label="Retry status" kind="ghost" icon="refresh-cw" onPress={() => void valdStatus.refetch()} />
+      </View> : null}
+      {valdStatus.data ? <>
+        {valdStatus.data.latestRun && (valdStatus.data.latestRun.status === 'failed' ||
+          valdStatus.data.latestRun.status === 'running' ||
+          valdStatus.data.latestRun.startedAt !== valdStatus.data.lastSuccessful?.startedAt) ?
+          <Text accessibilityLiveRegion="polite" style={{
+            color: valdStatus.data.latestRun.status === 'failed' ? c.destructive : c.mutedForeground,
+            fontFamily: 'Inter_600SemiBold', fontSize: 12, lineHeight: 18, marginTop: 8,
+          }}>{valdRunLabel(valdStatus.data.latestRun)}</Text> : null}
+        {valdStatus.data.latestRun?.status === 'incomplete' ?
+          <Text style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 2 }}>
+            {valdRunCounts(valdStatus.data.latestRun)} · Sync again to continue.
+          </Text> : null}
+        {valdStatus.data.lastSuccessful ? <>
+          <Text style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 8 }}>
+            Last complete successful VALD sync · {whenVald(valdStatus.data.lastSuccessful.completedAt ?? valdStatus.data.lastSuccessful.startedAt)}
+          </Text>
+          <Text style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 2 }}>
+            {valdRunCounts(valdStatus.data.lastSuccessful)}
+          </Text>
+        </> : <Text style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 8 }}>No complete successful VALD sync recorded yet.</Text>}
+      </> : null}
       {summary && !busy ? <View style={{ alignItems: 'flex-start', marginTop: 8 }}><Chip label="Results" onPress={() => setResultsOpen(true)} /></View> : null}
     </View>
     {status.isError && !err ? <Text style={{ color: c.destructive, fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 8 }}>Sync status could not load.</Text> : null}
     {err ? <View accessibilityRole="alert" style={{ marginTop: 8, alignItems: 'flex-start' }}><Text style={{ color: c.destructive, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18 }}>{err}</Text><Btn label="Retry" kind="ghost" icon="refresh-cw" disabled={busy} onPress={() => { if (status.isError) void status.refetch(); setErr(null); setConfirm(true); }} /></View> : null}
     {msg ? <Text style={{ color: c.primary, fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 8 }}>{msg}</Text> : null}
+     {valdSyncing ? <Text accessibilityLiveRegion="polite" style={{ color: c.mutedForeground, fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 8 }}>Importing new and updated VALD measurements…</Text> : null}
+     {valdErr ? <View accessibilityRole="alert" style={{ marginTop: 8, alignItems: 'flex-start' }}><Text style={{ color: c.destructive, fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18 }}>{valdErr}</Text><Btn label="Retry VALD sync" kind="ghost" icon="refresh-cw" disabled={busy} onPress={() => void runValdSync()} /></View> : null}
+     {valdMsg ? <Text accessibilityLiveRegion="polite" style={{ color: c.primary, fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 8 }}>{valdMsg}</Text> : null}
     {!err && !notConfigured && (conflicts.length || issues.length) && !busy ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
       {conflicts.length ? <Chip label={`Review ${conflicts.length} conflicts`} onPress={() => setReview(true)} /> : null}
       {issues.length ? <Chip label={`${issues.length} issues`} onPress={() => setIssuesOpen(true)} /> : null}
