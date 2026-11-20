@@ -33,6 +33,7 @@ export type LpaIconName =
   | 'download'
   | 'paperclip'
   | 'plus'
+  | 'minus'
   | 'chevron-left'
   | 'map-pin'
   | 'external-link'
@@ -122,6 +123,8 @@ export function LpaIcon({ name, size = 20, color, strokeWidth = 1.9 }: {
         return <Path d="m19 11-7.5 7.5a5 5 0 0 1-7-7L12 4a3.5 3.5 0 0 1 5 5l-7.5 7.5a2 2 0 0 1-2.8-2.8l7-7" {...common} />;
       case 'plus':
         return <Path d="M12 5v14M5 12h14" {...common} />;
+      case 'minus':
+        return <Path d="M5 12h14" {...common} />;
       case 'chevron-left':
         return <Path d="m15 5-7 7 7 7" {...common} />;
       case 'map-pin':
