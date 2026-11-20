@@ -18,6 +18,8 @@ const contacts = [
   { name: 'Terrell Hudson', role: 'Assistant Coach', email: 'terrell@legendaryprepacademy.com', phone: '623-267-3533', initials: 'TH', tint: '#C88A62', photo: require('../../assets/staff-terrell-hudson-face.jpg') },
   { name: 'Joe Dunigan', role: 'Hitting Coordinator', email: 'joe@legendaryprepacademy.com', phone: undefined, initials: 'JD', tint: '#C89A62', photo: require('../../assets/staff-joe-dunigan-face.jpg') },
   { name: 'Josh Garcia', role: 'Director of Strength & Conditioning', email: 'josh@legendaryprepacademy.com', phone: undefined, initials: 'JG', tint: '#9BC7BD', photo: require('../../assets/staff-josh-garcia-face.jpg') },
+  { name: 'Isaiah Garcia-Castaneda', role: 'Strength & Conditioning Coach', email: undefined, phone: undefined, initials: 'IG', tint: '#AB562B', photo: require('../../assets/staff-isaiah-garcia-castaneda-face.jpg') },
+  { name: 'Jake Hanen', role: 'Assistant Coach', email: undefined, phone: undefined, initials: 'JH', tint: '#9BC7BD', allowAnyActiveRole: true, photo: require('../../assets/staff-jake-hanen-face.jpg') },
   { name: 'Steve Karsay', role: 'Pitching Development Coordinator', email: 'Steve@legendaryprepacademy.com', phone: undefined, initials: 'SK', tint: '#C88A62', photo: require('../../assets/staff-steve-karsay-face.jpg') },
   { name: 'Martin Jacquez', role: 'Academic Advisor', email: 'martin@legendaryprepacademy.com', phone: undefined, initials: 'MJ', tint: '#AB562B', photo: require('../../assets/staff-martin-jacquez-updated-face.jpg') },
   { name: 'Vinna', role: 'Physical Therapy', email: 'contact@teamvinna.com', phone: '480-269-1184', website: 'https://www.teamvinna.com/', initials: 'VI', tint: '#9BC7BD', partner: true, logo: require('../../assets/vinna.png'), logoKind: 'vinna' },
@@ -27,7 +29,7 @@ const contacts = [
   { name: 'Legendary Parent Organization', role: 'Kisa White', email: 'moochie9.kj@gmail.com', phone: undefined, website: undefined, initials: 'LPO', tint: '#AB562B', partner: true, logo: require('../../assets/lpa-parent-organization-badge.png'), logoKind: 'phoenix' },
 ];
 
-type Contact = (typeof contacts)[number];
+type Contact = (typeof contacts)[number] & { allowAnyActiveRole?: boolean };
 const feedbackCategories = ['Bug', 'Problem with the app', 'Feature recommendation'] as const;
 type FeedbackCategory = (typeof feedbackCategories)[number];
 type RosterMember = { id: string; fullName: string; role: string; roleTag?: string | null; status: string; teams: string[]; gradYear?: string | null; profilePhotoUri?: string | null };
@@ -99,7 +101,7 @@ export default function MoreScreen() {
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [feedbackError, setFeedbackError] = useState('');
   const openDirectMessage = async (contact: Contact) => {
-    if (!user || messageInFlight.current || !contact.email) return;
+    if (!user || messageInFlight.current) return;
     messageInFlight.current = true;
     setMessagingContact(contact.name);
     setMessageError(null);
@@ -108,7 +110,7 @@ export default function MoreScreen() {
       const fresh = await directory.refetch();
       if (fresh.isError) throw new Error('Could not load active contacts. Please try again.');
       const matches = matchDirectoryContact(contact, fresh.data ?? []);
-      if (matches.length !== 1) throw new Error(matches.length ? 'More than one account matches this contact. Please ask an administrator to check the directory.' : `No active ${contact.partner ? 'account' : 'Staff-Coach account'} is linked to this contact yet.`);
+      if (matches.length !== 1) throw new Error(matches.length ? 'More than one account matches this contact. Please ask an administrator to check the directory.' : `No active ${contact.partner || contact.allowAnyActiveRole ? 'account' : 'Staff-Coach account'} is linked to this contact yet.`);
       if (matches[0].id === user.id) throw new Error('This contact is your own account.');
       const conversation = await createChat.mutateAsync({ data: { type: 'direct', userIds: [matches[0].id] } });
       void queryClient.invalidateQueries({ queryKey: ['chats'] });
