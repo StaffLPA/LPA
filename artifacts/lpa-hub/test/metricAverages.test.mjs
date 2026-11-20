@@ -48,6 +48,29 @@ test('team average counts each athlete once using their latest in-range result',
   assert.equal(latestTeamAverage(ws, 'body-weight', 'lb', 'Standing'), 150);
 });
 
+test('multiple team averages use separate rosters including shared athletes once per team', () => {
+  const ws = {
+    athletes: [
+      { id: 'shared', teams: ['jv', 'varsity'] },
+      { id: 'jv-only', teams: ['jv'] },
+      { id: 'varsity-only', teams: ['varsity'] },
+      { id: 'outside', teams: ['other'] },
+    ],
+    summaries: [
+      summary('shared', 100, '2026-02-01'),
+      summary('shared', 120, '2026-02-15'),
+      summary('jv-only', 180, '2026-02-10'),
+      summary('varsity-only', 220, '2026-02-10'),
+      summary('outside', 999, '2026-02-10'),
+      summary('jv-only', 999, '2026-02-10', { unit: 'kg' }),
+      summary('varsity-only', 999, '2026-02-10', { protocol: 'Seated' }),
+    ],
+  };
+  assert.equal(latestTeamAverage(ws, 'body-weight', 'lb', 'Standing', 'jv'), 150);
+  assert.equal(latestTeamAverage(ws, 'body-weight', 'lb', 'Standing', 'varsity'), 170);
+  assert.equal(latestTeamAverage(ws, 'body-weight', 'lb', 'Standing', 'empty-team'), null);
+});
+
 test('team averages keep units and protocols in separate cohorts', () => {
   const ws = {
     summaries: [
