@@ -66,8 +66,8 @@ export function Sheet({ visible, title, onClose, children }: { visible: boolean;
     </Pressable>
   </Modal>;
 }
-export function Confirm({ visible, title, copy, confirmLabel, onConfirm, onCancel }: { visible: boolean; title: string; copy: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void }) {
-  return <Sheet visible={visible} title={title} onClose={onCancel}><Body muted>{copy}</Body><View style={{ flexDirection: 'row', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}><Btn label="Cancel" kind="ghost" onPress={onCancel} /><Btn label={confirmLabel} onPress={onConfirm} /></View></Sheet>;
+export function Confirm({ visible, title, copy, confirmLabel, onConfirm, onCancel, busy = false, danger = false, confirmTestID }: { visible: boolean; title: string; copy: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void; busy?: boolean; danger?: boolean; confirmTestID?: string }) {
+  return <Sheet visible={visible} title={title} onClose={() => { if (!busy) onCancel(); }}><Body muted>{copy}</Body><View style={{ flexDirection: 'row', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}><Btn label="Cancel" kind="ghost" disabled={busy} onPress={onCancel} /><Btn label={confirmLabel} kind={danger ? 'danger' : 'primary'} loading={busy} onPress={onConfirm} testID={confirmTestID} /></View></Sheet>;
 }
 export function useWide() {
   const [w, setW] = React.useState(0);
