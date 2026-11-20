@@ -1,9 +1,10 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Alert, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { File as ExpoFile, Paths } from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { customFetch } from '@workspace/api-client-react';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
+import { constrainPhotoPan, photoMaximumScale, type PhotoSize } from '@/lib/chatPhotoLayout';
 
 type Props = {
   visible: boolean;
@@ -15,8 +16,6 @@ type Props = {
 };
 
 const minimumScale = 1;
-const maximumScale = 4;
-const clamp = (value: number) => Math.min(maximumScale, Math.max(minimumScale, value));
 const extensionForContentType = (contentType: string) => {
   if (contentType === 'image/png') return '.png';
   if (contentType === 'image/webp') return '.webp';
@@ -37,21 +36,42 @@ export function MessagePhotoViewer({ visible, url, fileName, contentType, downlo
   const insets = useSafeAreaInsets();
   const scale = useRef(new Animated.Value(1)).current;
   const currentScale = useRef(1);
+  const translation = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const currentPan = useRef({ x: 0, y: 0 });
+  const panOrigin = useRef({ x: 0, y: 0, dx: 0, dy: 0 });
+  const imageSize = useRef<PhotoSize>({ width: 0, height: 0 });
+  const viewportSize = useRef<PhotoSize>({ width: 0, height: 0 });
   const pinchStartDistance = useRef(0);
   const pinchStartScale = useRef(1);
   const lastTapAt = useRef(0);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    currentScale.current = 1;
+    currentPan.current = { x: 0, y: 0 };
+    pinchStartDistance.current = 0;
+    lastTapAt.current = 0;
+    scale.setValue(1);
+    translation.setValue({ x: 0, y: 0 });
+  }, [visible, url, scale, translation]);
+
+  const setPan = (next: { x: number; y: number }) => {
+    const bounded = constrainPhotoPan(next, imageSize.current, viewportSize.current, currentScale.current);
+    currentPan.current = bounded;
+    translation.setValue(bounded);
+  };
+
   const setScale = (next: number, animated = false) => {
-    const normalized = clamp(next);
+    const normalized = Math.min(photoMaximumScale(imageSize.current, viewportSize.current), Math.max(minimumScale, next));
     currentScale.current = normalized;
     if (animated) Animated.spring(scale, { toValue: normalized, useNativeDriver: true, bounciness: 0 }).start();
     else scale.setValue(normalized);
+    setPan(currentPan.current);
   };
 
   const panResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_, gesture) => gesture.numberActiveTouches >= 2,
+    onMoveShouldSetPanResponder: (_, gesture) => gesture.numberActiveTouches >= 2 || currentScale.current > 1,
     onPanResponderGrant: (event) => {
       const now = Date.now();
       if (now - lastTapAt.current < 280 && event.nativeEvent.touches.length < 2) {
@@ -62,17 +82,33 @@ export function MessagePhotoViewer({ visible, url, fileName, contentType, downlo
       }
       pinchStartDistance.current = distance(event.nativeEvent.touches);
       pinchStartScale.current = currentScale.current;
+      panOrigin.current = { ...currentPan.current, dx: 0, dy: 0 };
     },
-    onPanResponderMove: (event) => {
+    onPanResponderMove: (event, gesture) => {
       const nextDistance = distance(event.nativeEvent.touches);
-      if (!nextDistance || !pinchStartDistance.current) return;
-      setScale(pinchStartScale.current * (nextDistance / pinchStartDistance.current));
+      if (nextDistance) {
+        // A second finger can join after a one-finger gesture already began.
+        if (!pinchStartDistance.current) {
+          pinchStartDistance.current = nextDistance;
+          pinchStartScale.current = currentScale.current;
+        }
+        setScale(pinchStartScale.current * (nextDistance / pinchStartDistance.current));
+        panOrigin.current = { ...currentPan.current, dx: gesture.dx, dy: gesture.dy };
+      } else {
+        if (pinchStartDistance.current) {
+          pinchStartDistance.current = 0;
+          panOrigin.current = { ...currentPan.current, dx: gesture.dx, dy: gesture.dy };
+        }
+        const origin = panOrigin.current;
+        setPan({ x: origin.x + gesture.dx - origin.dx, y: origin.y + gesture.dy - origin.dy });
+      }
     },
     onPanResponderRelease: () => {
       pinchStartDistance.current = 0;
       if (currentScale.current < 1.05) setScale(1, true);
     },
-  }), [scale]);
+    onPanResponderTerminate: () => { pinchStartDistance.current = 0; setPan(currentPan.current); },
+  }), [scale, translation]);
 
   const close = () => {
     setScale(1);
@@ -141,10 +177,19 @@ export function MessagePhotoViewer({ visible, url, fileName, contentType, downlo
             <Feather name={saving ? 'clock' : 'download'} size={22} color="#FFFFFF" />
           </Pressable>
         </View>
-        <View style={styles.stage} {...panResponder.panHandlers}>
-          <Animated.Image source={{ uri: url }} resizeMode="contain" accessibilityLabel={fileName} style={[styles.image, { transform: [{ scale }] }]} />
+        <View testID="message-photo-stage" style={styles.stage}
+          onLayout={(event) => { viewportSize.current = event.nativeEvent.layout; setPan(currentPan.current); }}
+          {...panResponder.panHandlers}>
+          <Animated.Image source={{ uri: url }} resizeMode="contain" accessibilityLabel={fileName}
+            onLoad={(event) => { imageSize.current = event.nativeEvent.source; setPan(currentPan.current); }}
+            style={[styles.image, { transform: [{ translateX: translation.x }, { translateY: translation.y }, { scale }] }]} />
         </View>
-        <Text style={[styles.hint, { paddingBottom: Math.max(insets.bottom, 18) }]}>Pinch or double-tap to zoom</Text>
+        <View style={styles.zoomControls}>
+          <Pressable testID="zoom-out-message-photo" accessibilityRole="button" accessibilityLabel="Zoom out" style={styles.control} onPress={() => setScale(currentScale.current / 1.5, true)}><Feather name="minus" size={22} color="#FFFFFF" /></Pressable>
+          <Text style={styles.hint}>Pinch or double-tap to zoom{'\n'}Drag when zoomed to see details</Text>
+          <Pressable testID="zoom-in-message-photo" accessibilityRole="button" accessibilityLabel="Zoom in" style={styles.control} onPress={() => setScale(currentScale.current * 1.5, true)}><Feather name="plus" size={22} color="#FFFFFF" /></Pressable>
+        </View>
+        <View style={{ height: Math.max(insets.bottom, 18) }} />
       </View>
     </Modal>
   );
@@ -157,5 +202,6 @@ const styles = StyleSheet.create({
   fileName: { flex: 1, color: '#FFFFFF', fontFamily: 'Inter_600SemiBold', fontSize: 14, textAlign: 'center' },
   stage: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   image: { width: '100%', height: '100%' },
-  hint: { color: '#B8B8B8', fontFamily: 'Inter_400Regular', fontSize: 12, textAlign: 'center', paddingTop: 12 },
+  zoomControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, paddingTop: 12 },
+  hint: { color: '#B8B8B8', fontFamily: 'Inter_400Regular', fontSize: 12, textAlign: 'center' },
 });
