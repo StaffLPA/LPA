@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateDate, validateCell, buildEntries, summarize, removeSaved, draftKey, approveEdit, changedKeys, draftSignature } from '../lib/overviewDraft.ts';
+import { validateDate, validateCell, buildEntries, summarize, removeSaved, draftKey, approveEdit, changedKeys, draftSignature, filterAthletesByName } from '../lib/overviewDraft.ts';
 const A = [{ id: 'a', fullName: 'Ava' }, { id: 'b', fullName: 'Ben' }];
 const M = [{ id: 'm1', name: 'Sprint', category: 'Speed', dataType: 'time', unit: 's', decimals: 2, active: true }, { id: 'm2', name: 'Reps', category: 'Strength', dataType: 'repetitions', unit: 'reps', decimals: 0, active: true }, { id: 'm3', name: 'Bar', category: 'Strength', dataType: 'decimal', unit: 'unconfigured', decimals: 1, active: true }];
 const k = draftKey;
+test('athlete name search is case-insensitive, supports multi-part names, and preserves the team-filtered roster', () => {
+  const roster = [{ id: '1', fullName: 'Andrew Cisneros' }, { id: '2', fullName: 'Anthony Ramon' }, { id: '3', fullName: 'Cisneros Andrew' }];
+  assert.deepEqual(filterAthletesByName(roster, ''), roster);
+  assert.deepEqual(filterAthletesByName(roster, '  ANDREW   cis '), [roster[0], roster[2]]);
+  assert.deepEqual(filterAthletesByName(roster.slice(0, 2), 'cisneros'), [roster[0]]);
+  assert.deepEqual(filterAthletesByName(roster.slice(0, 2), 'ramon'), [roster[1]]);
+  assert.deepEqual(filterAthletesByName(roster, 'not a name'), []);
+});
 test('dates', () => {
   assert.ok(validateDate('2026-02-30', '2026-03-01'));
   assert.ok(validateDate('2026-03-02', '2026-03-01'));
