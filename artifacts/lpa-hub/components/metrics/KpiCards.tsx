@@ -2,32 +2,44 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { LpaIcon as Feather } from '@/components/LpaIcon';
 import { useColors } from '@/hooks/useColors';
+import { ValdMeasurementCards, isValdMetric } from './ValdMeasurementCards';
 import { BAD, Body, Empty, GOOD, H, useWide } from './ui';
 import { Group, MetricsWorkspace, fixed, fmtPct, groupSummaries, kpiOf, latestTeamAverage, selectedMetrics } from '@/lib/metrics';
 
-export function KpiCards({ ws, title = 'Key performance exercises', label = 'Group Average', renderGraph, showDetails = true, teamWorkspace, teamLabel, showTeamAverage = false }: { ws?: MetricsWorkspace; title?: string; label?: string; renderGraph?: (metricId: string, unit: string, protocol?: string) => React.ReactNode; showDetails?: boolean; teamWorkspace?: MetricsWorkspace; teamLabel?: string; showTeamAverage?: boolean }) {
+export function KpiCards({ ws, title = 'Key performance exercises', label = 'Group Average', renderGraph, showDetails = true, teamWorkspace, averageTeams = [], showTeamAverage = false, snapshot = false }: { ws?: MetricsWorkspace; title?: string; label?: string; renderGraph?: (metricId: string, unit: string, protocol?: string) => React.ReactNode; showDetails?: boolean; teamWorkspace?: MetricsWorkspace; averageTeams?: { id: string; label: string }[]; showTeamAverage?: boolean; snapshot?: boolean }) {
   const c = useColors();
   const { w, onLayout } = useWide();
   const groups = groupSummaries(ws);
   const byMetric = new Map<string, Group[]>();
   groups.forEach((g) => byMetric.set(g.metric.id, [...(byMetric.get(g.metric.id) ?? []), g]));
   const cards: { key: string; metricId: string; name: string; suffix: string; unit: string; g?: Group; dec?: number }[] = [];
-  selectedMetrics(ws).forEach((m) => {
+  const valdIds: string[] = [];
+  selectedMetrics(ws, snapshot).forEach((m) => {
+    if (isValdMetric(m.id) && !snapshot) {
+      if (!valdIds.includes(m.id)) valdIds.push(m.id);
+      // Hide only empty placeholders. Real manually recorded, non-VALD protocols
+      // remain visible separately and are never mixed into source measurements.
+      for (const g of byMetric.get(m.id) ?? []) {
+        if (!g.protocol.startsWith('VALD ') && g.summaries.some((s) => s.latest !== null)) {
+          cards.push({ key: g.key, metricId: m.id, name: m.name, suffix: ` · ${g.protocol}`, unit: g.unit, g, dec: m.decimals });
+        }
+      }
+      return;
+    }
     const gs = byMetric.get(m.id);
+    if (snapshot && isValdMetric(m.id) && ws?.valdMeasurements?.some((ex) =>
+      ({ cmj: 'vald-cmj-jump-height', left: 'vald-single-leg-jump-height-left', right: 'vald-single-leg-jump-height-right' })[ex.id] === m.id) && !gs?.length) return;
     if (!gs) { if (m.active) cards.push({ key: m.id, metricId: m.id, name: m.name, suffix: '', unit: m.unit, dec: m.decimals }); return; }
     gs.forEach((g) => cards.push({ key: g.key, metricId: m.id, name: m.name, suffix: gs.length > 1 ? ` · ${g.protocol}` : '', unit: g.unit, g, dec: m.decimals }));
   });
   const total = ws?.selectedAthleteIds.length ?? 0;
   const cols = renderGraph ? (w >= 900 ? 2 : 1) : w >= 900 ? 3 : w >= 520 ? 2 : 1;
-  const subtitle = label === 'Latest'
-    ? "Latest result and baseline for this athlete. Team averages use each team member's latest result in the selected date range; incompatible units and protocols stay separate."
-    : "Group average of each athlete's latest result. Baseline is the average of the same athletes' previous results, so the percentage matches the numbers shown; dashes mean not enough data.";
   return <View onLayout={onLayout}>
-    <H sub={subtitle}>{title}</H>
-    {!cards.length ? <Empty title="No metrics selected" copy="Select metrics or a different category in the filters." /> : <View style={styles.grid}>
+    <H>{title}</H>
+    {!cards.length && !valdIds.length ? <Empty title="No metrics selected" copy="Select metrics or a different category in the filters." /> : <View style={styles.grid}>
+      {valdIds.length ? <ValdMeasurementCards ws={ws} metricIds={valdIds} label={label} width={`${100 / cols - 1.5}%`} renderGraph={renderGraph} showDetails={showDetails} /> : null}
       {cards.map((card) => {
         const k = card.g ? kpiOf(card.g, total) : { current: null, baseline: null, pct: null, improved: null, tested: 0, paired: 0, missing: total, counts: {} as Record<string, number>, pbs: 0 };
-        const teamAverage = card.g ? latestTeamAverage(teamWorkspace, card.metricId, card.unit, card.g.protocol) : null;
         const col = k.improved === null ? c.mutedForeground : k.improved ? GOOD : BAD;
         const arrow = k.pct === null || k.pct === 0 ? 'arrow-up' : k.pct > 0 ? 'arrow-up' : 'chevron-down';
         return <View key={card.key} testID={`kpi-${card.key}`} style={[styles.card, { width: `${100 / cols - 1.5}%`, backgroundColor: c.card, borderColor: c.border }]}>
@@ -35,17 +47,20 @@ export function KpiCards({ ws, title = 'Key performance exercises', label = 'Gro
           <Text style={[styles.avg, { color: c.foreground }]}>{label}{card.unit ? ` (${card.unit})` : ''}</Text>
           <Text style={[styles.big, { color: c.foreground }]}>{fixed(k.current, card.dec)}</Text>
           <View style={styles.row}>
-            <Text style={[styles.base, { color: c.mutedForeground }]}>Baseline {fixed(k.baseline, card.dec)}</Text>
+            <Text style={[styles.base, { color: c.mutedForeground }]}>Previous {fixed(k.baseline, card.dec)}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
               {k.pct !== null && k.pct !== 0 ? <View style={k.pct < 0 ? { transform: [{ rotate: '0deg' }] } : undefined}><Feather name={arrow} size={14} color={col} /></View> : null}
               <Text style={[styles.pct, { color: k.pct === null ? c.mutedForeground : col }]}>{fmtPct(k.pct)}</Text>
             </View>
           </View>
-          {showTeamAverage && teamLabel ? <Text testID={`team-average-${card.key}`} style={[styles.teamAverage, { color: c.mutedForeground }]} numberOfLines={2}>
-            Avg {card.name}{card.suffix} {teamLabel}: {fixed(teamAverage, card.dec)}{card.unit ? ` ${card.unit}` : ''}
-          </Text> : null}
+          {showTeamAverage ? averageTeams.map((team) => {
+            const average = card.g ? latestTeamAverage(teamWorkspace, card.metricId, card.unit, card.g.protocol, team.id) : null;
+            return <Text key={team.id} testID={`team-average-${card.key}-${team.id}`} style={[styles.teamAverage, { color: c.mutedForeground }]}>
+              Avg {card.name}{card.suffix} {team.label}: {fixed(average, card.dec)}{card.unit ? ` ${card.unit}` : ''}
+            </Text>;
+          }) : null}
           {showDetails ? <>
-            <Text style={[styles.n, { color: c.mutedForeground }]}>{k.paired ? `Current and baseline use the same ${k.paired} paired athlete${k.paired === 1 ? '' : 's'}.` : k.tested ? 'Current from tested athletes; no retest yet, so no baseline.' : 'No results.'} Tested {k.tested} · Paired {k.paired} · Missing {k.missing}</Text>
+            <Text style={[styles.n, { color: c.mutedForeground }]}>{k.paired ? `Current and previous use the same ${k.paired} paired athlete${k.paired === 1 ? '' : 's'}.` : k.tested ? 'Current from tested athletes; no previous result yet.' : 'No results.'} Tested {k.tested} · Paired {k.paired} · Missing {k.missing}</Text>
             {card.g ? <Text style={[styles.n, { color: c.mutedForeground }]}>Improved {k.counts.improved ?? 0} · Declined {k.counts.declined ?? 0} · Unchanged {k.counts.unchanged ?? 0} · Insufficient {k.counts.insufficient ?? 0}{card.g.metric.direction === 'neutral' ? ' · No better/worse for this metric' : ` · Personal bests ${k.pbs}`}</Text> : null}
           </> : null}
           {renderGraph?.(card.metricId, card.unit, card.g?.protocol)}
