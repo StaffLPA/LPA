@@ -11,7 +11,7 @@ import { Body, Btn, Card, Chip, Confirm, Empty, ErrorBox, Field, H, Skeleton } f
 import { errMsg, fmtDate, fmtNum, phoenixToday, useBatchId, useInvalidateMetrics, useWorkspace } from '@/lib/metrics';
 import { useQueryClient } from '@tanstack/react-query';
 import type { PerformanceResult } from '@workspace/api-client-react';
-import { Approvals, CATS, Drafts, MIN_DATE, Existing, approveEdit, buildEntries, cellState, changedKeys, draftKey, draftSignature, parseKey, recordable, removeSaved, summarize, validateCell, validateDate } from '@/lib/overviewDraft';
+import { Approvals, CATS, Drafts, MIN_DATE, Existing, approveEdit, buildEntries, cellState, changedKeys, draftKey, draftSignature, filterAthletesByName, parseKey, recordable, removeSaved, summarize, validateCell, validateDate } from '@/lib/overviewDraft';
 
 export type LeaveGuard = (run: () => void) => void;
 const NAME_W = 150; const COL_W = 118;
@@ -30,6 +30,7 @@ export function OverviewEntry({ register, initialMetricId, initialAthleteId }: {
   const [category, setCategory] = useState<string>('Speed');
   const [team, setTeam] = useState('');
   const [date, setDate] = useState(phoenixToday());
+  const [athleteSearch, setAthleteSearch] = useState('');
   const [drafts, setDrafts] = useState<Drafts>({});
   const [approvals, setApprovals] = useState<Approvals>({});
   const [editAsk, setEditAsk] = useState<string | null>(null);
@@ -61,6 +62,7 @@ export function OverviewEntry({ register, initialMetricId, initialAthleteId }: {
   const athletes = ws?.athletes ?? [];
   const teamDef = (ws?.teams ?? []).find((t) => t.id === team);
   const shownAthletes = useMemo(() => athletes.filter((a) => !team || a.teams.includes(team) || (!!teamDef && a.teams.includes(teamDef.label))), [athletes, team, teamDef]);
+  const filteredAthletes = useMemo(() => filterAthletesByName(shownAthletes, athleteSearch), [shownAthletes, athleteSearch]);
   const allMetrics = ws?.metrics ?? [];
   const initialMetricApplied = useRef<string | null>(null);
   useEffect(() => {
@@ -204,21 +206,40 @@ export function OverviewEntry({ register, initialMetricId, initialAthleteId }: {
           </Pressable>
         </View>
       </View>
+      <View style={{ marginTop: 4 }}>
+        <Text style={[hdr, { letterSpacing: 1, marginBottom: 6 }]}>Search athlete name</Text>
+        <View style={{ minHeight: 42, borderWidth: 1, borderColor: c.border, borderRadius: 11, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: c.background }}>
+          <Feather name="search" size={16} color={c.mutedForeground} />
+          <TextInput
+            testID="overview-athlete-search"
+            accessibilityLabel="Search athletes by name"
+            value={athleteSearch}
+            onChangeText={setAthleteSearch}
+            placeholder="Search athlete name"
+            placeholderTextColor={c.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{ flex: 1, paddingVertical: 10, color: c.foreground, fontFamily: 'Inter_400Regular', fontSize: 13 }}
+          />
+          {athleteSearch ? <Pressable testID="overview-athlete-search-clear" accessibilityRole="button" accessibilityLabel="Clear athlete name search" hitSlop={8} onPress={() => setAthleteSearch('')}><Feather name="x" size={16} color={c.mutedForeground} /></Pressable> : null}
+        </View>
+      </View>
       {dateErr ? <Body style={{ color: c.destructive }}>{dateErr}</Body> : null}
       {dirty ? <View style={{ marginTop: 4 }}><Body muted style={{ fontSize: 12 }}>Changing the date discards these unsaved changes after you confirm, so edits never move to another day.</Body><View style={{ height: 6 }} /><Btn testID="overview-discard" label="Discard draft" kind="ghost" onPress={() => setDiscard(true)} disabled={saving} /></View> : null}
     </Card>
     {blocked.length ? <Card><Body style={{ color: c.primary }}>Entry is blocked for: {blocked.map((m) => m.name).join(', ')}. Configure the equipment unit in the Metrics Library first.</Body></Card> : null}
     {dateErr ? <Empty title="Enter a valid testing date" copy="Saved results load once the date is valid." /> : (q.isLoading && !ws) || eq.isLoading ? <><Skeleton h={160} /></> : eq.isError ? <ErrorBox message={`Saved results for this date could not load. ${errMsg(eq.error)}`} onRetry={() => void eq.refetch()} /> : q.isError && !ws ? <ErrorBox message={(q.error as Error)?.message || 'Roster could not load.'} onRetry={() => void q.refetch()} /> :
       !shownAthletes.length ? <Empty title="No athletes" copy="No people with the Athlete tag match this team." /> :
+      !filteredAthletes.length ? <Empty title="No matching athletes" copy="Try a different name or clear your search." /> :
       !entryMetrics.length ? <Empty title="No metrics to record" copy="No active, configured metrics in this category." /> :
       <Card style={{ padding: 8 }}>
-        <Text style={{ color: c.mutedForeground, fontSize: 11, margin: 4 }}>Swipe sideways for more metrics. {shownAthletes.length} athlete{shownAthletes.length === 1 ? '' : 's'}, {entryMetrics.length} metric{entryMetrics.length === 1 ? '' : 's'}.</Text>
+        <Text style={{ color: c.mutedForeground, fontSize: 11, margin: 4 }}>Swipe sideways for more metrics. {filteredAthletes.length}{filteredAthletes.length !== shownAthletes.length ? ` of ${shownAthletes.length}` : ''} athlete{filteredAthletes.length === 1 ? '' : 's'}, {entryMetrics.length} metric{entryMetrics.length === 1 ? '' : 's'}.</Text>
         <ScrollView horizontal testID="overview-table" showsHorizontalScrollIndicator persistentScrollbar><View>
           <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: c.border, paddingBottom: 6 }}>
             <Text accessibilityRole="header" style={[hdr, { width: NAME_W, paddingLeft: 4 }]}>Athlete's Name</Text>
             {entryMetrics.map((m) => <View key={m.id} style={{ width: COL_W, paddingRight: 8 }}><Text style={hdr}>{m.name}</Text><Text style={{ color: c.mutedForeground, fontSize: 10 }}>{m.unit}</Text></View>)}
           </View>
-          {shownAthletes.map((a) => <View key={a.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, borderBottomWidth: 1, borderColor: `${c.border}66`, backgroundColor: a.id === initialAthleteId ? c.muted : undefined }}>
+          {filteredAthletes.map((a) => <View key={a.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, borderBottomWidth: 1, borderColor: `${c.border}66`, backgroundColor: a.id === initialAthleteId ? c.muted : undefined }}>
             <Text style={{ width: NAME_W, paddingLeft: 4, paddingRight: 6, color: c.foreground, fontFamily: 'Inter_600SemiBold', fontSize: 12 }} numberOfLines={2}>{a.fullName}</Text>
             {entryMetrics.map((m) => { const k = draftKey(a.id, m.id); const v = drafts[k] ?? ''; const st = cellState(k, existing, approvals, drafts); const ap = approvals[k];
               const ex = existing[k]; const unit = ap?.unit ?? ex?.unit ?? m.unit; const diff = (ap || ex) && unit !== m.unit;
