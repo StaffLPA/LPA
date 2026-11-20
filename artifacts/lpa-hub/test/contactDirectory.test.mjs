@@ -32,3 +32,15 @@ test('parent organization uses the named member without requiring a staff role',
   assert.equal(matchDirectoryContact(contact, [parent])[0].id, 'p');
   assert.deepEqual(matchDirectoryContact(contact, [{ ...parent, status: 'invited' }]), []);
 });
+test('a specifically approved staff card can match its unique active account outside Staff-Coach', () => {
+  const contact = { name: 'Jake Hanen', role: 'Assistant Coach', allowAnyActiveRole: true };
+  const jake = member('jake', { fullName: 'Jake Hanen', role: 'Parent-Athlete', contactDirectoryKey: null });
+  assert.deepEqual(matchDirectoryContact(contact, [jake, { ...jake, id: 'invited', status: 'invited' }]).map((m) => m.id), ['jake']);
+});
+test('specific cross-role account matching still requires an exact name and no conflicting link', () => {
+  const contact = { name: 'Jake Hanen', role: 'Assistant Coach', allowAnyActiveRole: true };
+  assert.deepEqual(matchDirectoryContact(contact, [
+    member('similar', { fullName: 'Jake Hanen Jr', role: 'Parent-Athlete' }),
+    member('linked-elsewhere', { fullName: 'Jake Hanen', role: 'Parent-Athlete', contactDirectoryKey: 'another@example.com' }),
+  ]), []);
+});
