@@ -22,9 +22,9 @@ export function AnnouncementCard({
     body: { color: colors.foreground, fontSize: 14, fontFamily: 'Inter_400Regular', lineHeight: 22 },
     p: { marginVertical: 6 },
     a: { color: colors.primary, textDecorationLine: 'underline' as const },
-    h1: { fontSize: 20, fontFamily: 'Inter_700Bold', color: colors.foreground, marginTop: 12, marginBottom: 8 },
-    h2: { fontSize: 18, fontFamily: 'Inter_700Bold', color: colors.foreground, marginTop: 10, marginBottom: 6 },
-    h3: { fontSize: 16, fontFamily: 'Inter_600SemiBold', color: colors.foreground, marginTop: 8, marginBottom: 4 },
+    h1: { fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.foreground, marginTop: 12, marginBottom: 8 },
+    h2: { fontSize: 14, fontFamily: 'Inter_700Bold', color: colors.foreground, marginTop: 10, marginBottom: 6 },
+    h3: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground, marginTop: 8, marginBottom: 4 },
   }), [colors]);
 
   return (
@@ -45,6 +45,7 @@ export function AnnouncementCard({
           <RenderHtml
             contentWidth={width - 72}
             source={{ html: announcement.body }}
+            ignoredStyles={['fontFamily', 'fontSize']}
             tagsStyles={tagsStyles}
             renderersProps={{
               a: {
@@ -64,7 +65,10 @@ export function AnnouncementCard({
       )}
       
       <Text style={[styles.date, { color: colors.mutedForeground }]}>
-        {new Date(announcement.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+        {announcement.creatorName ? `${announcement.creatorName} · ` : ''}
+        {(announcement.publicationStatus && announcement.publicationStatus !== 'published') || !announcement.publishedAt
+          ? 'Not yet published'
+          : new Date(announcement.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
       </Text>
     </View>
   );
