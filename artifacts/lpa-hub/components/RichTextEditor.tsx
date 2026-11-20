@@ -16,13 +16,6 @@ if (Platform.OS !== 'web') {
 }
 
 const COLORS = ['#000000', '#ffffff', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#6366f1', '#a855f7', '#ec4899'];
-const FONTS = ['Arial', 'Courier New', 'Georgia', 'Times New Roman', 'Verdana'];
-const SIZES = [
-  { label: 'Small', val: '2' },
-  { label: 'Normal', val: '3' },
-  { label: 'Large', val: '5' },
-  { label: 'Huge', val: '7' },
-];
 
 export interface RichTextEditorRef {
   getContentHtml: () => Promise<string>;
@@ -52,9 +45,6 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey, h
   const [colorModal, setColorModal] = useState(false);
   const [colorType, setColorType] = useState<'fore' | 'bg'>('fore');
   const [customHex, setCustomHex] = useState('');
-  
-  const [fontModal, setFontModal] = useState(false);
-  const [sizeModal, setSizeModal] = useState(false);
 
   useEffect(() => {
     if (editorRef) {
@@ -135,10 +125,6 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey, h
         nativeEditorRef.current?.commandDOM(`document.execCommand("foreColor", false, "${val}")`);
       } else if (cmd === 'hiliteColor') {
         nativeEditorRef.current?.commandDOM(`document.execCommand("hiliteColor", false, "${val}")`);
-      } else if (cmd === 'fontName') {
-        nativeEditorRef.current?.commandDOM(`document.execCommand("fontName", false, "${val}")`);
-      } else if (cmd === 'fontSize') {
-        nativeEditorRef.current?.commandDOM(`document.execCommand("fontSize", false, "${val}")`);
       }
     }
   };
@@ -298,31 +284,6 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey, h
         </View>
       </Modal>
       
-      <Modal visible={fontModal} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setFontModal(false)}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Font Family</Text>
-            {FONTS.map(f => (
-              <Pressable testID={`editor-font-${f.replace(/\s+/g, '-')}`} key={f} onPress={() => { exec('fontName', f); setFontModal(false); }} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                <Text style={{ fontFamily: 'Inter_500Medium', color: colors.foreground, fontSize: 16 }}>{f}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={sizeModal} transparent animationType="fade">
-        <Pressable style={styles.modalOverlay} onPress={() => setSizeModal(false)}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Font Size</Text>
-            {SIZES.map(s => (
-              <Pressable testID={`editor-size-${s.val}`} key={s.val} onPress={() => { exec('fontSize', s.val); setSizeModal(false); }} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                <Text style={{ fontFamily: 'Inter_500Medium', color: colors.foreground, fontSize: 16 }}>{s.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </Pressable>
-      </Modal>
     </>
   );
 
@@ -332,7 +293,6 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey, h
         {icon}
       </Pressable>
     );
-    const textIcon = (char: string) => <Text style={{ fontFamily: 'Inter_700Bold', color: colors.foreground }}>{char}</Text>;
     return (
       <View style={[styles.container, { borderColor: colors.border, backgroundColor: colors.background }]}>
         {!hideToolbar ? <Modals /> : null}
@@ -379,12 +339,6 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey, h
           <Pressable testID="editor-btn-bgcolor" onPress={() => openColorModal('bg')} style={styles.webBtn}>
              <Feather name="edit-2" size={16} color={colors.foreground} />
           </Pressable>
-          <Pressable testID="editor-btn-font" onPress={() => { saveWebSelection(); setFontModal(true); }} style={styles.webBtn}>
-             {textIcon('F')}
-          </Pressable>
-          <Pressable testID="editor-btn-size" onPress={() => { saveWebSelection(); setSizeModal(true); }} style={styles.webBtn}>
-             {textIcon('T')}
-          </Pressable>
         </View> : null}
         <div
           ref={webDivRef}
@@ -392,7 +346,7 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey, h
           suppressContentEditableWarning
           onInput={(e) => onChange?.(e.currentTarget.innerHTML)}
           onBlur={(e) => onChange?.(e.currentTarget.innerHTML)}
-          style={{ flex: 1, minHeight: 200, padding: 12, outline: 'none', color: colors.foreground, fontFamily: 'sans-serif' }}
+          style={{ flex: 1, minHeight: 200, padding: 12, outline: 'none', color: colors.foreground, fontFamily: 'Inter_400Regular, sans-serif', fontSize: 14, lineHeight: 1.55 }}
           dangerouslySetInnerHTML={{ __html: initialContent || '' }}
         />
       </View>
@@ -408,20 +362,16 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey, h
           nativeActions.setBold, nativeActions.setItalic, nativeActions.setUnderline, nativeActions.setStrikethrough,
           nativeActions.insertBulletsList, nativeActions.insertOrderedList,
           nativeActions.alignLeft, nativeActions.alignCenter, nativeActions.alignRight, nativeActions.alignFull,
-          'customLink', 'customColor', 'customBgColor', 'customFontFamily', 'customFontSize'
+          'customLink', 'customColor', 'customBgColor'
         ]}
         iconMap={{
           customLink: () => <Feather name="external-link" size={18} color={colors.foreground} />,
           customColor: () => <Feather name="edit-3" size={18} color={colors.foreground} />,
           customBgColor: () => <Feather name="edit-2" size={18} color={colors.foreground} />,
-          customFontFamily: () => <Text style={{ fontFamily: 'Inter_700Bold', color: colors.foreground, fontSize: 16 }}>F</Text>,
-          customFontSize: () => <Text style={{ fontFamily: 'Inter_700Bold', color: colors.foreground, fontSize: 16 }}>T</Text>,
         }}
         customLink={() => { setLinkTitle(''); setLinkUrl(''); setLinkModal(true); }}
         customColor={() => openColorModal('fore')}
         customBgColor={() => openColorModal('bg')}
-        customFontFamily={() => setFontModal(true)}
-        customFontSize={() => setSizeModal(true)}
         iconTint={colors.foreground}
         selectedIconTint={colors.primary}
         style={[styles.nativeToolbar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
@@ -437,7 +387,7 @@ export function RichTextEditor({ initialContent, onChange, editorRef, formKey, h
           backgroundColor: colors.background,
           color: colors.foreground,
           placeholderColor: colors.mutedForeground,
-          contentCSSText: `font-family: sans-serif; font-size: 16px;`
+          contentCSSText: `body, body * { font-family: Inter_400Regular, sans-serif !important; font-size: 14px !important; line-height: 1.55 !important; }`
         }}
         style={styles.editor}
       />
