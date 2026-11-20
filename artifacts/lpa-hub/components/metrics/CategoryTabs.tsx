@@ -3,7 +3,7 @@ import { ScrollView, View } from 'react-native';
 import { Chip } from './ui';
 import { Filters, setFilters } from '@/lib/metrics';
 
-export const CATEGORY_TABS = [{ label: 'All', category: '' }, { label: 'Lifts', category: 'Strength' }, { label: 'Speed', category: 'Speed' }, { label: 'Health', category: 'Health' }, { label: 'Baseball', category: 'Baseball Performance' }] as const;
+export const CATEGORY_TABS = [{ label: 'All', category: '' }, { label: 'Lifts', category: 'Strength' }, { label: 'Speed', category: 'Speed' }, { label: 'Health', category: 'Health' }, { label: 'Baseball', category: 'Baseball Performance' }, { label: 'VALD', category: 'VALD' }] as const;
 export const HEALTH = 'Health';
 export const HEALTH_METRICS = ['body-weight', 'body-fat', 'heart-rate'] as const;
 
