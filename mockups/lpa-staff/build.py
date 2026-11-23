@@ -148,7 +148,7 @@ page = f'''<!doctype html>
     <a href="{SITE}/sponsors">Partnerships</a>
     <a href="{SITE}/apply">Apply</a>
   </nav>
-  <a class="btn btn--small" href="{TOUR}">Book a tour</a>
+  <a class="btn" href="{TOUR}">Book a tour</a>
 </header>
 
 <main id="lineup" class="card">

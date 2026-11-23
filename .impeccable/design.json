@@ -1,0 +1,422 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-23T00:00:00Z",
+  "title": "Design System: Legendary Prep Academy",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Ground",
+        "canonical": "oklch(11.5% 0.000 90)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "stock": {
+        "role": "neutral",
+        "displayName": "Card Stock",
+        "canonical": "oklch(15.5% 0.003 68)",
+        "tonalRamp": [
+          "#0c0b0a",
+          "#262524",
+          "#434241",
+          "#626160",
+          "#838281",
+          "#a6a5a3",
+          "#cac9c8",
+          "#efeeed"
+        ]
+      },
+      "stock-raised": {
+        "role": "neutral",
+        "displayName": "Raised Stock",
+        "canonical": "oklch(18.8% 0.005 68)",
+        "tonalRamp": [
+          "#0c0b0a",
+          "#262523",
+          "#434240",
+          "#63615e",
+          "#84827f",
+          "#a7a4a2",
+          "#cbc9c7",
+          "#f0eeec"
+        ]
+      },
+      "rust": {
+        "role": "primary",
+        "displayName": "Saddle Rust",
+        "canonical": "oklch(54.9% 0.125 45)",
+        "tonalRamp": [
+          "#200000",
+          "#451200",
+          "#6c2c07",
+          "#964820",
+          "#bb6a43",
+          "#da906e",
+          "#f9b89b",
+          "#ffe1c8"
+        ]
+      },
+      "rust-deep": {
+        "role": "primary",
+        "displayName": "Deep Rust",
+        "canonical": "oklch(47.5% 0.114 43)",
+        "tonalRamp": [
+          "#1f0000",
+          "#421400",
+          "#692f13",
+          "#924a2b",
+          "#b76c4c",
+          "#d69276",
+          "#f6b9a0",
+          "#ffe2cc"
+        ]
+      },
+      "rust-text": {
+        "role": "primary",
+        "displayName": "Ember Text",
+        "canonical": "oklch(69.1% 0.128 48)",
+        "tonalRamp": [
+          "#210000",
+          "#451200",
+          "#6c2c00",
+          "#964817",
+          "#bc6a3c",
+          "#db916a",
+          "#fab897",
+          "#ffe1c5"
+        ]
+      },
+      "seafoam": {
+        "role": "secondary",
+        "displayName": "Seafoam Marker",
+        "canonical": "oklch(72.6% 0.122 171)",
+        "tonalRamp": [
+          "#001308",
+          "#003120",
+          "#00523b",
+          "#007559",
+          "#15987a",
+          "#5cb99d",
+          "#8fdbc2",
+          "#c0fee9"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(95.1% 0.011 77)",
+        "tonalRamp": [
+          "#0d0b08",
+          "#272521",
+          "#45413d",
+          "#65615b",
+          "#86827c",
+          "#a8a49f",
+          "#ccc9c4",
+          "#f1eeea"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Pencil Grey",
+        "canonical": "oklch(71.4% 0.018 70)",
+        "tonalRamp": [
+          "#0e0a07",
+          "#29241f",
+          "#47413a",
+          "#676057",
+          "#898178",
+          "#aba49c",
+          "#cec8c1",
+          "#f3ede7"
+        ]
+      },
+      "ink-on-paper": {
+        "role": "neutral",
+        "displayName": "Ink on Paper",
+        "canonical": "oklch(25.6% 0.018 55)",
+        "tonalRamp": [
+          "#0f0a07",
+          "#2a241f",
+          "#48403b",
+          "#695f58",
+          "#8b8079",
+          "#ada39d",
+          "#d0c7c2",
+          "#f4ede8"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "oklch(54.9% 0.125 45 / 0.42)",
+        "tonalRamp": [
+          "#200000",
+          "#451200",
+          "#6c2c07",
+          "#964820",
+          "#bb6a43",
+          "#da906e",
+          "#f9b89b",
+          "#ffe1c8"
+        ]
+      },
+      "rule-soft": {
+        "role": "neutral",
+        "displayName": "Soft Rule",
+        "canonical": "oklch(54.9% 0.125 45 / 0.2)",
+        "tonalRamp": [
+          "#200000",
+          "#451200",
+          "#6c2c07",
+          "#964820",
+          "#bb6a43",
+          "#da906e",
+          "#f9b89b",
+          "#ffe1c8"
+        ]
+      },
+      "row-selected": {
+        "role": "neutral",
+        "displayName": "Selected Wash",
+        "canonical": "oklch(54.9% 0.125 45 / 0.1)",
+        "tonalRamp": [
+          "#200000",
+          "#451200",
+          "#6c2c07",
+          "#964820",
+          "#bb6a43",
+          "#da906e",
+          "#f9b89b",
+          "#ffe1c8"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Card title; h1-h3 share face, uppercase, 0.92 leading."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Footer ask and detail-panel name."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Names in lineup rows."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Positions, nav, buttons, printed links."
+      },
+      "label-small": {
+        "displayName": "Label Small",
+        "purpose": "Column heads, field labels, captions, bands."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Credentials and prose."
+      },
+      "numeral": {
+        "displayName": "Numeral",
+        "purpose": "Row numbers in the gutter, tabular."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-lift",
+        "value": "0 30px 60px -30px rgba(0,0,0,.9)",
+        "purpose": "The card sheet on the ground."
+      },
+      {
+        "name": "print",
+        "value": "0 18px 36px -14px rgba(0,0,0,.85)",
+        "purpose": "Main portrait print."
+      },
+      {
+        "name": "snapshot",
+        "value": "0 14px 28px -10px rgba(0,0,0,.8)",
+        "purpose": "Overlapping snapshot print."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Ring draw and frame entrance."
+      },
+      {
+        "name": "ring-draw",
+        "value": "stroke-dashoffset 150 to 0, .5s",
+        "purpose": "Seafoam ring on select."
+      },
+      {
+        "name": "portrait-wipe",
+        "value": "clip-path inset(0 0 0 100%) to inset(0), .6s",
+        "purpose": "Portrait enters from the card edge."
+      },
+      {
+        "name": "snapshot-drop",
+        "value": "translateY(-14px) + fade, .5s, .15s delay",
+        "purpose": "Snapshot settles onto the print."
+      },
+      {
+        "name": "text-rise",
+        "value": "translateY(8px) + fade, .45s, .1s delay",
+        "purpose": "Name, title, credentials."
+      },
+      {
+        "name": "state",
+        "value": ".2s-.3s",
+        "purpose": "Hover color, background, thumbnail grayscale."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "all animation and transition off",
+        "purpose": "prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tablet",
+        "value": "1100px"
+      },
+      {
+        "name": "single-column",
+        "value": "860px"
+      },
+      {
+        "name": "phone",
+        "value": "480px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Rust printed block for the tour call to action; site bar and card footer.",
+      "html": "<a class=\"ds-btn\" href=\"#\">Book a tour</a>",
+      "css": ":host{--ground:#050505;--stock:#0d0c0b;--stock-2:#151311;--rule:rgba(171,86,43,.42);--rule-soft:rgba(171,86,43,.2);--rust:#ab562b;--rust-text:#db8150;--seafoam:#40bf9d;--paper:#f3eee7;--muted:#aaa197;--display:'House of Cards','Arial Narrow',sans-serif;--text:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--ease:cubic-bezier(.16,1,.3,1);} .ds-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 22px;background:var(--rust);color:#fff;text-decoration:none;font:700 18px/1 var(--display);text-transform:uppercase;letter-spacing:.08em;border-radius:0;transition:background .2s,transform .15s;} .ds-btn:hover{background:#8f4320;} .ds-btn:active{transform:translateY(1px);} .ds-btn:focus-visible{outline:2px solid var(--seafoam);outline-offset:3px;}"
+    },
+    {
+      "name": "Big Button",
+      "kind": "button",
+      "refersTo": "button-primary-big",
+      "description": "The card footer's closing action; full width on phone.",
+      "html": "<a class=\"ds-btn-big\" href=\"#\">Book a tour</a>",
+      "css": ":host{--ground:#050505;--stock:#0d0c0b;--stock-2:#151311;--rule:rgba(171,86,43,.42);--rule-soft:rgba(171,86,43,.2);--rust:#ab562b;--rust-text:#db8150;--seafoam:#40bf9d;--paper:#f3eee7;--muted:#aaa197;--display:'House of Cards','Arial Narrow',sans-serif;--text:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--ease:cubic-bezier(.16,1,.3,1);} .ds-btn-big{display:inline-flex;align-items:center;justify-content:center;min-height:64px;padding:0 40px;background:var(--rust);color:#fff;text-decoration:none;font:700 26px/1 var(--display);text-transform:uppercase;letter-spacing:.08em;transition:background .2s,transform .15s;} .ds-btn-big:hover{background:#8f4320;} .ds-btn-big:active{transform:translateY(1px);} .ds-btn-big:focus-visible{outline:2px solid var(--seafoam);outline-offset:3px;}"
+    },
+    {
+      "name": "Printed Link",
+      "kind": "button",
+      "refersTo": "link-printed",
+      "description": "Secondary action set as printed type with a rust underline.",
+      "html": "<a class=\"ds-link\" href=\"#\">Request the program guide</a>",
+      "css": ":host{--ground:#050505;--stock:#0d0c0b;--stock-2:#151311;--rule:rgba(171,86,43,.42);--rule-soft:rgba(171,86,43,.2);--rust:#ab562b;--rust-text:#db8150;--seafoam:#40bf9d;--paper:#f3eee7;--muted:#aaa197;--display:'House of Cards','Arial Narrow',sans-serif;--text:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--ease:cubic-bezier(.16,1,.3,1);} .ds-link{display:inline-block;color:var(--paper);font:400 18px/1 var(--display);text-transform:uppercase;letter-spacing:.08em;text-decoration:underline;text-decoration-color:var(--rust);text-decoration-thickness:1px;text-underline-offset:.25em;padding:12px 0;} .ds-link:hover{color:var(--rust-text);} .ds-link:focus-visible{outline:2px solid var(--seafoam);outline-offset:3px;}"
+    },
+    {
+      "name": "Site Nav",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Quiet grey House of Cards links; current page in paper with a rust underline.",
+      "html": "<nav class=\"ds-nav\"><a href=\"#\">Home</a><a href=\"#\" aria-current=\"page\">Meet the Staff</a><a href=\"#\">Schedule</a></nav>",
+      "css": ":host{--ground:#050505;--stock:#0d0c0b;--stock-2:#151311;--rule:rgba(171,86,43,.42);--rule-soft:rgba(171,86,43,.2);--rust:#ab562b;--rust-text:#db8150;--seafoam:#40bf9d;--paper:#f3eee7;--muted:#aaa197;--display:'House of Cards','Arial Narrow',sans-serif;--text:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--ease:cubic-bezier(.16,1,.3,1);} .ds-nav{display:flex;gap:26px;background:var(--ground);padding:0 16px;font:400 17px/1 var(--display);text-transform:uppercase;letter-spacing:.06em;} .ds-nav a{color:var(--muted);text-decoration:none;padding:12px 0;transition:color .2s;} .ds-nav a:hover,.ds-nav a[aria-current]{color:var(--paper);} .ds-nav a[aria-current]{box-shadow:inset 0 -2px 0 var(--rust);} .ds-nav a:focus-visible{outline:2px solid var(--seafoam);outline-offset:3px;}"
+    },
+    {
+      "name": "Section Band",
+      "kind": "custom",
+      "refersTo": "section-band",
+      "description": "Rust strip dividing the roster into groups, with a count.",
+      "html": "<div class=\"ds-band\"><span>Coaching staff</span><span class=\"ds-band__n\">8 on the card</span></div>",
+      "css": ":host{--ground:#050505;--stock:#0d0c0b;--stock-2:#151311;--rule:rgba(171,86,43,.42);--rule-soft:rgba(171,86,43,.2);--rust:#ab562b;--rust-text:#db8150;--seafoam:#40bf9d;--paper:#f3eee7;--muted:#aaa197;--display:'House of Cards','Arial Narrow',sans-serif;--text:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--ease:cubic-bezier(.16,1,.3,1);} .ds-band{display:flex;justify-content:space-between;align-items:center;padding:12px 24px 12px 84px;background:var(--rust);color:#fff;font:700 16px/1 var(--display);text-transform:uppercase;letter-spacing:.18em;} .ds-band__n{font-weight:400;}"
+    },
+    {
+      "name": "Lineup Row",
+      "kind": "custom",
+      "refersTo": "lineup-row",
+      "description": "Signature roster row: numbered gutter, name, position, lead; selected rows get the seafoam ring.",
+      "html": "<div class=\"ds-sheet\"><button class=\"ds-row\" aria-pressed=\"true\"><span class=\"ds-row__no\"><svg class=\"ds-ring\" viewBox=\"0 0 60 44\" aria-hidden=\"true\"><path d=\"M31 4C14 3 4 11 5 23s14 18 28 17 24-9 22-20C53 9 41 3 27 5\"/></svg>01</span><span class=\"ds-row__name\">Mark Karaviotis</span><span class=\"ds-row__pos\">Head Coach</span></button><button class=\"ds-row\" aria-pressed=\"false\"><span class=\"ds-row__no\"><svg class=\"ds-ring\" viewBox=\"0 0 60 44\" aria-hidden=\"true\"><path d=\"M31 4C14 3 4 11 5 23s14 18 28 17 24-9 22-20C53 9 41 3 27 5\"/></svg>02</span><span class=\"ds-row__name\">Joe Dunigan</span><span class=\"ds-row__pos\">Hitting Coordinator</span></button></div>",
+      "css": ":host{--ground:#050505;--stock:#0d0c0b;--stock-2:#151311;--rule:rgba(171,86,43,.42);--rule-soft:rgba(171,86,43,.2);--rust:#ab562b;--rust-text:#db8150;--seafoam:#40bf9d;--paper:#f3eee7;--muted:#aaa197;--display:'House of Cards','Arial Narrow',sans-serif;--text:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--ease:cubic-bezier(.16,1,.3,1);} .ds-sheet{background:var(--stock);color:var(--paper);} .ds-row{position:relative;display:grid;grid-template-columns:64px minmax(0,1.25fr) minmax(0,1fr);column-gap:20px;align-items:center;width:100%;min-height:68px;padding:0 24px 0 0;background:none;border:0;border-bottom:1px solid var(--rule-soft);color:inherit;text-align:left;cursor:pointer;transition:background .25s;} .ds-row::before{content:'';position:absolute;inset:0 auto 0 64px;border-left:1px solid var(--rule);} .ds-row:hover{background:var(--stock-2);} .ds-row[aria-pressed=true]{background:rgba(171,86,43,.1);} .ds-row:focus-visible{outline:2px solid var(--seafoam);outline-offset:-2px;} .ds-row__no{position:relative;display:grid;place-items:center;font:600 18px/1 var(--text);font-variant-numeric:tabular-nums;color:var(--muted);} .ds-row[aria-pressed=true] .ds-row__no{color:var(--paper);} .ds-ring{position:absolute;width:54px;height:40px;left:50%;top:50%;translate:-50% -50%;fill:none;stroke:var(--seafoam);stroke-width:2.4;stroke-linecap:round;stroke-dasharray:150;stroke-dashoffset:150;opacity:0;transition:stroke-dashoffset .5s var(--ease);} .ds-row[aria-pressed=true] .ds-ring{opacity:1;stroke-dashoffset:0;} .ds-row__name{font:700 26px/1 var(--display);text-transform:uppercase;letter-spacing:.01em;padding:18px 0;} .ds-row__pos{font:400 16px/1.15 var(--display);text-transform:uppercase;letter-spacing:.06em;color:var(--rust-text);}"
+    },
+    {
+      "name": "Card Fields",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Ruled definition list printed in the card head.",
+      "html": "<dl class=\"ds-fields\"><div><dt>Club</dt><dd>Legendary Prep Academy</dd></div><div><dt>Field</dt><dd>Scottsdale, Arizona</dd></div></dl>",
+      "css": ":host{--ground:#050505;--stock:#0d0c0b;--stock-2:#151311;--rule:rgba(171,86,43,.42);--rule-soft:rgba(171,86,43,.2);--rust:#ab562b;--rust-text:#db8150;--seafoam:#40bf9d;--paper:#f3eee7;--muted:#aaa197;--display:'House of Cards','Arial Narrow',sans-serif;--text:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--ease:cubic-bezier(.16,1,.3,1);} .ds-fields{margin:0;display:grid;grid-template-columns:auto auto;background:var(--stock);color:var(--paper);padding:16px;} .ds-fields div{display:grid;grid-template-columns:subgrid;grid-column:1/-1;align-items:baseline;padding:12px 0;border-top:1px solid var(--rule);} .ds-fields div:last-child{border-bottom:1px solid var(--rule);} .ds-fields dt,.ds-fields dd{margin:0;} .ds-fields dt{font:400 14px/1.2 var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--rust-text);padding-right:28px;} .ds-fields dd{font:700 19px/1.2 var(--display);text-transform:uppercase;letter-spacing:.03em;}"
+    },
+    {
+      "name": "Photo Print",
+      "kind": "card",
+      "refersTo": "photo-print",
+      "description": "Photograph mounted as a paper print with an overlapping captioned snapshot.",
+      "html": "<div class=\"ds-photos\"><div class=\"ds-print\"><div class=\"ds-img\"></div></div><figure class=\"ds-snap\"><div class=\"ds-img ds-img--s\"></div><figcaption>Playing days</figcaption></figure></div>",
+      "css": ":host{--ground:#050505;--stock:#0d0c0b;--stock-2:#151311;--rule:rgba(171,86,43,.42);--rule-soft:rgba(171,86,43,.2);--rust:#ab562b;--rust-text:#db8150;--seafoam:#40bf9d;--paper:#f3eee7;--muted:#aaa197;--display:'House of Cards','Arial Narrow',sans-serif;--text:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;--ease:cubic-bezier(.16,1,.3,1);} .ds-photos{position:relative;max-width:300px;margin:16px 16px 40px 32px;} .ds-print{background:var(--paper);padding:8px;box-shadow:0 18px 36px -14px rgba(0,0,0,.85);} .ds-img{aspect-ratio:4/5;background:linear-gradient(160deg,#3a2414,#1a120d);} .ds-img--s{aspect-ratio:3/4;} .ds-snap{position:absolute;left:-14px;bottom:-22px;width:34%;margin:0;background:var(--paper);padding:6px 6px 0;box-shadow:0 14px 28px -10px rgba(0,0,0,.8);} .ds-snap figcaption{font:400 11px/1 var(--display);text-transform:uppercase;letter-spacing:.12em;color:#2a211b;padding:7px 0 6px;text-align:center;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Dugout Lineup Card",
+    "overview": "The LPA brand (black ground, rust, seafoam, House of Cards, the shield and arch wordmark) is printed onto a single sheet of black card stock. Content is laid out the way a lineup card is: ruled rows, column heads, a numbered left gutter, rust section bands, and a printed footer. Information is dense and tabular on purpose, so the whole staff reads at a glance as one roster. Photographs are physical objects on the card: paper-bordered prints, and a smaller snapshot overlapping the main print.\n\nDepth comes from the sheet itself. The card sits on a near-black ground with one soft drop shadow, and its interior is flat, divided by thin rust rules and double rules. Every printed label, name and heading is set in House of Cards capitals. Running copy, credentials and numerals use the system sans so long reading stays easy. Seafoam is the hand-drawn mark: it circles the selected row and draws the focus ring, and appears nowhere else in the CSS.\n\nMotion is short and physical. A new selection draws the seafoam ring around its number, wipes the portrait in from the card's edge, drops the snapshot, and lifts the name and credentials into place. Reduced-motion turns all of it off.",
+    "keyCharacteristics": [
+      "Black card stock (stock) on a darker ground, edged by a 1px rust rule.",
+      "Rust works as print: rules, section bands, the primary button, and small type in its lighter text tint.",
+      "House of Cards uppercase for every printed label. System sans for reading.",
+      "Square corners everywhere.",
+      "Seafoam is used only for the selection mark and the focus ring.",
+      "Photos look like prints: paper border, soft drop shadow, overlapping snapshot."
+    ],
+    "rules": [
+      {
+        "name": "The Marker Rule",
+        "body": "Seafoam is the pen, not the print. In CSS it marks only selection and focus. Every printed element is rust, paper or grey.",
+        "section": "colors"
+      },
+      {
+        "name": "The Rust Legibility Rule",
+        "body": "Use rust as a fill, as a rule, or for display-size type. Small text on black uses rust-text.",
+        "section": "colors"
+      },
+      {
+        "name": "The Printed Label Rule",
+        "body": "Anything printed on the card (heads, names, positions, bands, buttons, nav) is House of Cards uppercase. Anything someone reads as prose is system sans in sentence case.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tracking Ladder Rule",
+        "body": "The smaller the label, the wider the tracking: 0.01em for names, 0.06–0.08em for 16–20px labels, 0.12–0.18em for 13–16px heads and bands.",
+        "section": "typography"
+      },
+      {
+        "name": "The Objects-Only Rule",
+        "body": "Shadows belong to paper objects on the card, never to rows, bands, buttons or text. Structure is drawn with rust rules.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** draw structure with rust rules (1px at 42%, 20% between entries, 3px double at major divisions) instead of boxes or shadows.",
+      "**Do** set every printed label in House of Cards uppercase, and prose in system sans.",
+      "**Do** use rust-text (#db8150) for any rust text under display size.",
+      "**Do** reserve seafoam for the selection ring and the 2px focus outline (3px offset).",
+      "**Do** mount photographs as paper prints with a paper border and a soft downward shadow.",
+      "**Do** keep corners square and touch targets at least 44px.",
+      "**Do** keep the LPA shield in the site bar and the rust arch wordmark in the site footer."
+    ],
+    "donts": [
+      "**Don't** set small rust (#ab562b) text on black. It measures 3.8:1.",
+      "**Don't** use seafoam as a fill, a band, a button or decoration.",
+      "**Don't** round corners or put shadows on rows, bands or buttons.",
+      "**Don't** replace House of Cards with another display face, or set body copy in it."
+    ]
+  }
+}

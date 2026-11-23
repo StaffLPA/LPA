@@ -28,7 +28,7 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'detail__next';
-      btn.textContent = 'Next in the lineup: ' + nameOf(next) + ' →';
+      btn.textContent = 'Next in the lineup: ' + nameOf(next);
       btn.addEventListener('click', () => { show(next, true); next.focus({ preventScroll: true }); });
       copy.appendChild(btn);
     }
