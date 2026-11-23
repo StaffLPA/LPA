@@ -22,7 +22,6 @@
 <link rel="stylesheet" href="assets/system.css">
 <link rel="stylesheet" href="assets/ui/cards.css">
 <link rel="stylesheet" href="assets/motion/motion.css">
-<link rel="stylesheet" href="assets/backgrounds/backgrounds.css">
 <link rel="stylesheet" href="assets/layout/layout.css">
 <link rel="stylesheet" href="assets/icons/icon.css">
 <style>
@@ -41,7 +40,6 @@
 }
 </style>
 <script>document.documentElement.classList.add('m-enter');setTimeout(()=>document.documentElement.classList.add('m-enter-done'),700)</script>
-<script src="assets/backgrounds/backgrounds.js"></script>
 <script>document.documentElement.classList.add('mo-js');setTimeout(()=>document.documentElement.classList.add('mo-safe'),2500)</script>
 <link rel="modulepreload" href="assets/moments/moments.js">
 <link rel="modulepreload" href="assets/moments/lib.js">
@@ -54,12 +52,14 @@
   .ground-inverse .muted, .ground-inverse .career__line { color: var(--p-inv-muted); }
   ::selection { background: var(--p-accent); color: #fff; }
   :is(h1, h2) { text-transform: uppercase; line-height: 0.95; }
+  #contact .closing__cta .btn--xl, .footer__lede { font-family: var(--font-text); text-transform: none; }
   .nav__logo img { width: 30px; height: auto; }
   .rows__name small { display: block; margin-top: 2px; }
   .nav__logo { font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; }
-  .tile__role { color: var(--p-accent); font-weight: 500; font-size: var(--t-small); margin-top: calc(-1 * var(--s-3)); }
+  .tile > .tile__role, .tile__role { color: var(--p-accent); font-weight: 500; font-size: var(--t-small); margin-top: calc(-1 * var(--s-3)); }
   :is(.tile, .person-row) ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: var(--t-small); color: var(--p-muted); }
-  :is(.tile, .person-row) ul li + li { border-top: 1px solid var(--line); padding-top: 6px; }
+  :is(.tile, .person-row) ul li { padding-bottom: 4px; }
+  :is(.tile, .person-row) ul li + li { border-top: 1px solid var(--line); padding-top: 8px; }
   .people { row-gap: var(--s-6); }
   .people > .person-row { display: grid; grid-template-columns: subgrid; column-gap: var(--gutter); align-items: start; }
   .person-row > img { grid-column: span 2; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-lg); }
@@ -69,6 +69,8 @@
   .person-row .tile__role { margin: 0 0 var(--s-3); }
   @media (max-width: 639px) { .person-row > img { grid-column: span 4; } .person-row > div { grid-column: span 8; } }
   @media (max-width: 420px) { .logo-word { display: none; } }
+  @media (max-width: 1023px) { #parents .frame--fill { aspect-ratio: 4 / 5; height: auto; min-height: 0; } }
+  @media (max-width: 639px) { .btn-row > .btn--secondary { text-decoration: none; } }
   @media (max-width: 360px) { .nav__actions { display: none; } }
   @media (max-width: 639px) {
     #coaches > .wrap { grid-template-rows: auto auto; row-gap: var(--s-7); }
@@ -170,7 +172,7 @@
       <div class="span-5">
         <div class="section-head">
           <h2 id="careers-h">Playing careers behind the coaching</h2>
-          <p>Athletes learn from coaches who played the level they want to reach.</p>
+          <p>Athletes learn from coaches who played the level they want to reach, like Taylor Hubbell, pitching here for the University of Louisiana.</p>
         </div>
         <div class="careers">
           <div class="career"><img src="img/staff-steve-karsay-action.jpg" alt="Steve Karsay's 2004 Yankees baseball card" loading="lazy"><div><p class="career__name">Steve Karsay</p><p class="career__line">Oakland, Cleveland, Atlanta, New York Yankees, Texas</p></div></div>
@@ -225,7 +227,7 @@
     <div class="closing__cta close--type">
       <div class="section-head">
         <h2 id="close-h">Book a tour</h2>
-        <p>See the academy on East Bahia Drive in Scottsdale and bring your questions.</p>
+        <p>See the academy on East Bahia Drive in Scottsdale and bring your questions. <a href="https://legendaryprepacademy.com/contact">Call the front office</a> or <a href="mailto:info@legendaryprepacademy.com">email us</a>.</p>
       </div>
       <a class="btn btn--primary btn--xl btn--wide" href="https://legendaryprepacademy.com/appointments">Book a tour<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg></a>
     </div>
