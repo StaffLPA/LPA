@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Impeccable design engine binary (downloaded on first run)
+.claude/skills/impeccable/scripts/bin/
