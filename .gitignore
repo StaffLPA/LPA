@@ -50,3 +50,7 @@ Thumbs.db
 
 # Impeccable design engine binary (downloaded on first run)
 .claude/skills/impeccable/scripts/bin/
+
+# Python bytecode (e.g. from skill scripts)
+__pycache__/
+*.pyc
