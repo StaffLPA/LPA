@@ -139,7 +139,7 @@ page = f'''<!doctype html>
 <a class="skip" href="#lineup">Skip to the staff lineup</a>
 <header class="top">
   <button class="top__menu" type="button" aria-expanded="false" aria-controls="nav">Menu</button>
-  <a class="top__brand" href="{SITE}/"><img src="img/shield.png" alt="" width="30" height="42"><span>Legendary Prep Academy</span></a>
+  <a class="top__brand" href="{SITE}/"><img src="img/shield.png" alt="Legendary Prep Academy" width="30" height="42"><span aria-hidden="true">Legendary Prep Academy</span></a>
   <nav class="top__nav" id="nav" aria-label="Main">
     <a href="{SITE}/">Home</a>
     <a href="{SITE}/experience">The LPA Experience</a>
