@@ -139,7 +139,7 @@ p { margin: 0; }
   .band { padding-left: 76px; }
   .top { flex-wrap: wrap; position: relative; }
   .top__menu { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; margin-left: auto; background: none; color: var(--paper); border: 1px solid var(--rule); font: 400 16px/1 var(--display); text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; order: 2; }
-  .top__menu[aria-expanded="true"] { border-color: var(--seafoam); }
+  .top__menu[aria-expanded="true"] { border-color: var(--paper); }
   .top .btn { order: 3; }
   .top__nav { display: none; order: 4; width: 100%; flex-direction: column; gap: 0; margin: 4px 0 0; border-top: 1px solid var(--rule); }
   .top__nav.is-open { display: flex; }
