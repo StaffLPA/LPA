@@ -1,251 +1,294 @@
 ---
 name: Legendary Prep Academy
-description: Black card stock, printed rust rules and House of Cards capitals; the LPA brand set as a dugout lineup card.
+description: Black ink and LPA rust on a light stone ground, House of Cards capitals over IBM Plex Sans, and one black band.
 colors:
-  ground: "#050505"
-  stock: "#0d0c0b"
-  stock-raised: "#151311"
+  ground: "#f4f4f1"
+  surface: "#e9e8e3"
+  ink: "#0b0a09"
+  muted: "#57524c"
   rust: "#ab562b"
-  rust-deep: "#8f4320"
-  rust-text: "#db8150"
-  rule: "rgba(171, 86, 43, 0.42)"
-  rule-soft: "rgba(171, 86, 43, 0.2)"
-  row-selected: "rgba(171, 86, 43, 0.1)"
+  rust-hover: "#924b27"
+  tonal: "#dededb"
+  tonal-hover: "#cececb"
+  line: "#d6d6d3"
+  band: "#0b0a09"
+  band-ink: "#f4f4f1"
+  band-muted: "#a3a19d"
+  band-rust-text: "#d9804f"
   seafoam: "#40bf9d"
-  paper: "#f3eee7"
-  muted: "#aaa197"
-  ink-on-paper: "#2a211b"
 typography:
   display:
-    fontFamily: "House of Cards, Arial Narrow, sans-serif"
-    fontSize: "clamp(52px, 7vw, 104px)"
+    fontFamily: "House of Cards, IBM Plex Sans, system-ui, sans-serif"
+    fontSize: "clamp(38px, 3.24vw + 25.4px, 72px)"
     fontWeight: 700
-    lineHeight: 0.92
+    lineHeight: 0.95
     letterSpacing: "0.005em"
   headline:
-    fontFamily: "House of Cards, Arial Narrow, sans-serif"
-    fontSize: "clamp(40px, 5vw, 72px)"
+    fontFamily: "House of Cards, IBM Plex Sans, system-ui, sans-serif"
+    fontSize: "clamp(30px, 1.72vw + 23.3px, 48px)"
     fontWeight: 700
-    lineHeight: 0.92
+    lineHeight: 0.95
     letterSpacing: "0.005em"
-  title:
-    fontFamily: "House of Cards, Arial Narrow, sans-serif"
-    fontSize: "clamp(22px, 2.1vw, 30px)"
+  wordmark:
+    fontFamily: "House of Cards, IBM Plex Sans, system-ui, sans-serif"
+    fontSize: "22px"
     fontWeight: 700
     lineHeight: 1
-    letterSpacing: "0.01em"
-  label:
-    fontFamily: "House of Cards, Arial Narrow, sans-serif"
-    fontSize: "16px"
+    letterSpacing: "0.04em"
+  lead:
+    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
+    fontSize: "clamp(17px, .286vw + 15.89px, 20px)"
     fontWeight: 400
-    lineHeight: 1.15
-    letterSpacing: "0.06em"
-  label-small:
-    fontFamily: "House of Cards, Arial Narrow, sans-serif"
-    fontSize: "13px"
-    fontWeight: 400
-    lineHeight: 1
-    letterSpacing: "0.16em"
+    lineHeight: 1.5
+  title:
+    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
+    fontSize: "20px"
+    fontWeight: 500
+    lineHeight: 1.3
+    letterSpacing: "-0.01em"
   body:
-    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
+    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
     fontSize: "16px"
     fontWeight: 400
     lineHeight: 1.55
-  numeral:
-    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "18px"
-    fontWeight: 600
+  small:
+    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.5
+  role:
+    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
+    fontSize: "14px"
+    fontWeight: 500
+    lineHeight: 1.5
+  label:
+    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
+    fontSize: "13px"
+    fontWeight: 500
+    lineHeight: 1.4
+    letterSpacing: "0.01em"
+  button:
+    fontFamily: "IBM Plex Sans, system-ui, sans-serif"
+    fontSize: "16px"
+    fontWeight: 500
     lineHeight: 1
-    fontFeature: "tnum"
 rounded:
-  none: "0px"
+  sm: "8px"
+  md: "12px"
+  lg: "20px"
+  btn: "8px"
 spacing:
-  page-gutter: "clamp(16px, 4vw, 48px)"
-  wrap-max: "1360px"
-  row-inset: "24px"
-  number-gutter: "64px"
-  touch-min: "44px"
+  s-1: "4px"
+  s-2: "8px"
+  s-3: "12px"
+  s-4: "16px"
+  s-5: "24px"
+  s-6: "32px"
+  s-7: "48px"
+  s-8: "64px"
+  s-9: "96px"
+  s-10: "128px"
+  container: "1280px"
+  gutter: "24px"
+  head-gap: "48px"
 components:
   button-primary:
     backgroundColor: "{colors.rust}"
-    textColor: "#ffffff"
-    typography: "{typography.label}"
-    rounded: "{rounded.none}"
-    padding: "0 22px"
+    textColor: "{colors.ground}"
+    typography: "{typography.button}"
+    rounded: "{rounded.btn}"
+    padding: "0 24px"
     height: "44px"
   button-primary-hover:
-    backgroundColor: "{colors.rust-deep}"
-    textColor: "#ffffff"
-  button-primary-big:
+    backgroundColor: "{colors.rust-hover}"
+    textColor: "{colors.ground}"
+  button-secondary:
+    backgroundColor: "{colors.tonal}"
+    textColor: "{colors.ink}"
+    typography: "{typography.button}"
+    rounded: "{rounded.btn}"
+    padding: "0 24px"
+    height: "44px"
+  button-secondary-hover:
+    backgroundColor: "{colors.tonal-hover}"
+  button-close:
     backgroundColor: "{colors.rust}"
-    textColor: "#ffffff"
-    rounded: "{rounded.none}"
-    padding: "0 40px"
-    height: "64px"
-  link-printed:
-    textColor: "{colors.paper}"
-    typography: "{typography.label}"
-    padding: "12px 0"
+    textColor: "{colors.ground}"
+    rounded: "{rounded.btn}"
+    padding: "0 48px"
+    height: "clamp(64px, 3vw + 40px, 88px)"
+    width: "100%"
   nav-link:
-    textColor: "{colors.muted}"
-    typography: "{typography.label}"
-    padding: "12px 0"
-  nav-link-active:
-    textColor: "{colors.paper}"
-  section-band:
-    backgroundColor: "{colors.rust}"
-    textColor: "#ffffff"
-    rounded: "{rounded.none}"
-    padding: "12px 24px 12px 84px"
-  lineup-row:
-    backgroundColor: "{colors.stock}"
-    textColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.sm}"
+    padding: "0 12px"
+    height: "36px"
+  staff-tile:
+    textColor: "{colors.ink}"
     typography: "{typography.title}"
-    height: "68px"
-  lineup-row-hover:
-    backgroundColor: "{colors.stock-raised}"
-  lineup-row-selected:
-    backgroundColor: "{colors.row-selected}"
-  photo-print:
-    backgroundColor: "{colors.paper}"
-    rounded: "{rounded.none}"
-    padding: "8px"
+    rounded: "{rounded.lg}"
+  float-card:
+    backgroundColor: "{colors.ground}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.md}"
+    padding: "16px"
+    width: "300px"
+  career-row:
+    backgroundColor: "{colors.band}"
+    textColor: "{colors.band-ink}"
+    padding: "16px 0"
 ---
 
 # Design System: Legendary Prep Academy
 
 ## Overview
 
-**Creative North Star: "The Dugout Lineup Card"**
+**Creative North Star: "The Clubhouse Wall"**
 
-The LPA brand (black ground, rust, seafoam, House of Cards, the shield and arch wordmark) is printed onto a single sheet of black card stock. Content is laid out the way a lineup card is: ruled rows, column heads, a numbered left gutter, rust section bands, and a printed footer. Information is dense and tabular on purpose, so the whole staff reads at a glance as one roster. Photographs are physical objects on the card: paper-bordered prints, and a smaller snapshot overlapping the main print.
+The staff hang on a light wall in the academy's colours. A warm off-white ground (#f4f4f1) carries black ink, the LPA studio portraits in rounded frames, and rust in exactly two jobs: the action (every button that books a tour) and each person's role line. The brand's poster face, House of Cards, is set in uppercase for the h1 and h2 and for the wordmark beside the shield. Everything people actually read, buttons included, is IBM Plex Sans.
 
-Depth comes from the sheet itself. The card sits on a near-black ground with one soft drop shadow, and its interior is flat, divided by thin rust rules and double rules. Every printed label, name and heading is set in House of Cards capitals. Running copy, credentials and numerals use the system sans so long reading stays easy. Seafoam is the hand-drawn mark: it circles the selected row and draws the focus ring, and appears nowhere else in the CSS.
+The page changes ground once. One full-bleed black band carries the coaches' playing careers, and on it every text colour is named explicitly. This system exists because the previous world was black on black and lost text. Depth is flat: no shadows anywhere. Grounds, hairlines and photographs do the separating. The portraits (black LPA polos against warm orange bokeh) bring most of the colour on the page.
 
-Motion is short and physical. A new selection draws the seafoam ring around its number, wipes the portrait in from the card's edge, drops the snapshot, and lifts the name and credentials into place. Reduced-motion turns all of it off.
+Motion is short and done once: the hero's words arrive, a photograph in the black band develops like a print as it scrolls on, and controls ease over 180ms. Reduced motion stills all of it.
 
 **Key Characteristics:**
-- Black card stock (stock) on a darker ground, edged by a 1px rust rule.
-- Rust works as print: rules, section bands, the primary button, and small type in its lighter text tint.
-- House of Cards uppercase for every printed label. System sans for reading.
-- Square corners everywhere.
-- Seafoam is used only for the selection mark and the focus ring.
-- Photos look like prints: paper border, soft drop shadow, overlapping snapshot.
+- Light stone ground, black ink, rust for actions and roles only.
+- House of Cards uppercase for h1, h2 and the wordmark; IBM Plex Sans for everything else.
+- One black band a page, with every text colour on it set explicitly.
+- Soft radius scale: 20px on photographs, 12px on the float card, 8px on buttons.
+- Flat: no shadows at rest or on hover.
+- Seafoam lives only inside the shield; it is never a UI colour.
 
 ## Colors
 
-A black-and-rust print palette, with paper white for ink and one seafoam marker.
+Black, off-white and saddle rust, with one black band and a seafoam that stays in the mark.
 
 ### Primary
-- **Saddle Rust** (rust): the brand primary. Fills the section bands and primary buttons, colors every rule line (as rule and rule-soft), marks the active nav item with a 2px underline, and is the text selection color. White on rust measures 5.1:1. Rust on black is only 3.8:1, so it never sets small text.
-- **Deep Rust** (rust-deep): hover state for the primary button only.
-- **Ember Text** (rust-text): rust lifted for small type on black (6.8:1 on stock). Used for column heads, field labels, positions and titles.
+- **Saddle Rust** (rust): the LPA brand primary. Fills every primary button and the full-width close button, sets each person's role line (14px/500), draws the focus ring, the peek-row dot and the hero float card's status dot, and backs text selection (white on rust, 5.12:1). Rust on the ground measures 4.65:1, so 14px at 500 is its smallest text size.
+- **Rust Hover** (rust-hover): the primary button's hover, rust mixed 14% toward ink in OKLab.
 
 ### Secondary
-- **Seafoam Marker** (seafoam): the brand accent. Used for the hand-drawn ring around the selected row number and the 2px focus outline, and nowhere else. The shield image carries it as part of the brand mark.
+- **Seafoam** (seafoam): a brand colour carried by the shield's cactus. It does not appear in the page CSS. On the light ground it measures 2.08:1, which fails even the 3:1 focus-indicator floor, so it is not used for focus, text, or controls.
 
 ### Neutral
-- **Ground** (ground): the page behind the card, and the theme color.
-- **Card Stock** (stock): the card's surface, also the sticky column-head background.
-- **Raised Stock** (stock-raised): row hover.
-- **Rule** (rule) / **Soft Rule** (rule-soft): rust at 42% and 20%. Rule draws structural lines (card edge, column heads, gutter line, field rows). Soft Rule separates entries and list items.
-- **Paper** (paper): primary text, photo-print borders, and the skip link.
-- **Pencil Grey** (muted): secondary copy, row leads, inactive nav, footer text (7.7:1 on stock).
-- **Ink on Paper** (ink-on-paper): captions printed on paper-white mounts.
+- **Stone Ground** (ground): the page, the nav bar, the float card, and the ink on rust buttons.
+- **Stone Surface** (surface): the placeholder behind photographs while they load (tile and hero media).
+- **Ink** (ink): headings, body copy, names, nav links. 17.95:1 on the ground.
+- **Dust** (muted): credential lists, the second half of a two-tone h2, row descriptions, footer column heads and the legal line. 7.02:1 on the ground.
+- **Tonal** (tonal) / **Tonal Hover** (tonal-hover): the secondary button's fill, ink mixed 8% and 14% into the ground.
+- **Hairline** (line): ink at 11% over the ground. Nav underline, rows, credential dividers, footer rule.
+
+### Black Band
+- **Band** (band): the one inverse ground (the playing-careers band). Same black as the ink.
+- **Band Ink** (band-ink): every heading, paragraph and name on the band. 17.95:1.
+- **Band Muted** (band-muted): career lines on the band. 7.67:1.
+- **Band Rust Text** (band-rust-text): the band's accent token, 6.74:1 on black. It is the only rust allowed as text on the band. It is declared and not yet shown on screen.
 
 ### Named Rules
-**The Marker Rule.** Seafoam is the pen, not the print. In CSS it marks only selection and focus. Every printed element is rust, paper or grey.
+**The Named Ink Rule.** Every ground states its own text colour. On the black band, every text element (h1–h3, p, li, dt, dd, span, and links that are not buttons) is set to band-ink, and secondary text to band-muted. Nothing on the band inherits its colour from the page or a host stylesheet. Test: delete the inherited `color` from the band's parent; if any text turns dark, the rule is broken.
 
-**The Rust Legibility Rule.** Use rust as a fill, as a rule, or for display-size type. Small text on black uses rust-text.
+**The Two Jobs Rule.** Rust is an action fill or a role line. It is not decoration, not a background band, and not a heading colour.
+
+**The Rust on Black Rule.** Rust (#ab562b) on black is 3.86:1. It may fill a button there, with ground-coloured text, and draw the focus ring. It never sets text on the band; use band-rust-text.
+
+**The Shield Keeps the Seafoam Rule.** Seafoam appears only inside the LPA shield image. The focus ring is rust.
 
 ## Typography
 
-**Display Font:** House of Cards (self-hosted OTF, 400 and 700; fallback Arial Narrow, sans-serif)
-**Body Font:** system sans (-apple-system, Segoe UI, Roboto, Helvetica Neue, Arial)
+**Display Font:** House of Cards Bold (self-hosted OTF, weight 700; fallback IBM Plex Sans, system-ui)
+**Body Font:** IBM Plex Sans (Google Fonts, 400–700, width axis 85–100; fallback system-ui)
 
-**Character:** A condensed western-poster face sets everything printed on the card, in uppercase and widely tracked at small sizes. A neutral system sans handles everything people actually read.
+**Character:** House of Cards is the academy's western-poster face, used big, tight and in capitals so the headings read as the brand. Plex is a plain, slightly technical sans that keeps credentials, roles and buttons easy to read.
 
 ### Hierarchy
-- **Display** (700, clamp 52–104px, 0.92): the card title. Headings h1–h3 are all uppercase, balanced, at line-height 0.92.
-- **Headline** (700, clamp 40–72px, 0.92): the footer ask. The detail-panel name uses the same face at clamp 40–60px (38px on phone).
-- **Title** (700, clamp 22–30px, 1): names in lineup rows (24px on phone).
-- **Label** (400, 16–20px, tracked 0.06–0.08em, uppercase): positions, detail titles, nav (17px), printed links and buttons (700, 18px, 0.08em; 26px on the big button).
-- **Label Small** (400, 13–14px, tracked 0.12–0.16em, uppercase): column heads, field labels, photo captions. Section bands use 700 16px at 0.18em.
-- **Body** (400, 16px, 1.55): credentials and copy. Lead paragraphs are 18px, capped at 54ch. Row leads are 14px/1.35.
-- **Numeral** (600, 18px, tabular figures): row numbers in the gutter.
+- **Display** (House of Cards 700, clamp 38–72px, 0.95, uppercase): the h1 only.
+- **Headline** (House of Cards 700, clamp 30–48px, 0.95, uppercase): every h2, including the close ("Book a tour"). A section h2 may run into a muted second sentence in the same size (`span.muted`).
+- **Wordmark** (House of Cards, 22px, 20px on phone, uppercase, 0.04em): "Legendary Prep" beside the shield in the nav and footer. Hidden below 420px, leaving the shield.
+- **Lead** (Plex 400, clamp 17–20px, 1.5, max 42ch): the hero lead. Section-head paragraphs use 18px, 20px from 1024px, at 1.5, max 60ch.
+- **Title** (Plex 500, 18px, 20px from 1024px, 1.3, -0.01em): staff names on tiles and person rows. Every h3 on the page is Plex, never House of Cards.
+- **Body** (Plex 400, 16px, 1.55): running copy; career names at 500.
+- **Small** (Plex 400, 14px): credential lists (muted), row descriptions (muted, max 46ch), career lines, footer links.
+- **Role** (Plex 500, 14px, rust): the role line under every name.
+- **Label** (Plex 500, 13px, 0.01em): the float card's status and the legal line.
+- **Button** (Plex 500, 16px): every button. The full-width close button is Plex 700 at clamp 22–32px (Plex 500, 18px, on phone).
 
 ### Named Rules
-**The Printed Label Rule.** Anything printed on the card (heads, names, positions, bands, buttons, nav) is House of Cards uppercase. Anything someone reads as prose is system sans in sentence case.
+**The Two Faces Rule.** House of Cards is for the h1, the h2s and the wordmark, always uppercase. Every h3, button, label, list and footer line, including the close button and the footer lede, is IBM Plex Sans in sentence case.
 
-**The Tracking Ladder Rule.** The smaller the label, the wider the tracking: 0.01em for names, 0.06–0.08em for 16–20px labels, 0.12–0.18em for 13–16px heads and bands.
+**The Tight Capitals Rule.** House of Cards headings run at line-height 0.95 and 0.005em tracking. The wordmark opens to 0.04em.
 
 ## Layout
 
-The page has one centered column, `min(1360px, 100% - 2 × clamp(16px, 4vw, 48px))`, shared by the site bar, the card and the site footer. The card is the page. It has a head (title plus a ruled definition-list of fields), a body, and a footer separated from the body by 3px double rules.
+One 1280px container (`.wrap`) is shared by the nav, every section and the footer, with outer gutters of 80px from 1024px, 48px from 640px, and 24px on phone. A 12-column grid sits inside, with 24px column gaps (12px on phone). Spacing follows a 4/8 scale (4, 8, 12, 16, 24, 32, 48, 64, 96, 128). Each heading sits 48px above its content (32px on phone).
 
-On wide screens the body is two columns: the lineup sheet (fluid) and a sticky frame (minmax 340px, 38%) that shows the selected person. Sheet rows share a five-column grid with the sticky column heads: a 64px number gutter, name, position, career lead, and a 56px "then" thumbnail, with 20px column gaps. A 1px rule runs down the gutter's edge. Rows are at least 68px tall. Section bands indent their text to line up with the name column (84px).
+The nav is fixed at 72px (56px on phone): the logo on the left, links centred, and one primary button on the right. Below 1024px the links collapse behind a 44px menu button. Each section is one or two screens tall, padded 120px above and 72px below (96 and 48 on phone). The hero is a split: words in five columns on the left, and the head coach's portrait in six columns on the right, stretched to the hero's height with one float card laid on it. Below 1024px it stacks, with words first.
 
-At 1100px and below, the career column drops out, the gutter narrows to 56px, and the nav collapses behind a ruled Menu button. At 860px and below, the card is one column, the frame is hidden, and each row becomes a disclosure that opens its career underneath (48px gutter, name and position stacked). At 480px and below, the brand reads "LPA" and the card padding is 16px. Interactive targets are at least 44px tall.
+Staff are shown at three densities. Lead coaches get photo tiles (one 6-column 16:9 tile, two 3-column tiles). Assistant coaches get person rows: a 4:3 portrait in 2 columns beside 4 columns of text, on a subgrid with 32px row gaps. The front office gets 4:5 portrait tiles. On phone, coach tiles go full width at 4:3, and front-office tiles pair up at 6 columns each. The parents section is a peek list beside one photograph, and the photograph changes with the hovered or focused row. Interactive targets are at least 44px.
 
 ## Elevation & Depth
 
-The interior of the card is flat. Depth only appears where a physical object sits on the card: the card on the ground, and photo prints in the frame. Every shadow is soft, drops downward with a negative spread, and is near-black.
-
-### Shadow Vocabulary
-- **Card lift** (`box-shadow: 0 30px 60px -30px rgba(0,0,0,.9)`): the card sheet on the ground.
-- **Print** (`box-shadow: 0 18px 36px -14px rgba(0,0,0,.85)`): the main portrait print.
-- **Snapshot** (`box-shadow: 0 14px 28px -10px rgba(0,0,0,.8)`): the smaller print overlapping it.
+The system is flat. No element casts a shadow, at rest or on hover. The float card on the hero photograph is separated by an opaque ground fill and a 1px hairline, not a shadow. Depth comes from three things: the single change of ground to the black band, photographs with rounded corners, and hairline rules.
 
 ### Named Rules
-**The Objects-Only Rule.** Shadows belong to paper objects on the card, never to rows, bands, buttons or text. Structure is drawn with rust rules.
+**The One Black Band Rule.** A page has the light ground plus exactly one black band (`.ground-inverse`), which carries the page's signature content. A second dark band, or a dark footer, is out.
+
+**The Flat Card Rule.** Cards, tiles, rows and the float card never take a box-shadow. When something must stand off a photograph, give it an opaque ground and a hairline.
 
 ## Shapes
 
-All corners are square (0px), on the card, buttons, bands, prints, thumbnails and the menu button. Lines carry the form: 1px rust rules for structure, 20% rules between entries, and 3px double rules where the card divides into head, body and foot. The only curve is the seafoam ring, a loose hand-drawn SVG path (stroke 2.4, round caps) drawn around the row number. Photos are mounted on paper: an 8px paper border on the portrait, a 6px mount with a caption strip on the snapshot, and a 2px paper border on row thumbnails.
+The page uses the soft radius scale. Photographs (hero, tiles, person-row portraits, the developing photograph, the peek frame) take 20px. The float card takes 12px. Buttons and the nav menu button take 8px, and nav-link hover areas also take 8px. Lines are 1px hairlines at 11% ink: a rule closes each peek row and divides credential items, a rule sits under the nav, and a rule sits above the legal line. The active peek row's rule darkens to full ink. The only round forms are small dots: the rust peek indicator (8px) and the float card's status dot (7px).
 
 ## Components
 
 ### Buttons
-Solid printed blocks.
-- **Shape:** square (0px), at least 44px tall.
-- **Primary:** rust fill, white House of Cards 700 18px uppercase at 0.08em, 0 22px padding.
-- **Big:** 64px tall, 0 40px padding, 26px text. Full width on phone. Used for the card's footer call to action.
-- **Hover / Active:** fades to deep rust over 0.2s. Pressing it moves it down 1px.
-- **Printed link (secondary action):** paper House of Cards 18px uppercase with a 1px rust underline. Hover turns it rust-text.
+Tonal pair: a rust fill and a quiet tinted secondary, with no outlines.
+- **Shape:** gently rounded (8px), 44px tall, 0 24px padding, Plex 500 16px.
+- **Primary:** rust fill, ground-coloured text. In the hero, it ends in a drawn arrow whose stem grows on hover. "Book a tour" is the only primary label used.
+- **Phone:** hero buttons stack to full width.
+- **Hover / Active / Focus:** hover darkens the fill to rust-hover over 180ms `cubic-bezier(.2, .8, .2, 1)`. A press moves the button 1px down and scales it to 0.985. Focus shows a 2px rust outline at a 2px offset.
+- **Secondary (tonal):** tonal fill, ink text, no border; tonal-hover on hover. Used for "Meet the coaches" and "Ask the front office".
+- **Close (full width):** used once a page, in the footer close. It runs the width of the container, clamp 64–88px tall, with Plex 700 at clamp 22–32px, the label on the left and an arrow on the right. On phone it is 48px tall with Plex 500 at 18px.
 
 ### Navigation
-- **Desktop:** House of Cards 17px uppercase at 0.06em in muted grey, turning paper on hover. The current page is paper with a 2px rust underline (an inset shadow).
-- **Tablet and phone:** a square ruled "Menu" button (1px rule border, paper border when open) opens a stacked list of 20px links separated by soft rules. The current page is shown in rust-text.
+- **Bar:** fixed, opaque ground, one hairline under it. No blur, no shadow, and it never hides on scroll.
+- **Logo:** the LPA shield (30px wide) and the House of Cards wordmark.
+- **Links:** Plex 500 15px in ink, centred. On hover or focus, a 2px ink underline draws in from the left.
+- **Mobile:** below 1024px, a 44px menu button opens a stacked list of 56px rows (20px text) separated by hairlines. Below 360px the bar's Book a tour button is dropped.
 
-### Lineup Row (signature)
-The core repeating unit is a full-width button row on the five-column sheet grid.
-- **Default:** transparent on stock, a numeral in grey, the name as Title, the position as Label in rust-text, the lead as 14px grey body, and a 44×56 thumbnail with a 2px paper border at 35% grayscale. A row with no photo shows a 28px rule stub.
-- **Hover:** raised stock, and the thumbnail regains full color.
-- **Selected / open:** 10% rust wash, the numeral turns paper, and the seafoam ring draws itself around it (stroke-dashoffset 150 to 0, 0.5s).
-- **Plain (no career):** not interactive, with no hover.
+### Staff Tile
+- **Media:** a photograph with 20px corners (16:9 wide, 4:3 default, 4:5 portrait), cropped high (object-position 50% 12–18%) to keep faces in frame.
+- **Text:** name in Title, role line in rust 14/500 pulled 12px up toward the name, then a muted 14px credential list whose items are separated by hairlines (6px gap, 8px top padding).
+- **No border, background or shadow:** the photograph is the card.
 
-### Section Band
-A full-width rust strip with a white House of Cards 700 16px uppercase heading at 0.18em on the left and a count on the right (weight 400). It divides the roster into groups.
+### Person Row
+A denser version of the staff tile: a 4:3 portrait on the left (2 of 6 columns, 4 of 12 on phone) and the name, role and credentials on the right. The last cell in the set is an ask row with the same type and a primary button.
 
-### Card Fields
-A ruled definition list in the card head: rust-text 14px labels at 0.12em on the left, and paper House of Cards 700 19px values on the right. Each pair sits between 1px rules.
+### Float Card (hero)
+An opaque ground card, 300px wide, 16px padding, 12px corners and a 1px hairline, placed 24px from the photograph's bottom-left corner. It has one row of muted 14px facts and one Plex 500 16px line with the person's record.
 
-### Detail Frame
-A sticky panel beside the sheet. It holds the paper-mounted portrait (4:5) bleeding past the card's right edge, an overlapping "Playing days" snapshot (34% wide, offset bottom-left), the name as Headline, the title in rust-text, credentials as a soft-ruled list, and a printed "Next in the lineup" link. On selection the portrait wipes in from the right (clip-path, 0.6s), the snapshot drops in (0.5s, 0.15s delay), and the text rises 8px (0.45s). All of these use `cubic-bezier(.16, 1, .3, 1)`.
+### Peek Rows (parents)
+A ruled list beside one framed photograph. Each row has a name (Plex 500) and a muted 14px description. On hover or focus, the row's rule turns ink, a rust dot appears after the name, and the photograph changes to that person. Rows are focusable (`tabindex="0"`). Below 1024px the dots are hidden and the photograph stacks under the list at 4:5.
+
+### Career Rows (black band, signature)
+On the black band, five-column subgrid rows each pair a square playing-days photograph (1 column) with a name (band-ink, Plex 500 16px) and a career line (band-muted, 14px), separated by dark hairlines. A large photograph sits beside them in 6 columns, 20px corners and up to 600px tall. It develops once as it comes on screen, the way a film print does: pale and colourless, then darks, then colour, settling from a slight zoom, in about 1.6s. Under reduced motion the photograph simply stands.
+
+### Footer (closing)
+The close and the footer share one screen. The close is the "Book a tour" h2, a lead with two underlined inline links, and the full-width close button. Below it are the shield and wordmark, a Plex 700 lead line, four columns of 14px links (muted Plex 500 heads, rust on hover), and a hairline above a 13px muted legal row.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** draw structure with rust rules (1px at 42%, 20% between entries, 3px double at major divisions) instead of boxes or shadows.
-- **Do** set every printed label in House of Cards uppercase, and prose in system sans.
-- **Do** use rust-text (#db8150) for any rust text under display size.
-- **Do** reserve seafoam for the selection ring and the 2px focus outline (3px offset).
-- **Do** mount photographs as paper prints with a paper border and a soft downward shadow.
-- **Do** keep corners square and touch targets at least 44px.
-- **Do** keep the LPA shield in the site bar and the rust arch wordmark in the site footer.
+- **Do** set every text colour explicitly on the black band: band-ink (#f4f4f1) for text and band-muted (#a3a19d) for secondary lines.
+- **Do** keep rust to actions and role lines, and keep rust text at 14px/500 or larger on the light ground (4.65:1).
+- **Do** draw focus as a 2px rust outline at a 2px offset.
+- **Do** set h1 and h2 in House of Cards uppercase at line-height 0.95, and everything else in IBM Plex Sans.
+- **Do** give photographs 20px corners and crop portraits high so faces stay in frame.
+- **Do** end every page on the Book a tour close, with one full-width rust button.
+- **Do** keep the LPA shield beside the wordmark in the nav and footer.
 
 ### Don't:
-- **Don't** set small rust (#ab562b) text on black. It measures 3.8:1.
-- **Don't** use seafoam as a fill, a band, a button or decoration.
-- **Don't** round corners or put shadows on rows, bands or buttons.
-- **Don't** replace House of Cards with another display face, or set body copy in it.
+- **Don't** set text on the black band that inherits its colour. The previous world lost text as black on black.
+- **Don't** use seafoam (#40bf9d) for focus, text, buttons or fills. It measures 2.08:1 on the ground. It stays in the shield.
+- **Don't** set rust text on black. Use band-rust-text (#d9804f).
+- **Don't** add a second black band, or put a shadow on a card, tile or float card.
+- **Don't** set h3s, buttons or body copy in House of Cards, or replace House of Cards with another display face.

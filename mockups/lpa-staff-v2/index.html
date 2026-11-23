@@ -62,25 +62,25 @@
   :is(.tile, .person-row) ul li + li { border-top: 1px solid var(--line); padding-top: 8px; }
   .people { row-gap: var(--s-6); }
   .people > .person-row { display: grid; grid-template-columns: subgrid; column-gap: var(--gutter); align-items: start; }
-  .person-row > img { grid-column: span 2; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-lg); }
+  .person-row > img { grid-column: span 2; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-lg); }
   .person-row > div { grid-column: span 4; }
   .person-row--ask > div { grid-column: 1 / -1; align-self: center; }
   .person-row h3 { font: 500 var(--t-card)/1.3 var(--font-text); letter-spacing: -0.01em; margin-bottom: var(--s-3); }
   .person-row .tile__role { margin: 0 0 var(--s-3); }
-  @media (max-width: 639px) { .person-row > img { grid-column: span 4; } .person-row > div { grid-column: span 8; } }
+  @media (max-width: 639px) { .person-row > img { grid-column: span 5; aspect-ratio: 4 / 5; } .person-row > div { grid-column: span 7; } }
   @media (max-width: 420px) { .logo-word { display: none; } }
-  @media (max-width: 1023px) { #parents .frame--fill { aspect-ratio: 4 / 5; height: auto; min-height: 0; } }
+  @media (max-width: 1023px) { #parents .grid.fill { display: block; flex: none; height: auto; } #parents .grid.fill > .frame--fill { display: block; aspect-ratio: 4 / 5; height: auto; min-height: 0; margin-top: var(--s-6); } }
   @media (max-width: 639px) { .btn-row > .btn--secondary { text-decoration: none; } }
   @media (max-width: 360px) { .nav__actions { display: none; } }
   @media (max-width: 639px) {
-    #coaches > .wrap { grid-template-rows: auto auto; row-gap: var(--s-7); }
-    #coaches .group .grid > .tile { grid-column: 1 / -1; }
-    #coaches .group .tile .tile__media { aspect-ratio: 4 / 3; }
+    #coaches .grid > .tile { grid-column: 1 / -1; }
+    #coaches .tile .tile__media { aspect-ratio: 4 / 3; }
     #office .grid > .tile { grid-column: span 6; }
     #office .tile--portrait { --tile-ratio: 4 / 3; }
   }
   #coaches .tile__media img { object-position: 50% 18%; }
   #coaches .tile--wide .tile__media img { object-position: 50% 12%; }
+  #coaches .tile--wide { --tile-ratio: 2 / 1; }
   #office .tile__media img { object-position: 50% 18%; }
   /* careers band */
   .careers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); column-gap: var(--gutter); }
@@ -144,18 +144,22 @@
     </div></div>
   </section>
 
-  <section class="section g2" id="coaches" style="--hm: 1" aria-labelledby="coaches-h">
+  <section class="section" id="coaches" aria-labelledby="coaches-h">
     <div class="wrap">
-      <div class="group">
         <div class="section-head">
-          <h2 id="coaches-h">The coaching staff. <span class="muted">Eight coaches, one for every part of a player's day.</span></h2>
+          <h2 id="coaches-h">The coaching staff. <span class="muted">Three who played and coached in professional baseball.</span></h2>
         </div>
         <div class="grid">
           <article class="tile tile--wide span-6"><div class="tile__media"><img src="img/staff-steve-karsay.jpg" alt="Steve Karsay" loading="lazy"></div><div class="tile__head"><h3>Steve Karsay</h3></div><p class="tile__role">Pitching development coordinator</p><ul><li>1990 1st round pick (22), Toronto Blue Jays</li><li>16 years professional playing career</li><li>MLB bullpen coach, Milwaukee and the Angels</li></ul></article>
           <article class="tile span-3"><div class="tile__media"><img src="img/staff-joe-dunigan.jpg" alt="Joe Dunigan" loading="lazy"></div><div class="tile__head"><h3>Joe Dunigan</h3></div><p class="tile__role">Hitting coordinator and Astros scout</p><ul><li>Division 1 player at Oklahoma</li><li>10 years of professional baseball</li><li>Current Area Scout for the Houston Astros</li></ul></article>
           <article class="tile span-3"><div class="tile__media"><img src="img/staff-mark-karaviotis.jpg" alt="Mark Karaviotis" loading="lazy"></div><div class="tile__head"><h3>Mark Karaviotis</h3></div><p class="tile__role">Head coach</p><ul><li>Division 1 player at Oregon</li><li>3x MiLB All Star, 7 years pro</li><li>2016 Hillsboro Hops batting champion</li></ul></article>
         </div>
-      </div>
+    </div>
+  </section>
+
+  <section class="section" id="more-coaches" style="--hm: 2" aria-labelledby="more-coaches-h">
+    <div class="wrap">
+      <div class="section-head"><h2 id="more-coaches-h">Assistant, middle school and strength coaches</h2></div>
       <div class="grid people">
         <article class="person-row span-6"><img src="img/staff-taylor-hubbell.jpg" alt="Taylor Hubbell" loading="lazy" style="object-position:50% 20%"><div><h3>Taylor Hubbell</h3><p class="tile__role">Middle school head coach</p><ul><li>Division 1 player at the University of Louisiana</li><li>NJCAA World Series and All Star performer</li></ul></div></article>
         <article class="person-row span-6"><img src="img/staff-terrell-hudson.jpg" alt="Terrell Hudson" loading="lazy" style="object-position:50% 16%"><div><h3>Terrell Hudson</h3><p class="tile__role">Assistant coach</p><ul><li>Division 1 player at the University of New Mexico</li><li>Extensive experience training elite youth baseball</li></ul></div></article>
@@ -185,7 +189,7 @@
     </div>
   </section>
 
-  <section class="section" id="parents" style="--hm: 2" aria-labelledby="parents-h">
+  <section class="section" id="parents" style="--hm: 1.5" aria-labelledby="parents-h">
     <div class="wrap">
       <div class="section-head"><h2 id="parents-h">The people looking after your son. <span class="muted">Beyond the field, from the drive in to lunch.</span></h2></div>
       <div class="grid grid--top fill" data-peek>
@@ -227,7 +231,7 @@
     <div class="closing__cta close--type">
       <div class="section-head">
         <h2 id="close-h">Book a tour</h2>
-        <p>See the academy on East Bahia Drive in Scottsdale and bring your questions. <a href="https://legendaryprepacademy.com/contact">Call the front office</a> or <a href="mailto:info@legendaryprepacademy.com">email us</a>.</p>
+        <p>See the academy on East Bahia Drive in Scottsdale and bring your questions. <a href="https://legendaryprepacademy.com/contact">Contact the front office</a> or <a href="mailto:info@legendaryprepacademy.com">email us</a>.</p>
       </div>
       <a class="btn btn--primary btn--xl btn--wide" href="https://legendaryprepacademy.com/appointments">Book a tour<svg class="m-arrow" viewBox="0 0 12 12" aria-hidden="true"><path class="m-arrow__stem" d="M1 6h8"/><path class="m-arrow__head" d="M4.5 2.5 8 6l-3.5 3.5"/></svg></a>
     </div>
