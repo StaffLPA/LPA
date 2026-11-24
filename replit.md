@@ -24,6 +24,8 @@ _Replace the heading above with the project's name, and this line with one sente
 ## Where things live
 
 - Brand colors / theme tokens: `artifacts/lpa-hub/constants/colors.ts` (`BRAND` palette — Outlaw Red #B43733, Copper #A5500A, Texas Orange #9D4D2C, Charcoal #202020, Seafoam #43B8A8, White #FFFFFF; theme tokens map onto it). Use `useColors()` tokens or `BRAND.*`, not raw hex.
+- Brand font: House of Cards (Regular, Italic, Bold, Bold Italic) in `artifacts/lpa-hub/assets/fonts/HouseOfCards-*.otf`. Saved, not yet loaded in the app's `useFonts`.
+- Jr. Outlaws brand art (LPA colors): `attached_assets/jr-outlaws-brand-guide-lpa-colors.png`, logo/wordmark crops in `attached_assets/brand/`.
 
 ## Architecture decisions
 
