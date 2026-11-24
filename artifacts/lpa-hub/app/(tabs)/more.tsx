@@ -11,20 +11,21 @@ import { customFetch, useCreateChat, useListDirectoryUsers, useSubmitFeedback } 
 import { useTagCatalog } from '@/hooks/useTagCatalog';
 import { tagLabel } from '@/constants/tagCatalog';
 import { matchDirectoryContact } from '@/lib/contactDirectory';
+import { BRAND } from '@/constants/colors';
 
 const contacts = [
-  { name: 'Mark Karaviotis', role: 'Head Coach', email: 'mark@legendaryprepacademy.com', phone: '602-905-9164', initials: 'MK', tint: '#AB562B', photo: require('../../assets/staff-mark-karaviotis-face.jpg') },
-  { name: 'Taylor Hubbell', role: 'Middle School Head Coach', email: 'taylor@legendaryprepacademy.com', phone: '480-462-1471', initials: 'TH', tint: '#9BC7BD', photo: require('../../assets/staff-taylor-hubbell-face.jpg') },
+  { name: 'Mark Karaviotis', role: 'Head Coach', email: 'mark@legendaryprepacademy.com', phone: '602-905-9164', initials: 'MK', tint: BRAND.texasOrange, photo: require('../../assets/staff-mark-karaviotis-face.jpg') },
+  { name: 'Taylor Hubbell', role: 'Middle School Head Coach', email: 'taylor@legendaryprepacademy.com', phone: '480-462-1471', initials: 'TH', tint: BRAND.seafoam, photo: require('../../assets/staff-taylor-hubbell-face.jpg') },
   { name: 'Terrell Hudson', role: 'Assistant Coach', email: 'terrell@legendaryprepacademy.com', phone: '623-267-3533', initials: 'TH', tint: '#C88A62', photo: require('../../assets/staff-terrell-hudson-face.jpg') },
   { name: 'Joe Dunigan', role: 'Hitting Coordinator', email: 'joe@legendaryprepacademy.com', phone: undefined, initials: 'JD', tint: '#C89A62', photo: require('../../assets/staff-joe-dunigan-face.jpg') },
-  { name: 'Josh Garcia', role: 'Director of Strength & Conditioning', email: 'josh@legendaryprepacademy.com', phone: undefined, initials: 'JG', tint: '#9BC7BD', photo: require('../../assets/staff-josh-garcia-face.jpg') },
+  { name: 'Josh Garcia', role: 'Director of Strength & Conditioning', email: 'josh@legendaryprepacademy.com', phone: undefined, initials: 'JG', tint: BRAND.seafoam, photo: require('../../assets/staff-josh-garcia-face.jpg') },
   { name: 'Steve Karsay', role: 'Pitching Development Coordinator', email: 'Steve@legendaryprepacademy.com', phone: undefined, initials: 'SK', tint: '#C88A62', photo: require('../../assets/staff-steve-karsay-face.jpg') },
-  { name: 'Martin Jacquez', role: 'Academic Advisor', email: 'martin@legendaryprepacademy.com', phone: undefined, initials: 'MJ', tint: '#AB562B', photo: require('../../assets/staff-martin-jacquez-updated-face.jpg') },
-  { name: 'Vinna', role: 'Physical Therapy', email: 'contact@teamvinna.com', phone: '480-269-1184', website: 'https://www.teamvinna.com/', initials: 'VI', tint: '#9BC7BD', partner: true, logo: require('../../assets/vinna.png'), logoKind: 'vinna' },
-  { name: 'The Creative Plate', role: 'Culinary Partner', email: undefined, phone: undefined, website: undefined, initials: 'CP', tint: '#AB562B', partner: true, logo: require('../../assets/the-creative-plate.png'), logoKind: 'creativeplate' },
+  { name: 'Martin Jacquez', role: 'Academic Advisor', email: 'martin@legendaryprepacademy.com', phone: undefined, initials: 'MJ', tint: BRAND.texasOrange, photo: require('../../assets/staff-martin-jacquez-updated-face.jpg') },
+  { name: 'Vinna', role: 'Physical Therapy', email: 'contact@teamvinna.com', phone: '480-269-1184', website: 'https://www.teamvinna.com/', initials: 'VI', tint: BRAND.seafoam, partner: true, logo: require('../../assets/vinna.png'), logoKind: 'vinna' },
+  { name: 'The Creative Plate', role: 'Culinary Partner', email: undefined, phone: undefined, website: undefined, initials: 'CP', tint: BRAND.texasOrange, partner: true, logo: require('../../assets/the-creative-plate.png'), logoKind: 'creativeplate' },
   { name: 'Between the Lines', role: 'Contact Us · Partner', email: undefined, phone: '480-656-9959', website: 'https://www.betweenthelinesaz.com/', initials: 'BT', tint: '#C88A62', partner: true, logo: require('../../assets/between-the-lines.png'), logoKind: 'between' },
-  { name: 'EdOptions', role: 'Partner · Charles Tack', email: 'ctack@educationaloptionsfoundation.org', phone: '602-741-3999', website: 'https://eohighschool.com/', initials: 'EO', tint: '#AB562B', partner: true, logo: require('../../assets/edoptions.jpg'), logoKind: 'edoptions' },
-  { name: 'Legendary Parent Organization', role: 'Kisa White', email: 'moochie9.kj@gmail.com', phone: undefined, website: undefined, initials: 'LPO', tint: '#AB562B', partner: true, logo: require('../../assets/lpa-parent-organization-badge.png'), logoKind: 'phoenix' },
+  { name: 'EdOptions', role: 'Partner · Charles Tack', email: 'ctack@educationaloptionsfoundation.org', phone: '602-741-3999', website: 'https://eohighschool.com/', initials: 'EO', tint: BRAND.texasOrange, partner: true, logo: require('../../assets/edoptions.jpg'), logoKind: 'edoptions' },
+  { name: 'Legendary Parent Organization', role: 'Kisa White', email: 'moochie9.kj@gmail.com', phone: undefined, website: undefined, initials: 'LPO', tint: BRAND.texasOrange, partner: true, logo: require('../../assets/lpa-parent-organization-badge.png'), logoKind: 'phoenix' },
 ];
 
 type Contact = (typeof contacts)[number];

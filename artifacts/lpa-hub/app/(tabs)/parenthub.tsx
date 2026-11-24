@@ -5,10 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { Redirect } from 'expo-router';
+import { BRAND } from '@/constants/colors';
 
 const forms = [
-  { title: 'Absence/tardy form', copy: 'Let the team know when plans change.', icon: 'clock' as const, tint: '#AB562B', url: 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=41OaSypLA0yoKGPBLTVM_zR74t7B3VJCujiML5HMn9RUOEkyT045MklRRzRHOExJOFhRTDRCQlZRSi4u&route=shorturl' },
-  { title: 'LPA External Training & Competition Request Form', copy: 'Share outside training and competition details.', icon: 'award' as const, tint: '#9BC7BD', url: 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=41OaSypLA0yoKGPBLTVM_zR74t7B3VJCujiML5HMn9RUOFBPUUcxSFFFVTdERjhSS0EwNlRJNkdZQy4u&route=shorturl' },
+  { title: 'Absence/tardy form', copy: 'Let the team know when plans change.', icon: 'clock' as const, tint: BRAND.texasOrange, url: 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=41OaSypLA0yoKGPBLTVM_zR74t7B3VJCujiML5HMn9RUOEkyT045MklRRzRHOExJOFhRTDRCQlZRSi4u&route=shorturl' },
+  { title: 'LPA External Training & Competition Request Form', copy: 'Share outside training and competition details.', icon: 'award' as const, tint: BRAND.seafoam, url: 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=41OaSypLA0yoKGPBLTVM_zR74t7B3VJCujiML5HMn9RUOFBPUUcxSFFFVTdERjhSS0EwNlRJNkdZQy4u&route=shorturl' },
   { title: 'LPA Referral Form', copy: 'Refer a prospective LPA student-athlete.', icon: 'users' as const, tint: '#C88A62', url: 'https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=41OaSypLA0yoKGPBLTVM_98CgNMyeedKkIxWMbg85ydUNjdMTFpNWVdDODNPTTg4VkJNSEJDWVJLVS4u' },
   { title: 'Voluntary Withdrawal Form', copy: 'Start a confidential conversation.', icon: 'edit-3' as const, tint: '#C88A62', url: 'https://forms.cloud.microsoft/pages/responsepage.aspx?id=41OaSypLA0yoKGPBLTVM_zR74t7B3VJCujiML5HMn9RUN1RLUzNFSUlZUFpRS0FYRDBXSVVFOUVBTy4u&route=shorturl' },
 ];

@@ -4,8 +4,9 @@ import { useApp } from '@/context/AppContext';
 import { Card, Body, Empty, ErrorBox, H, Skeleton } from './ui';
 import { LineChart, Series } from './LineChart';
 import { MetricsWorkspace, fixed } from '@/lib/metrics';
+import { BRAND } from '@/constants/colors';
 
-const COLORS = ['#C97A4A', '#9BC7BD', '#E7C65B', '#8AA2D6', '#C98AB8', '#7FB77E', '#D6A06B', '#A78BDA'];
+const COLORS = [BRAND.copper, BRAND.seafoam, '#E7C65B', '#8AA2D6', '#C98AB8', '#7FB77E', '#D6A06B', '#A78BDA'];
 
 function useChartWorkspace(source?: MetricsWorkspace) {
   const { user } = useApp();

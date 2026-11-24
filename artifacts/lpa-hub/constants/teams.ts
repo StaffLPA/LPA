@@ -1,3 +1,5 @@
+import { BRAND } from "@/constants/colors";
+
 export const LPA_TEAMS = ["LPA 14U", "LPA 15U", "LPA JV", "LPA Varsity", "LPA"] as const;
 export type LpaTeam = (typeof LPA_TEAMS)[number];
 
@@ -5,7 +7,7 @@ export const CALENDAR_TEAMS = ["All Teams", "Varsity", "Junior Varsity", "14u", 
 export type CalendarTeam = (typeof CALENDAR_TEAMS)[number];
 
 export const CALENDAR_TEAM_COLORS: Record<CalendarTeam, string> = {
-  "All Teams": "#AB562B",
+  "All Teams": BRAND.texasOrange,
   Varsity: "#F1604D",
   "Junior Varsity": "#5B8C85",
   "14u": "#8E78B8",

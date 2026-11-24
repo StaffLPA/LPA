@@ -5,8 +5,9 @@ import { Body, Card, Empty, H } from './ui';
 import { LineChart, Series } from './LineChart';
 import { MetricsWorkspace } from '@/lib/metrics';
 import { TpMode, buildTeamProgress, monthLabel } from '@/lib/teamProgress';
+import { BRAND } from '@/constants/colors';
 
-const COLORS = ['#C97A4A', '#9BC7BD', '#E7C65B', '#8AA2D6', '#C98AB8', '#7FB77E', '#D6A06B', '#A78BDA'];
+const COLORS = [BRAND.copper, BRAND.seafoam, '#E7C65B', '#8AA2D6', '#C98AB8', '#7FB77E', '#D6A06B', '#A78BDA'];
 
 export function TeamProgressChart({ ws }: { ws?: MetricsWorkspace }) {
   const c = useColors();

@@ -61,7 +61,7 @@
         "expo-notifications",
         {
           "defaultChannel": "messages",
-          "color": "#C47A44"
+          "color": "#9D4D2C"
         }
       ],
       "expo-web-browser"

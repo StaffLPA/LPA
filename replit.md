@@ -23,7 +23,7 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- Brand colors / theme tokens: `artifacts/lpa-hub/constants/colors.ts` (`BRAND` palette — Outlaw Red #B43733, Copper #A5500A, Texas Orange #9D4D2C, Charcoal #202020, Seafoam #43B8A8, White #FFFFFF; theme tokens map onto it). Use `useColors()` tokens or `BRAND.*`, not raw hex.
 
 ## Architecture decisions
 

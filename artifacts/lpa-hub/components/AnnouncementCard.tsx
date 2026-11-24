@@ -5,6 +5,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useColors } from '@/hooks/useColors';
 import { LpaIcon } from '@/components/LpaIcon';
 import type { Announcement } from '@workspace/api-client-react';
+import { BRAND } from '@/constants/colors';
 
 export function AnnouncementCard({
   announcement,
@@ -30,8 +31,8 @@ export function AnnouncementCard({
   return (
     <View style={[styles.card, { backgroundColor: highlighted ? `${colors.primary}12` : colors.card, borderColor: highlighted ? colors.primary : colors.border }]}>
       <View style={styles.header}>
-        <View style={[styles.iconBox, { backgroundColor: '#9d4d2c18' }]}>
-          <LpaIcon name="bell" size={16} color="#9d4d2c" />
+        <View style={[styles.iconBox, { backgroundColor: `${BRAND.texasOrange}18` }]}>
+          <LpaIcon name="bell" size={16} color={BRAND.texasOrange} />
         </View>
         <Text style={[styles.title, { color: colors.foreground }]}>{announcement.title}</Text>
       </View>

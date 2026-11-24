@@ -11,6 +11,7 @@ import { useTagCatalog } from '@/hooks/useTagCatalog';
 import { canonicalTeam, getTeamColor, teamMatches } from '@/constants/tagCatalog';
 import { LpaIcon, type LpaIconName } from '@/components/LpaIcon';
 import { AnnouncementCard } from '@/components/AnnouncementCard';
+import { BRAND } from '@/constants/colors';
 
 const eventTimestamp = (date: string, time: string) => {
   const day = new Date(`${date}T12:00:00`);
@@ -106,8 +107,8 @@ export default function HomeScreen() {
 
          <View style={styles.sectionRow}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>Quick access</Text></View>
         <View style={styles.quickGrid}>
-           <QuickAction icon="message-circle" label="Messages" tint="#AB562B" onPress={() => router.push('/(tabs)/messages')} colors={colors} />
-          <QuickAction icon="calendar" label="Calendar" tint="#9BC7BD" onPress={() => router.push('/(tabs)/calendar')} colors={colors} />
+           <QuickAction icon="message-circle" label="Messages" tint={BRAND.texasOrange} onPress={() => router.push('/(tabs)/messages')} colors={colors} />
+          <QuickAction icon="calendar" label="Calendar" tint={BRAND.seafoam} onPress={() => router.push('/(tabs)/calendar')} colors={colors} />
            {role !== 'Athlete' ? <QuickAction icon="file-text" label="Parent Hub" tint="#D7B56D" onPress={() => router.push('/(tabs)/parenthub')} colors={colors} /> : null}
           <QuickAction icon="users" label="Contacts" tint="#C88A62" onPress={() => router.push('/(tabs)/more')} colors={colors} />
         </View>
@@ -142,11 +143,11 @@ const styles = StyleSheet.create({
   avatarText: { color: '#fff', fontFamily: 'Inter_700Bold', fontSize: 12 },
   hero: { marginHorizontal: 18, borderRadius: 24, padding: 22, minHeight: 190, overflow: 'hidden', marginBottom: 26 },
   heroTop: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 14 },
-  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#9BC7BD' },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: BRAND.seafoam },
   heroLabel: { color: '#D4D4CE', fontFamily: 'Inter_700Bold', letterSpacing: 1.1, fontSize: 10 },
   heroTitle: { color: '#FFFFFF', fontFamily: 'Inter_700Bold', fontSize: 34, lineHeight: 35, letterSpacing: -1.2 },
   heroCopy: { color: '#D4D4CE', fontFamily: 'Inter_400Regular', fontSize: 13, marginTop: 8, maxWidth: 230 },
-  heroButton: { alignSelf: 'flex-start', flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: '#9BC7BD', borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14, marginTop: 16 },
+  heroButton: { alignSelf: 'flex-start', flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: BRAND.seafoam, borderRadius: 18, paddingVertical: 10, paddingHorizontal: 14, marginTop: 16 },
   heroButtonText: { color: '#050505', fontFamily: 'Inter_700Bold', fontSize: 12 },
   heroAccent: { position: 'absolute', width: 150, height: 150, borderRadius: 75, right: -44, bottom: -48, borderWidth: 20, borderColor: '#AB562B77' },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 22, marginBottom: 12 },
