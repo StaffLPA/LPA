@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Jr. Outlaws Email Banners</title>
+<style>
+@font-face { font-family: "House of Cards"; src: url("../../../../artifacts/lpa-hub/assets/fonts/HouseOfCards-Bold.otf") format("opentype"); font-weight: 700; }
+@font-face { font-family: "House of Cards"; src: url("../../../../artifacts/lpa-hub/assets/fonts/HouseOfCards-Regular.otf") format("opentype"); font-weight: 400; }
+:root {
+  --charcoal: #202020;
+  --texas-orange: #9D4D2C;
+  --seafoam: #43B8A8;
+  --white: #FFFFFF;
+}
+html, body { margin: 0; background: #888; }
+body { display: grid; gap: 40px; padding: 40px; }
+.banner {
+  position: relative;
+  width: 2000px; height: 750px;
+  overflow: hidden;
+  font-family: "House of Cards", Impact, sans-serif;
+  background: var(--ground);
+}
+.banner svg.deco { position: absolute; inset: 0; width: 2000px; height: 750px; }
+.mascot { position: absolute; left: 70px; top: 100px; height: 550px; filter: drop-shadow(0 10px 18px rgba(0,0,0,.28)); }
+.rule { position: absolute; left: 530px; top: 168px; width: 6px; height: 414px; background: var(--rule); }
+.text {
+  position: absolute; left: 560px; top: 0; bottom: 0; width: 820px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.title {
+  margin: 0; white-space: nowrap; line-height: .86;
+  font-weight: 700; color: var(--title);
+  letter-spacing: .01em;
+}
+.ghost-clip { position: absolute; inset: 0; clip-path: polygon(1990px 0, 2000px 0, 2000px 750px, 1400px 750px); }
+.ghost { position: absolute; left: 1650px; top: 240px; height: 560px; opacity: var(--ghost-o); filter: grayscale(1) contrast(1.3); mix-blend-mode: var(--ghost-blend); }
+.sub {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 30px;
+  width: 800px; margin-top: 30px;
+  font-weight: 700; font-size: 76px; line-height: 1; letter-spacing: .1em;
+  color: var(--sub);
+}
+.sub::before, .sub::after { content: ""; height: 5px; background: var(--rule); }
+.tag {
+  margin-top: 34px; display: flex; align-items: center; gap: 34px;
+  font-weight: 700; font-size: 31px; letter-spacing: .14em; color: var(--tag); white-space: nowrap;
+}
+.tag i { width: 16px; height: 16px; border-radius: 50%; background: var(--rule); display: block; }
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script>
+const C = { charcoal: '#202020', orange: '#9D4D2C', seafoam: '#43B8A8', white: '#FFFFFF' };
+
+const banners = [
+  { id: 'classic', ground: C.white, title: 'JUNIOR OUTLAWS', titleColor: C.charcoal, sub: 'BASEBALL CLUB', subColor: C.orange,
+    tag: ['LPA FEEDER PROGRAM', 'PLAYER DEVELOPMENT'], tagColor: C.charcoal, rule: C.orange,
+    panel: C.charcoal, stripe: C.orange, corner: C.charcoal, seam: C.orange, ghost: [C.white, .16, 'screen'] },
+  { id: 'night', ground: C.charcoal, title: 'JUNIOR OUTLAWS', titleColor: C.white, sub: 'BASEBALL CLUB', subColor: C.seafoam,
+    tag: ['LPA FEEDER PROGRAM', 'PLAYER DEVELOPMENT'], tagColor: C.white, rule: C.orange,
+    panel: C.seafoam, stripe: C.orange, corner: C.seafoam, seam: C.charcoal, ghost: [C.charcoal, .28, 'multiply'] },
+  { id: 'team-update', ground: C.seafoam, title: 'TEAM UPDATE', titleColor: C.charcoal, sub: 'JUNIOR OUTLAWS', subColor: C.charcoal,
+    tag: ['BASEBALL CLUB', 'LPA FEEDER PROGRAM'], tagColor: C.charcoal, rule: C.white,
+    panel: C.charcoal, stripe: C.white, corner: C.charcoal, seam: C.seafoam, ghost: [C.seafoam, .16, 'screen'] },
+  { id: 'game-day', ground: C.charcoal, title: 'GAME DAY', titleColor: C.white, sub: 'JUNIOR OUTLAWS', subColor: C.seafoam,
+    tag: ['BASEBALL CLUB', 'LPA FEEDER PROGRAM'], tagColor: C.white, rule: C.orange,
+    panel: C.orange, stripe: C.white, corner: C.orange, seam: C.white, ghost: [C.charcoal, .3, 'multiply'] },
+  { id: 'tryouts', ground: C.white, title: 'TRYOUTS', titleColor: C.charcoal, sub: 'JUNIOR OUTLAWS', subColor: C.orange,
+    tag: ['BASEBALL CLUB', 'LPA FEEDER PROGRAM'], tagColor: C.charcoal, rule: C.seafoam,
+    panel: C.charcoal, stripe: C.seafoam, corner: C.charcoal, seam: C.seafoam, ghost: [C.white, .16, 'screen'] },
+];
+
+// Baseball stitching: V-shaped stitches along a gentle curve down the right edge
+function seams(color) {
+  const pts = [];
+  const P0 = [1930, 40], P1 = [1990, 400], P2 = [1860, 790];
+  const q = (t) => [ (1-t)*(1-t)*P0[0] + 2*(1-t)*t*P1[0] + t*t*P2[0], (1-t)*(1-t)*P0[1] + 2*(1-t)*t*P1[1] + t*t*P2[1] ];
+  let path = '';
+  const N = 26;
+  for (let k = 0; k <= N; k++) {
+    const t = k / N, [x, y] = q(t);
+    const [x2, y2] = q(Math.min(1, t + 0.01));
+    const ang = Math.atan2(y2 - y, x2 - x);
+    const nx = -Math.sin(ang), ny = Math.cos(ang);
+    const back = 18, spread = 30;
+    const bx = x - Math.cos(ang) * back, by = y - Math.sin(ang) * back;
+    path += `M${bx + nx * spread},${by + ny * spread} L${x},${y} L${bx - nx * spread},${by - ny * spread} `;
+  }
+  let spine = `M${P0[0]},${P0[1]} Q${P1[0]},${P1[1]} ${P2[0]},${P2[1]}`;
+  return `<path d="${spine}" fill="none" stroke="${color}" stroke-width="7" opacity=".9"/>
+          <path d="${path}" fill="none" stroke="${color}" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>`;
+}
+
+function deco(b) {
+  return `<svg class="deco" viewBox="0 0 2000 750" xmlns="http://www.w3.org/2000/svg">
+    <!-- top-left corner stripes -->
+    <polygon points="0,0 250,0 0,250" fill="${b.corner}"/>
+    <polygon points="268,0 318,0 0,318 0,268" fill="${b.stripe}"/>
+    <polygon points="0,330 330,0 352,0 0,352" fill="${b.stripe}" opacity=".0"/>
+    <!-- right panel -->
+    <polygon points="1990,0 2000,0 2000,750 1400,750" fill="${b.panel}"/>
+
+  </svg>`;
+}
+
+const out = document.getElementById('out');
+for (const b of banners) {
+  const el = document.createElement('section');
+  el.className = 'banner';
+  el.id = b.id;
+  el.style.setProperty('--ground', b.ground);
+  el.style.setProperty('--title', b.titleColor);
+  el.style.setProperty('--sub', b.subColor);
+  el.style.setProperty('--tag', b.tagColor);
+  el.style.setProperty('--rule', b.rule);
+  el.style.setProperty('--ghost-o', b.ghost[1]);
+  el.style.setProperty('--ghost-blend', b.ghost[2] || 'normal');
+  el.innerHTML = `${deco(b)}
+    <div class="ghost-clip"><img class="ghost" src="mascot.png" alt=""></div>
+    <svg class="deco" viewBox="0 0 2000 750">
+      <polygon points="1340,750 1385,750 1985,0 1940,0" fill="${b.stripe}"/>
+      <polygon points="1478,750 1500,750 2000,125 2000,97" fill="${b.stripe}"/>
+      ${seams(b.seam)}
+    </svg>
+    <img class="mascot" src="mascot.png" alt="">
+    <div class="rule"></div>
+    <div class="text">
+      <h1 class="title">${b.title}</h1>
+      <div class="sub">${b.sub}</div>
+      <div class="tag"><span>${b.tag[0]}</span><i></i><span>${b.tag[1]}</span></div>
+    </div>`;
+  out.appendChild(el);
+}
+
+// Fit each title to the text column (max 260px)
+document.fonts.ready.then(() => {
+  document.querySelectorAll('.title').forEach((t) => {
+    let size = 260;
+    t.style.fontSize = size + 'px';
+    while (t.scrollWidth > 800 && size > 60) { size -= 2; t.style.fontSize = size + 'px'; }
+  });
+  document.body.dataset.ready = '1';
+});
+</script>
+</body>
+</html>
